@@ -1215,6 +1215,11 @@ cmake --build build && ctest --test-dir build --output-on-failure
 ### Goal
 Transition from bootstrap placeholder shapes, heuristic room probing, and synthetic tile atlas slicing to deterministic loading and rendering of original DOS game assets from `reference/original/` (or configured asset root). This brings genuine 16x16 tilesets, room layouts, enemy/player masked sprite sheets, and the authentic EGA HUD frame bezel into the active runtime.
 
+### Current Phase 11 status
+- [x] Original asset-root discovery is now canonicalized and resolves correctly when launched from a nested repo subdirectory, repo root, or CI workspace root.
+- [x] The bootstrap path now preserves the canonical asset root in runtime state instead of leaving a raw path alias.
+- [ ] Remaining work is focused on the bezel/player viewport composition and replay-stability checks for the final live-gameplay validation gates.
+
 ### Background & Asset Architecture Analysis
 Cross-referencing `comic2.asm` (specifically `load_resource` at line 2396 and table `unk_2E3CC` at line 147836) against `unpacked.exe` confirms the exact layout of the original asset pipeline:
 

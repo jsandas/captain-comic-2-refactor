@@ -228,6 +228,98 @@ bool validate_frpak_catalog_record_bounds(const FrpakCatalogRecord &record,
   return record.data_size <= (file_size - record.data_offset);
 }
 
+bool is_related_asset_root(const std::filesystem::path &lhs,
+                           const std::filesystem::path &rhs) {
+  if (lhs.empty() || rhs.empty()) {
+    return false;
+  }
+
+  std::error_code ec_a;
+  std::error_code ec_b;
+  const auto left = std::filesystem::weakly_canonical(lhs, ec_a);
+  const auto right = std::filesystem::weakly_canonical(rhs, ec_b);
+
+  const auto canonical_left = ec_a ? lhs.lexically_normal() : left;
+  const auto canonical_right = ec_b ? rhs.lexically_normal() : right;
+
+  if (canonical_left == canonical_right) {
+    return true;
+  }
+
+  std::filesystem::path cursor = canonical_left;
+  for (;;) {
+    if (cursor == canonical_right) {
+      return true;
+    }
+    const auto parent = cursor.parent_path();
+    if (parent == cursor || parent.empty()) {
+      break;
+    }
+    cursor = parent;
+  }
+
+  cursor = canonical_right;
+  for (;;) {
+    if (cursor == canonical_left) {
+      return true;
+    }
+    const auto parent = cursor.parent_path();
+    if (parent == cursor || parent.empty()) {
+      break;
+    }
+    cursor = parent;
+  }
+
+  return false;
+}
+
+std::vector<std::filesystem::path>
+build_asset_root_candidates_for_level(const std::filesystem::path &root) {
+  std::vector<std::filesystem::path> seeds;
+  if (!root.empty()) {
+    seeds.push_back(root);
+  }
+
+  const auto current = std::filesystem::current_path();
+  if (!current.empty() && current != root &&
+      is_related_asset_root(current, root)) {
+    seeds.push_back(current);
+  }
+
+  std::vector<std::filesystem::path> candidates;
+  auto add_candidate = [&](const std::filesystem::path &candidate) {
+    if (candidate.empty()) {
+      return;
+    }
+
+    std::error_code ec;
+    const auto canonical = std::filesystem::weakly_canonical(candidate, ec);
+    const auto key = ec ? candidate.lexically_normal() : canonical;
+    if (std::any_of(candidates.begin(), candidates.end(),
+                    [&](const auto &existing) { return existing == key; })) {
+      return;
+    }
+    candidates.push_back(key);
+  };
+
+  for (const auto &seed : seeds) {
+    std::filesystem::path cursor = seed;
+    for (;;) {
+      add_candidate(cursor);
+      add_candidate(cursor / "reference" / "original");
+      add_candidate(cursor / "original");
+
+      const auto parent = cursor.parent_path();
+      if (parent == cursor || parent.empty()) {
+        break;
+      }
+      cursor = parent;
+    }
+  }
+
+  return candidates;
+}
+
 std::optional<LevelResourceTuple>
 resolve_level_resource_tuple(std::uint16_t level_id,
                              const std::filesystem::path &root) {
@@ -236,24 +328,29 @@ resolve_level_resource_tuple(std::uint16_t level_id,
   }
 
   const auto tuple = level_resource_catalog()[level_id];
-  const auto has_required_files = [&](const std::string &filename) {
-    if (filename.empty()) {
-      return true;
+  const auto roots = build_asset_root_candidates_for_level(root);
+  for (const auto &candidate_root : roots) {
+    const auto has_required_files = [&](const std::string &filename) {
+      if (filename.empty()) {
+        return true;
+      }
+      return path_exists(candidate_root / filename);
+    };
+
+    if (!has_required_files(tuple.tileset_filename) ||
+        !has_required_files(tuple.room_layout_filename) ||
+        !has_required_files(tuple.sprite_sheet_filename)) {
+      continue;
     }
-    return path_exists(root / filename);
-  };
 
-  if (!has_required_files(tuple.tileset_filename) ||
-      !has_required_files(tuple.room_layout_filename) ||
-      !has_required_files(tuple.sprite_sheet_filename)) {
-    return std::nullopt;
+    if (tuple.has_script() && !has_required_files(tuple.script_filename)) {
+      continue;
+    }
+
+    return tuple;
   }
 
-  if (tuple.has_script() && !has_required_files(tuple.script_filename)) {
-    return std::nullopt;
-  }
-
-  return tuple;
+  return std::nullopt;
 }
 
 std::optional<LevelTilesetDecode>

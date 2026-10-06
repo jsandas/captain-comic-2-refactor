@@ -100,6 +100,50 @@ std::optional<std::filesystem::path> find_reference_assets_root() {
   return std::nullopt;
 }
 
+std::vector<std::uint8_t>
+make_test_room_resource_bytes(std::uint16_t level, std::uint16_t room,
+                              std::uint16_t tile_w, std::uint16_t tile_h,
+                              std::uint8_t seed = 0x00) {
+  std::vector<std::uint8_t> decoded_room_bytes(0x2D2, 0x00);
+  decoded_room_bytes[0] = seed;
+  decoded_room_bytes[0x2A0] = 0x00;
+  decoded_room_bytes[0x2A1] = 0x00;
+  decoded_room_bytes[0x2A2] = 0x04;
+  decoded_room_bytes[0x2A3] = 0x00;
+  decoded_room_bytes[0x2A4] = 0x08;
+  decoded_room_bytes[0x2A5] = 0x00;
+  decoded_room_bytes[0x2B0] = 0x00;
+  decoded_room_bytes[0x2B1] = 0x00;
+
+  std::vector<std::uint8_t> encoded;
+  std::size_t offset = 0;
+  while (offset < decoded_room_bytes.size()) {
+    const std::size_t chunk =
+        std::min<std::size_t>(127U, decoded_room_bytes.size() - offset);
+    encoded.push_back(static_cast<std::uint8_t>(chunk));
+    encoded.insert(encoded.end(),
+                   decoded_room_bytes.begin() +
+                       static_cast<std::ptrdiff_t>(offset),
+                   decoded_room_bytes.begin() +
+                       static_cast<std::ptrdiff_t>(offset + chunk));
+    offset += chunk;
+  }
+  encoded.push_back(0x00);
+
+  std::vector<std::uint8_t> resource_bytes(0x20 + encoded.size(), 0x00);
+  resource_bytes[2] = static_cast<std::uint8_t>(level & 0xFFU);
+  resource_bytes[3] = static_cast<std::uint8_t>((level >> 8) & 0xFFU);
+  resource_bytes[0x04] = static_cast<std::uint8_t>(tile_w & 0xFFU);
+  resource_bytes[0x05] = static_cast<std::uint8_t>((tile_w >> 8) & 0xFFU);
+  resource_bytes[0x06] = static_cast<std::uint8_t>(tile_h & 0xFFU);
+  resource_bytes[0x07] = static_cast<std::uint8_t>((tile_h >> 8) & 0xFFU);
+  resource_bytes[0x08] = 0x20;
+  resource_bytes[0x09] = 0x00;
+  std::copy(encoded.begin(), encoded.end(), resource_bytes.begin() + 0x20);
+  (void)room;
+  return resource_bytes;
+}
+
 struct RecordingPresenter : comic2::IFramePresenter {
   int last_width = 0;
   int last_height = 0;
@@ -220,6 +264,51 @@ void test_bootstrap_frame_interval_can_be_overridden() {
   check(interval == std::chrono::milliseconds(33),
         "bootstrap frame interval should accept an override for calibration");
   set_test_env("COMIC2_BOOTSTRAP_FRAME_MS", "", 1);
+}
+
+void test_scene_bootstrap_discovers_reference_assets_from_repo_subdirectory() {
+  const auto repo_root =
+      std::filesystem::temp_directory_path() / "comic2_repo_root_resolution";
+  const auto subdir = repo_root / "nested" / "launch";
+  const auto asset_root = repo_root / "reference" / "original";
+
+  std::filesystem::remove_all(repo_root);
+  std::filesystem::create_directories(subdir);
+  std::filesystem::create_directories(asset_root);
+
+  const auto room_bytes = make_test_room_resource_bytes(0, 0, 4, 3, 0x7AU);
+  std::ofstream(asset_root / "FRDATA.0", std::ios::binary)
+      .write(reinterpret_cast<const char *>(room_bytes.data()),
+             static_cast<std::streamsize>(room_bytes.size()));
+
+  const auto previous_cwd = std::filesystem::current_path();
+  std::filesystem::current_path(subdir);
+
+  try {
+    comic2::RuntimeState state = comic2::make_default_runtime_state();
+    const auto summary = comic2::initialize_runtime_scene(state, subdir);
+    const auto canonical_asset_root =
+        std::filesystem::weakly_canonical(asset_root);
+    const auto canonical_summary_root =
+        std::filesystem::weakly_canonical(summary.assets_root_used);
+
+    check(summary.room_grid_loaded,
+          "bootstrap should load the repo-root original asset directory from a "
+          "nested launch path");
+    check(
+        canonical_summary_root == canonical_asset_root,
+        "bootstrap should resolve the canonical reference/original directory");
+    check(std::filesystem::weakly_canonical(state.assets_root) ==
+              canonical_asset_root,
+          "runtime state should preserve the canonical asset root");
+  } catch (...) {
+    std::filesystem::current_path(previous_cwd);
+    std::filesystem::remove_all(repo_root);
+    throw;
+  }
+
+  std::filesystem::current_path(previous_cwd);
+  std::filesystem::remove_all(repo_root);
 }
 
 void test_integrated_loop_exits_cleanly_when_quit_is_requested() {
@@ -782,6 +871,7 @@ void run_bootstrap_wiring_tests() {
   test_bootstrap_tick_wires_input_dispatch_and_render();
   test_bootstrap_frame_interval_defaults_to_original_tick_rate();
   test_bootstrap_frame_interval_can_be_overridden();
+  test_scene_bootstrap_discovers_reference_assets_from_repo_subdirectory();
   test_integrated_loop_exits_cleanly_when_quit_is_requested();
   test_dispatcher_moves_player_when_left_input_is_active();
   test_render_loop_renders_multiple_frames();
