@@ -452,6 +452,39 @@ void test_render_bootstrap_frame_uses_room_tile_data() {
         "tile border should remain accented at the far edge");
 }
 
+void test_render_bootstrap_frame_uses_level_tileset_bytes_when_available() {
+  auto state = comic2::make_default_runtime_state();
+  state.player.x = 300;
+  state.player.y = 180;
+  state.room_grid.tile_w = 1;
+  state.room_grid.tile_h = 1;
+  state.room_grid.row_pointers = {0};
+  state.room_grid.tile_data = {0x00};
+
+  comic2::Ega4PlaneImage tile;
+  tile.width_bytes = 2;
+  tile.height_rows = 16;
+  tile.row_span_bytes = 32;
+  for (std::size_t plane = 0; plane < tile.planes.size(); ++plane) {
+    tile.planes[plane].assign(32, 0x00);
+  }
+  for (std::size_t row = 0; row < 16; ++row) {
+    tile.planes[0][row * 2] = 0xFF;
+    tile.planes[0][row * 2 + 1] = 0xFF;
+  }
+  state.level_tileset = {tile};
+
+  comic2::MemoryFramePresenter presenter;
+  comic2::render_bootstrap_frame(presenter, state);
+
+  const auto &frame = presenter.last_frame();
+  const auto color = read_color_index(frame, 8, 8);
+
+  check(color == 0x01,
+        "bootstrap should render the level tileset tile bytes instead of the "
+        "diagnostic per-tile color fallback");
+}
+
 void test_render_bootstrap_frame_renders_scrolled_right_edge_tiles() {
   auto state = comic2::make_default_runtime_state();
   state.player.x = 300;
@@ -877,6 +910,7 @@ void run_bootstrap_wiring_tests() {
   test_render_loop_renders_multiple_frames();
   test_render_loop_updates_state_while_presenting_frames();
   test_render_bootstrap_frame_uses_room_tile_data();
+  test_render_bootstrap_frame_uses_level_tileset_bytes_when_available();
   test_render_bootstrap_frame_renders_scrolled_right_edge_tiles();
   test_render_bootstrap_frame_renders_active_runtime_entities();
   test_render_bootstrap_frame_distinguishes_pickups_from_enemies();

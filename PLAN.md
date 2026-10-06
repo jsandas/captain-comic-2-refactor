@@ -1218,6 +1218,8 @@ Transition from bootstrap placeholder shapes, heuristic room probing, and synthe
 ### Current Phase 11 status
 - [x] Original asset-root discovery is now canonicalized and resolves correctly when launched from a nested repo subdirectory, repo root, or CI workspace root.
 - [x] The bootstrap path now preserves the canonical asset root in runtime state instead of leaving a raw path alias.
+- [x] The bootstrap room renderer now prefers decoded `RuntimeState::level_tileset` bytes when available, while preserving FRPAK-backed and diagnostic fallback rendering paths.
+- [x] Runtime entity and projectile sprites now prefer decoded `RuntimeState::level_sprites` records from `FR###.2` when valid, while preserving placeholder rendering when records are missing or invalid.
 - [ ] Remaining work is focused on the bezel/player viewport composition and replay-stability checks for the final live-gameplay validation gates.
 
 ### Background & Asset Architecture Analysis
@@ -1290,13 +1292,14 @@ Cross-referencing `comic2.asm` (specifically `load_resource` at line 2396 and ta
   - Store decoded tiles as `std::vector<Ega4PlaneImage>` (width=2, height=16) in `RuntimeState::level_tileset`.
 - [x] Add deterministic test verifying `FR000.0` decodes exactly 144 tiles (18,432 bytes) with stable plane-byte hashes.
 - [x] Add asset-root tuple load path that hydrates `RuntimeState::level_tileset` and `RuntimeState::tile_hazard_bounds` from `FR###.0` before committing the room payload, while preserving the existing fallback scan for missing/corrupt canonical room assets.
+- [x] Update `render_bootstrap_frame` to render room tiles directly from `RuntimeState::level_tileset` when populated, while preserving FRPAK-backed and diagnostic fallback behavior for missing or invalid assets.
 
 #### 11.3 Real Room Layout & Entity Spawn Pipeline (`FR###.1`)
 - [x] Update `load_room_tilemap_from_resource_file` to consume `FR###.1` payloads directly via the level tuple resolver.
 - [x] Parse room table header (`room_count`, `level_id`) and individual room dimensions (`tile_w`, `tile_h`).
 - [x] Decode Signed-RLE room tilemap bytes into `RuntimeState::room_grid.tile_data` with indices indexing `RuntimeState::level_tileset`.
-- [ ] Extract `MappedObject12` records from room payload and populate `RuntimeState::mapped_objects`.
-- [ ] Update `draw_room_tilemap_from_asset` in `src/bootstrap.cpp` to render tiles directly from `RuntimeState::level_tileset` instead of slicing `FRPAK.001`.
+- [x] Extract `MappedObject12` records from room payload and populate `RuntimeState::mapped_objects`.
+- [x] Update bootstrap room-tile rendering to use `RuntimeState::level_tileset` when available instead of relying on `FRPAK.001` tile slicing.
 - [ ] Add tests verifying Room 0 through Room N layouts for Level 0, valid tile index bounds, and entity list population.
 
 #### 11.4 Masked Sprite Sheet Decoder (`FR###.2`)
@@ -1359,6 +1362,7 @@ Cross-referencing `comic2.asm` (specifically `load_resource` at line 2396 and ta
 **Objective**: Replace placeholder box sprites with decoded real sprites in renderer.
 **Files**: `src/renderer.cpp`, `src/bootstrap.cpp`, `tests/renderer_tests.cpp`.
 **Scope**: Blit real Comic walk/jump/shoot frames, enemy sprites, and projectiles using masked blit.
+**Status**: [x] Runtime entity and projectile rendering now tries `RuntimeState::level_sprites` first and retains placeholder fallback when records are absent or invalid.
 
 #### PR 11-D1: Bezel Compositing (`FRPAK.001`) & Viewport Clipping
 **Objective**: Composite in-game viewport and HUD status counters onto the `FRPAK.001` border bezel.

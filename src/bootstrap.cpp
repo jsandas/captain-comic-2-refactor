@@ -182,6 +182,27 @@ bool has_room_grid_data(const RuntimeState &state) {
          !state.room_grid.tile_data.empty();
 }
 
+bool has_valid_level_tileset(const RuntimeState &state) {
+  if (state.level_tileset.empty()) {
+    return false;
+  }
+
+  for (const auto &tile : state.level_tileset) {
+    if (tile.width_bytes != 2U || tile.height_rows != kTileSizePixels ||
+        tile.row_span_bytes != 32U) {
+      return false;
+    }
+
+    for (const auto &plane : tile.planes) {
+      if (plane.size() != 32U) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
 void clamp_player_to_room_bounds(RuntimeState &state) {
   if (!has_room_grid_data(state)) {
     return;
@@ -508,6 +529,61 @@ bool extract_tile_from_asset(const Ega4PlaneImage &atlas,
   return true;
 }
 
+bool draw_room_tilemap_from_level_tileset(EgaPlanarSurface &frame,
+                                          const RuntimeState &state) {
+  if (!has_room_grid_data(state) || !has_valid_level_tileset(state)) {
+    return false;
+  }
+
+  const std::size_t visible_tiles_x =
+      static_cast<std::size_t>(frame.width_pixels()) / kTileSizePixels;
+  const std::size_t start_tile_x =
+      state.camera_x > 0 ? static_cast<std::size_t>(state.camera_x) /
+                               static_cast<std::size_t>(kTileSizePixels)
+                         : 0U;
+  const std::size_t end_tile_x =
+      std::min(static_cast<std::size_t>(state.room_grid.tile_w),
+               start_tile_x + visible_tiles_x + 1U);
+
+  for (std::size_t tile_y = 0; tile_y < state.room_grid.tile_h; ++tile_y) {
+    const std::int32_t py0 =
+        static_cast<std::int32_t>(tile_y * kTileSizePixels) - state.camera_y;
+
+    if (py0 + kTileSizePixels <= 0) {
+      continue;
+    }
+    if (py0 >= static_cast<std::int32_t>(frame.height_rows())) {
+      break;
+    }
+    if (py0 < 0) {
+      continue;
+    }
+    if (py0 + kTileSizePixels >
+        static_cast<std::int32_t>(frame.height_rows())) {
+      break;
+    }
+
+    for (std::size_t tile_x = start_tile_x; tile_x < end_tile_x; ++tile_x) {
+      const std::uint8_t tile_id = read_room_tile(state, tile_x, tile_y);
+      if (tile_id >= state.level_tileset.size()) {
+        return false;
+      }
+
+      const std::int32_t px0 =
+          static_cast<std::int32_t>(tile_x * kTileSizePixels) - state.camera_x;
+      if (px0 < 0 || px0 + kTileSizePixels > frame.width_pixels()) {
+        continue;
+      }
+
+      gfx_rle_blit_opaque_4plane(frame, static_cast<std::size_t>(px0),
+                                 static_cast<std::size_t>(py0),
+                                 state.level_tileset[tile_id]);
+    }
+  }
+
+  return true;
+}
+
 bool draw_room_tilemap_from_asset(EgaPlanarSurface &frame,
                                   const RuntimeState &state,
                                   const Ega4PlaneImage &atlas) {
@@ -822,16 +898,23 @@ std::size_t estimate_runtime_state_bytes(const RuntimeState &state) {
 void render_bootstrap_frame(IFramePresenter &presenter, RuntimeState &state) {
   EgaPlanarSurface frame(320, 200);
   const bool has_room_grid = has_room_grid_data(state);
+  bool used_level_tileset_background = false;
   bool used_asset_background = false;
   std::optional<Ega4PlaneImage> asset;
 
-  if ((asset = try_decode_bootstrap_asset(state)).has_value()) {
+  if (has_valid_level_tileset(state) && has_room_grid) {
+    used_level_tileset_background =
+        draw_room_tilemap_from_level_tileset(frame, state);
+  }
+
+  if (!used_level_tileset_background &&
+      (asset = try_decode_bootstrap_asset(state)).has_value()) {
     used_asset_background = draw_room_tilemap_from_asset(frame, state, *asset);
   }
 
-  if (!used_asset_background && has_room_grid) {
+  if (!used_level_tileset_background && !used_asset_background && has_room_grid) {
     draw_room_tilemap(frame, state);
-  } else if (!used_asset_background) {
+  } else if (!used_level_tileset_background && !used_asset_background) {
     draw_fallback_background(frame, state);
   }
 

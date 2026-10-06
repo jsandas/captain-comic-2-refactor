@@ -204,6 +204,92 @@ void EgaPageFlipper::present_and_flip_page() {
 
 namespace {
 
+bool is_valid_masked_sprite_record(const MaskedSpriteRecord &record) {
+  if (record.width_pixels == 0U || record.height_rows == 0U) {
+    return false;
+  }
+
+  const auto expected_mask_bytes = record.mask_byte_count();
+  if (expected_mask_bytes == 0U || record.mask_bytes.size() != expected_mask_bytes ||
+      record.mask_bytes.empty()) {
+    return false;
+  }
+
+  for (const auto &plane : record.planes) {
+    if (plane.size() != expected_mask_bytes) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+Ega4PlaneImage make_masked_sprite_image(const MaskedSpriteRecord &record) {
+  Ega4PlaneImage image{};
+  image.width_bytes =
+      static_cast<std::uint16_t>((record.width_pixels + 7U) / 8U);
+  image.height_rows = record.height_rows;
+  image.row_span_bytes = static_cast<std::uint16_t>(
+      image.width_bytes * static_cast<std::uint16_t>(record.height_rows));
+
+  for (std::size_t plane = 0; plane < record.planes.size(); ++plane) {
+    const auto &source = record.planes[plane];
+    auto &target = image.planes[plane];
+    target.assign(source.begin(), source.end());
+  }
+
+  return image;
+}
+
+std::size_t map_runtime_entity_slot_to_sprite_index(
+    const RuntimeEntitySlot32 &slot) {
+  const std::uint16_t mixed =
+      static_cast<std::uint16_t>(slot.type_flags ^ slot.behavior_state ^
+                                 slot.mapped_object_ptr);
+  return static_cast<std::size_t>(mixed & 0x0FU);
+}
+
+std::size_t map_projectile_to_sprite_index(const ProjectileState &projectile) {
+  const auto frame = static_cast<std::int16_t>(projectile.anim_frame);
+  const auto abs_frame =
+      static_cast<std::uint16_t>(frame < 0 ? -frame : frame);
+  return static_cast<std::size_t>(abs_frame & 0x0FU);
+}
+
+bool try_draw_level_sprite_record(EgaPlanarSurface &frame,
+                                  const RuntimeState &state,
+                                  std::size_t sprite_index,
+                                  std::int32_t x_pixels,
+                                  std::int32_t y_rows, std::int32_t width,
+                                  std::int32_t height) {
+  if (sprite_index >= state.level_sprites.size()) {
+    return false;
+  }
+
+  const auto &record = state.level_sprites[sprite_index];
+  if (!is_valid_masked_sprite_record(record)) {
+    return false;
+  }
+
+  if (!is_sprite_in_viewport(x_pixels, y_rows, width, height)) {
+    return true;
+  }
+
+  const auto sprite = make_masked_sprite_image(record);
+  const std::int32_t max_x = std::max<std::int32_t>(
+      0, static_cast<std::int32_t>(frame.width_pixels()) - width);
+  const std::int32_t max_y = std::max<std::int32_t>(
+      0, static_cast<std::int32_t>(frame.height_rows()) - height);
+  const std::int32_t clamped_x =
+      std::max<std::int32_t>(0, std::min(x_pixels, max_x));
+  const std::int32_t clamped_y =
+      std::max<std::int32_t>(0, std::min(y_rows, max_y));
+
+  gfx_rle_blit_masked_or_4plane(frame, static_cast<std::size_t>(clamped_x),
+                                static_cast<std::size_t>(clamped_y), sprite);
+  return true;
+}
+
 std::uint8_t resolve_entity_color(const RuntimeEntitySlot32 &slot) {
   const auto behavior = slot.behavior_state & 0x000F;
   if (behavior == kBehaviorGem) {
@@ -431,11 +517,6 @@ void gfx_rle_blit_masked_or_4plane(EgaPlanarSurface &dest, std::size_t x_pixels,
 
 void draw_runtime_entity_sprites(EgaPlanarSurface &frame,
                                  const RuntimeState &state) {
-  const std::int32_t max_x = std::max<std::int32_t>(
-      0, static_cast<std::int32_t>(frame.width_pixels()) - 16);
-  const std::int32_t max_y = std::max<std::int32_t>(
-      0, static_cast<std::int32_t>(frame.height_rows()) - 16);
-
   for (const auto &slot : state.runtime_slots) {
     if (!is_runtime_slot_active(slot)) {
       continue;
@@ -446,10 +527,21 @@ void draw_runtime_entity_sprites(EgaPlanarSurface &frame,
     if (px0 < -16 || py0 < -16) {
       continue;
     }
+
+    const auto sprite_index = map_runtime_entity_slot_to_sprite_index(slot);
+    if (try_draw_level_sprite_record(frame, state, sprite_index, px0, py0, 16,
+                                     16)) {
+      continue;
+    }
+
     if (!is_sprite_in_viewport(px0, py0, 16, 16)) {
       continue;
     }
 
+    const std::int32_t max_x = std::max<std::int32_t>(
+        0, static_cast<std::int32_t>(frame.width_pixels()) - 16);
+    const std::int32_t max_y = std::max<std::int32_t>(
+        0, static_cast<std::int32_t>(frame.height_rows()) - 16);
     const std::int32_t clamped_x =
         std::max<std::int32_t>(0, std::min(px0, max_x));
     const std::int32_t clamped_y =
@@ -462,11 +554,6 @@ void draw_runtime_entity_sprites(EgaPlanarSurface &frame,
 
 void draw_runtime_projectile_sprites(EgaPlanarSurface &frame,
                                      const RuntimeState &state) {
-  const std::int32_t max_x = std::max<std::int32_t>(
-      0, static_cast<std::int32_t>(frame.width_pixels()) - 16);
-  const std::int32_t max_y = std::max<std::int32_t>(
-      0, static_cast<std::int32_t>(frame.height_rows()) - 16);
-
   for (const auto &projectile : state.projectiles) {
     if (!projectile.active) {
       continue;
@@ -477,10 +564,21 @@ void draw_runtime_projectile_sprites(EgaPlanarSurface &frame,
     if (px0 < -8 || py0 < -8) {
       continue;
     }
+
+    const auto sprite_index = map_projectile_to_sprite_index(projectile);
+    if (try_draw_level_sprite_record(frame, state, sprite_index, px0, py0, 8,
+                                     8)) {
+      continue;
+    }
+
     if (!is_sprite_in_viewport(px0, py0, 8, 8)) {
       continue;
     }
 
+    const std::int32_t max_x = std::max<std::int32_t>(
+        0, static_cast<std::int32_t>(frame.width_pixels()) - 8);
+    const std::int32_t max_y = std::max<std::int32_t>(
+        0, static_cast<std::int32_t>(frame.height_rows()) - 8);
     const std::int32_t clamped_x =
         std::max<std::int32_t>(0, std::min(px0, max_x));
     const std::int32_t clamped_y =
