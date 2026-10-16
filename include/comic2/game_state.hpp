@@ -189,6 +189,7 @@ struct RuntimeState {
   FrpakCatalog frpak_catalog;
   std::vector<std::uint8_t> sprite_resource_bytes;
   std::vector<FrpakDecodedRecordCacheEntry> frpak_decode_cache;
+  std::optional<Ega4PlaneImage> bezel_frame;
 
   PlayerState player;
   InputState input;

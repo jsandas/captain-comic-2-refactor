@@ -1283,6 +1283,25 @@ void test_phase11_fr000_masked_sprite_sheet_decode_parity() {
   expect(decoded.has_value(), "FR000.2 should decode as a valid sprite sheet");
   expect_eq(decoded->size(), 32,
             "FR000.2 should contain 32 sequential masked records");
+
+  const std::array<std::size_t, 4> sample_points = {0U, 1U, 8U, 31U};
+  for (const auto index : sample_points) {
+    expect(index < decoded->size(),
+           "FR000.2 sample record index should stay within the decoded sheet");
+    const auto &sprite = decoded->at(index);
+    expect(sprite.width_pixels > 0 && sprite.height_rows > 0,
+           "FR000.2 sample sprite should have valid non-zero dimensions");
+    expect(sprite.mask_bytes.size() ==
+               ((sprite.width_pixels + 7U) / 8U) * sprite.height_rows,
+           "FR000.2 mask payload should match the packed 1-bit bitmap sizing");
+    expect(sprite.planes.size() == 4,
+           "FR000.2 sample sprite should expose the four EGA image planes");
+    for (const auto &plane : sprite.planes) {
+      expect(plane.size() == sprite.mask_bytes.size(),
+             "FR000.2 sprite plane payloads should match the mask dimensions");
+    }
+  }
+
   expect(decoded->front().width_pixels == 16,
          "first sprite in FR000.2 should be a 16-pixel wide Comic frame");
   expect(decoded->front().height_rows == 24,
@@ -1305,6 +1324,28 @@ void test_phase11_level_resource_tuple_catalog() {
   const auto root = find_original_asset_root();
   expect(!root.empty(), "original asset root should be discoverable");
 
+  for (std::uint16_t level = 0; level <= 14; ++level) {
+    const auto tuple = comic2::resolve_level_resource_tuple(level, root);
+    expect(tuple.has_value(), "all 15 canonical level tuples should resolve in "
+                              "the original asset root");
+    expect(!tuple->tileset_filename.empty(),
+           "level tuple should carry a tileset filename");
+    expect(!tuple->room_layout_filename.empty(),
+           "level tuple should carry a room-layout filename");
+    expect(!tuple->sprite_sheet_filename.empty(),
+           "level tuple should carry a sprite-sheet filename");
+    expect(std::filesystem::exists(root / tuple->tileset_filename),
+           "level tuple tileset should exist in the original asset root");
+    expect(std::filesystem::exists(root / tuple->room_layout_filename),
+           "level tuple room file should exist in the original asset root");
+    expect(std::filesystem::exists(root / tuple->sprite_sheet_filename),
+           "level tuple sprite file should exist in the original asset root");
+    if (tuple->has_script()) {
+      expect(std::filesystem::exists(root / tuple->script_filename),
+             "level tuple script should exist in the original asset root");
+    }
+  }
+
   const auto level0 = comic2::resolve_level_resource_tuple(0, root);
   expect(level0.has_value(), "level 0 tuple should resolve to original files");
   expect(level0->tileset_filename == "FR000.0",
@@ -1323,6 +1364,43 @@ void test_phase11_level_resource_tuple_catalog() {
 
   const auto invalid = comic2::resolve_level_resource_tuple(99, root);
   expect(!invalid.has_value(), "out-of-range level ids should fail cleanly");
+}
+
+void test_phase11_fr000_room0_layout_loads_from_asset_root() {
+  const auto root = find_original_asset_root();
+  expect(!root.empty(), "original asset root should be discoverable");
+
+  const auto tileset_bytes = comic2::load_file_bytes(root / "FR000.0");
+  expect(tileset_bytes.has_value(), "FR000.0 should be readable");
+  const auto tileset = comic2::decode_level_tileset(
+      std::span<const std::uint8_t>(*tileset_bytes));
+  expect(tileset.has_value(), "FR000.0 should decode to a valid tileset");
+
+  comic2::RuntimeState state;
+  state.level_tileset = tileset->tiles;
+  state.tile_hazard_bounds = tileset->hazard_bounds;
+
+  const bool loaded =
+      comic2::load_room_tilemap_from_asset_root(state, root, 0, 0);
+  expect(loaded,
+         "Level 0 Room 0 should load from FR000.1 in the original asset root");
+  expect(state.room_grid.tile_w == 80,
+         "Level 0 Room 0 should resolve to the original 80-tile width");
+  expect(state.room_grid.tile_h == 30,
+         "Level 0 Room 0 should resolve to the original 30-tile height");
+  expect_eq(state.room_grid.tile_data.size(), 2400U,
+            "Level 0 Room 0 should unpack the full 80x30 room tile buffer");
+  expect(state.room_grid.row_pointers.size() == 30,
+         "Level 0 Room 0 row-pointer table should cover every room row");
+  expect(!state.room_grid.tile_data.empty(),
+         "Level 0 Room 0 tile data should remain populated after load");
+  for (const auto tile_index : state.room_grid.tile_data) {
+    expect(static_cast<std::size_t>(tile_index) < state.level_tileset.size(),
+           "room tile indices should remain in bounds for the loaded tileset");
+  }
+  expect(!state.room_resource_bytes.empty(),
+         "Level 0 Room 0 should retain the loaded room bytes for downstream "
+         "parsing");
 }
 
 void test_phase11_fr000_tileset_decode_parity() {
@@ -1453,5 +1531,6 @@ void run_subsystem_scaffold_tests() {
   test_phase11_player_animation_state_mapping_contract();
   test_phase11_fr000_masked_sprite_sheet_decode_parity();
   test_phase11_level_resource_tuple_catalog();
+  test_phase11_fr000_room0_layout_loads_from_asset_root();
   test_phase11_fr000_tileset_decode_parity();
 }

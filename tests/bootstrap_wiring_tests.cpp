@@ -485,6 +485,67 @@ void test_render_bootstrap_frame_uses_level_tileset_bytes_when_available() {
         "diagnostic per-tile color fallback");
 }
 
+void set_bezel_pixel(comic2::Ega4PlaneImage &image, std::size_t x,
+                     std::size_t y, std::uint8_t color_index) {
+  const auto x_byte = x / 8U;
+  const auto bit = static_cast<std::uint8_t>(7U - (x % 8U));
+  const auto mask = static_cast<std::uint8_t>(1U << bit);
+  const auto row_offset = y * image.width_bytes;
+
+  for (std::size_t plane = 0; plane < image.planes.size(); ++plane) {
+    auto &plane_data = image.planes[plane];
+    auto value = plane_data[row_offset + x_byte];
+    if ((color_index >> plane) & 0x1U) {
+      value |= mask;
+    } else {
+      value &= static_cast<std::uint8_t>(~mask);
+    }
+    plane_data[row_offset + x_byte] = value;
+  }
+}
+
+void test_render_bootstrap_frame_uses_bezel_canvas_when_available() {
+  auto state = comic2::make_default_runtime_state();
+  state.bezel_frame = comic2::Ega4PlaneImage{};
+  auto &bezel = *state.bezel_frame;
+  bezel.width_bytes = 40U;
+  bezel.height_rows = 200U;
+  bezel.row_span_bytes = 0x1F40U;
+  for (auto &plane : bezel.planes) {
+    plane.assign(8000U, 0x00U);
+  }
+  set_bezel_pixel(bezel, 10U, 20U, 0x05U);
+
+  comic2::MemoryFramePresenter presenter;
+  comic2::render_bootstrap_frame(presenter, state);
+
+  check(presenter.has_frame(),
+        "bezel-backed renders should still present a frame");
+  const auto &frame = presenter.last_frame();
+  const auto color = read_color_index(frame, 10U, 20U);
+
+  check(color == 0x05U,
+        "render should start from the decoded bezel canvas when available");
+}
+
+void test_render_bootstrap_frame_falls_back_without_bezel_canvas() {
+  auto state = comic2::make_default_runtime_state();
+  state.bezel_frame.reset();
+  state.room_grid.tile_w = 0;
+  state.room_grid.tile_h = 0;
+
+  comic2::MemoryFramePresenter presenter;
+  comic2::render_bootstrap_frame(presenter, state);
+
+  check(presenter.has_frame(), "fallback render should still present a frame");
+  const auto &frame = presenter.last_frame();
+  const auto color = read_color_index(frame, 0U, 0U);
+
+  check(color == 0x0FU,
+        "render should keep the procedural fallback background when bezel data "
+        "is unavailable");
+}
+
 void test_render_bootstrap_frame_renders_scrolled_right_edge_tiles() {
   auto state = comic2::make_default_runtime_state();
   state.player.x = 300;
@@ -912,6 +973,8 @@ void run_bootstrap_wiring_tests() {
   test_render_bootstrap_frame_uses_room_tile_data();
   test_render_bootstrap_frame_uses_level_tileset_bytes_when_available();
   test_render_bootstrap_frame_renders_scrolled_right_edge_tiles();
+  test_render_bootstrap_frame_uses_bezel_canvas_when_available();
+  test_render_bootstrap_frame_falls_back_without_bezel_canvas();
   test_render_bootstrap_frame_renders_active_runtime_entities();
   test_render_bootstrap_frame_distinguishes_pickups_from_enemies();
   test_render_bootstrap_frame_renders_active_projectiles();

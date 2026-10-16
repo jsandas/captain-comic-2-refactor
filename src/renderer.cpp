@@ -210,7 +210,8 @@ bool is_valid_masked_sprite_record(const MaskedSpriteRecord &record) {
   }
 
   const auto expected_mask_bytes = record.mask_byte_count();
-  if (expected_mask_bytes == 0U || record.mask_bytes.size() != expected_mask_bytes ||
+  if (expected_mask_bytes == 0U ||
+      record.mask_bytes.size() != expected_mask_bytes ||
       record.mask_bytes.empty()) {
     return false;
   }
@@ -241,27 +242,67 @@ Ega4PlaneImage make_masked_sprite_image(const MaskedSpriteRecord &record) {
   return image;
 }
 
-std::size_t map_runtime_entity_slot_to_sprite_index(
-    const RuntimeEntitySlot32 &slot) {
-  const std::uint16_t mixed =
-      static_cast<std::uint16_t>(slot.type_flags ^ slot.behavior_state ^
-                                 slot.mapped_object_ptr);
-  return static_cast<std::size_t>(mixed & 0x0FU);
+std::size_t
+map_runtime_entity_slot_to_sprite_index(const RuntimeState &state,
+                                        const RuntimeEntitySlot32 &slot) {
+  std::vector<std::size_t> candidates;
+  candidates.reserve(state.level_sprites.size());
+  for (std::size_t i = 0; i < state.level_sprites.size(); ++i) {
+    const auto &record = state.level_sprites[i];
+    if (!is_valid_masked_sprite_record(record)) {
+      continue;
+    }
+    if (record.width_pixels == 16U && record.height_rows == 16U) {
+      candidates.push_back(i);
+    }
+  }
+
+  if (candidates.empty()) {
+    return static_cast<std::size_t>(state.level_sprites.size());
+  }
+
+  const auto behavior =
+      static_cast<std::uint16_t>(slot.behavior_state & 0x000F);
+  if (behavior == kBehaviorGem) {
+    return candidates.front();
+  }
+  if (behavior == kBehaviorPowerup) {
+    return candidates.size() > 1U ? candidates[1] : candidates.front();
+  }
+
+  const std::uint16_t mixed = static_cast<std::uint16_t>(
+      slot.type_flags ^ slot.behavior_state ^ slot.mapped_object_ptr);
+  return candidates[static_cast<std::size_t>(mixed) % candidates.size()];
 }
 
-std::size_t map_projectile_to_sprite_index(const ProjectileState &projectile) {
+std::size_t map_projectile_to_sprite_index(const RuntimeState &state,
+                                           const ProjectileState &projectile) {
+  std::vector<std::size_t> candidates;
+  candidates.reserve(state.level_sprites.size());
+  for (std::size_t i = 0; i < state.level_sprites.size(); ++i) {
+    const auto &record = state.level_sprites[i];
+    if (!is_valid_masked_sprite_record(record)) {
+      continue;
+    }
+    if (record.width_pixels == 16U && record.height_rows == 8U) {
+      candidates.push_back(i);
+    }
+  }
+
+  if (candidates.empty()) {
+    return static_cast<std::size_t>(state.level_sprites.size());
+  }
+
   const auto frame = static_cast<std::int16_t>(projectile.anim_frame);
-  const auto abs_frame =
-      static_cast<std::uint16_t>(frame < 0 ? -frame : frame);
-  return static_cast<std::size_t>(abs_frame & 0x0FU);
+  const auto abs_frame = static_cast<std::uint16_t>(frame < 0 ? -frame : frame);
+  return candidates[static_cast<std::size_t>(abs_frame) % candidates.size()];
 }
 
 bool try_draw_level_sprite_record(EgaPlanarSurface &frame,
                                   const RuntimeState &state,
                                   std::size_t sprite_index,
-                                  std::int32_t x_pixels,
-                                  std::int32_t y_rows, std::int32_t width,
-                                  std::int32_t height) {
+                                  std::int32_t x_pixels, std::int32_t y_rows,
+                                  std::int32_t width, std::int32_t height) {
   if (sprite_index >= state.level_sprites.size()) {
     return false;
   }
@@ -528,7 +569,8 @@ void draw_runtime_entity_sprites(EgaPlanarSurface &frame,
       continue;
     }
 
-    const auto sprite_index = map_runtime_entity_slot_to_sprite_index(slot);
+    const auto sprite_index =
+        map_runtime_entity_slot_to_sprite_index(state, slot);
     if (try_draw_level_sprite_record(frame, state, sprite_index, px0, py0, 16,
                                      16)) {
       continue;
@@ -565,7 +607,7 @@ void draw_runtime_projectile_sprites(EgaPlanarSurface &frame,
       continue;
     }
 
-    const auto sprite_index = map_projectile_to_sprite_index(projectile);
+    const auto sprite_index = map_projectile_to_sprite_index(state, projectile);
     if (try_draw_level_sprite_record(frame, state, sprite_index, px0, py0, 8,
                                      8)) {
       continue;

@@ -225,14 +225,48 @@ void test_runtime_entity_render_prefers_level_sprite_record() {
 void test_runtime_projectile_render_prefers_level_sprite_record() {
   comic2::RuntimeState state = comic2::make_default_runtime_state();
   state.level_sprites.resize(16);
-  state.level_sprites[1] = make_test_masked_record(1, 0x01U, 8U, 8U);
+  state.level_sprites[1] = make_test_masked_record(1, 0x01U, 16U, 8U);
   state.projectiles.push_back(comic2::ProjectileState{0, 0, 0, 0, 1, true});
 
   comic2::EgaPlanarSurface frame(320, 200);
   comic2::draw_runtime_projectile_sprites(frame, state);
 
+  expect(
+      read_surface_color(frame, 0, 0) == 0x01,
+      "projectile sprite path should prefer the decoded level sprite record");
+}
+
+void test_runtime_entity_render_selects_16x16_records_for_behavior_types() {
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  state.level_sprites.resize(20);
+  state.level_sprites[1] = make_test_masked_record(1, 0x01U, 8U, 8U);
+  state.level_sprites[17] = make_test_masked_record(17, 0x01U, 16U, 16U);
+  state.runtime_slots.resize(1);
+  state.runtime_slots[0].x = 0;
+  state.runtime_slots[0].y = 0;
+  state.runtime_slots[0].mapped_object_ptr = 1;
+  state.runtime_slots[0].behavior_state = comic2::kBehaviorGem;
+  state.runtime_slots[0].type_flags = 0;
+
+  comic2::EgaPlanarSurface frame(320, 200);
+  comic2::draw_runtime_entity_sprites(frame, state);
+
   expect(read_surface_color(frame, 0, 0) == 0x01,
-         "projectile sprite path should prefer the decoded level sprite record");
+         "entity behavior mapping should select a decoded 16x16 record");
+}
+
+void test_runtime_projectile_render_selects_16x8_records() {
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  state.level_sprites.resize(20);
+  state.level_sprites[1] = make_test_masked_record(1, 0x01U, 8U, 8U);
+  state.level_sprites[18] = make_test_masked_record(18, 0x01U, 16U, 8U);
+  state.projectiles.push_back(comic2::ProjectileState{0, 0, 0, 0, 0, true});
+
+  comic2::EgaPlanarSurface frame(320, 200);
+  comic2::draw_runtime_projectile_sprites(frame, state);
+
+  expect(read_surface_color(frame, 0, 0) == 0x01,
+         "projectile mapping should select a decoded 16x8 record");
 }
 
 void test_runtime_sprite_render_falls_back_when_records_are_unavailable() {
@@ -249,14 +283,16 @@ void test_runtime_sprite_render_falls_back_when_records_are_unavailable() {
   comic2::draw_runtime_entity_sprites(frame, state);
 
   expect(read_surface_color(frame, 0, 0) != 0x00,
-         "entity render should still use the placeholder sprite when no level records exist");
+         "entity render should still use the placeholder sprite when no level "
+         "records exist");
 
   state.projectiles.push_back(comic2::ProjectileState{0, 0, 0, 0, 0, true});
   frame.clear();
   comic2::draw_runtime_projectile_sprites(frame, state);
 
   expect(read_surface_color(frame, 0, 0) != 0x00,
-         "projectile render should still use the placeholder sprite when no level records exist");
+         "projectile render should still use the placeholder sprite when no "
+         "level records exist");
 }
 
 void test_invulnerability_blink_visibility_uses_tick_parity() {
@@ -426,6 +462,8 @@ void run_renderer_tests() {
   test_player_sprite_frame_selection_uses_facing_direction();
   test_runtime_entity_render_prefers_level_sprite_record();
   test_runtime_projectile_render_prefers_level_sprite_record();
+  test_runtime_entity_render_selects_16x16_records_for_behavior_types();
+  test_runtime_projectile_render_selects_16x8_records();
   test_runtime_sprite_render_falls_back_when_records_are_unavailable();
   test_invulnerability_blink_visibility_uses_tick_parity();
   test_camera_y_clamps_to_room_bounds();

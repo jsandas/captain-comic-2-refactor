@@ -717,6 +717,25 @@ load_initial_bootstrap_resources(RuntimeState &state,
     }
   }
 
+  if (!state.bezel_frame.has_value()) {
+    const auto bezel_record =
+        find_frpak_catalog_record(state.frpak_catalog, 1U, 0U);
+    if (bezel_record.has_value()) {
+      const auto decoded = decode_frpak_catalog_record(state, *bezel_record);
+      if (decoded.has_value()) {
+        Ega4PlaneImage image = *decoded;
+        if (image.row_span_bytes > 0U && image.row_span_bytes % 40U == 0U) {
+          image.width_bytes = 40U;
+          image.height_rows =
+              static_cast<std::uint16_t>(image.row_span_bytes / 40U);
+        }
+        if (image.width_bytes == 40U && image.height_rows == 200U) {
+          state.bezel_frame = image;
+        }
+      }
+    }
+  }
+
   return summary;
 }
 

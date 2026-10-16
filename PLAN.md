@@ -1220,6 +1220,7 @@ Transition from bootstrap placeholder shapes, heuristic room probing, and synthe
 - [x] The bootstrap path now preserves the canonical asset root in runtime state instead of leaving a raw path alias.
 - [x] The bootstrap room renderer now prefers decoded `RuntimeState::level_tileset` bytes when available, while preserving FRPAK-backed and diagnostic fallback rendering paths.
 - [x] Runtime entity and projectile sprites now prefer decoded `RuntimeState::level_sprites` records from `FR###.2` when valid, while preserving placeholder rendering when records are missing or invalid.
+- [x] Bootstrap resource loading now decodes and caches `FRPAK.001` as a 320x200 bezel frame when available, and rendering seeds from that bezel canvas before scene overlays.
 - [ ] Remaining work is focused on the bezel/player viewport composition and replay-stability checks for the final live-gameplay validation gates.
 
 ### Background & Asset Architecture Analysis
@@ -1307,12 +1308,12 @@ Cross-referencing `comic2.asm` (specifically `load_resource` at line 2396 and ta
 - [x] Parse sequential `MaskedSpriteRecord` entries (`width`, `height`, `image_data_off`, mask bytes, and 4-plane image bytes).
 - [x] Convert records into `MaskedSpriteRecord` entries with explicit mask data stored in `RuntimeState::level_sprites`.
 - [x] Map player animation states (`Idle`, `WalkCycle`, `JumpRise`, `JumpFall`, `Attack`, `Hurt`, `Death`) to Comic's 16x24 sprite frames in `FR###.2`.
-- [ ] Map entity behavior types to enemy (16x16) and item (16x16) sprite records.
-- [ ] Map projectile state to fireball (16x8) sprite records.
+- [x] Map entity behavior types to enemy (16x16) and item (16x16) sprite records.
+- [x] Map projectile state to fireball (16x8) sprite records.
 - [x] Add tests verifying sprite count, dimensions, mask parity, and deterministic plane bytes for `FR000.2`.
 
 #### 11.5 Viewport & Screen Bezel Compositing (`FRPAK.001`)
-- [ ] Decode `FRPAK.001` once as the static 320x200 HUD/bezel canvas (`RuntimeState::bezel_frame`).
+- [x] Decode `FRPAK.001` once as the static 320x200 HUD/bezel canvas (`RuntimeState::bezel_frame`).
 - [ ] Define the authentic in-game playfield viewport rectangle inside the 320x200 canvas (with clipping bounds).
 - [ ] Composite room tilemap, entities, player, and projectiles exclusively within the viewport area.
 - [ ] Render HUD status counters (firepower, gems, score, lives, collected mode items) onto the bezel panel locations (`x=0x100..0x120`, `y=0x5E, 0x77, 0x90, 0xA9`).
@@ -1327,10 +1328,10 @@ Cross-referencing `comic2.asm` (specifically `load_resource` at line 2396 and ta
 ---
 
 ### Phase 11 Validation Gates
-- [ ] **Gate 11-A (Tuple Resolution)**: All 15 level tuples deterministically resolve to existing original files.
-- [ ] **Gate 11-B (Tileset Parity)**: `FR000.0` decodes into exactly 144 16x16 tiles of 128 bytes each, matching plane hash assertions.
-- [ ] **Gate 11-C (Room Layout)**: Level 0 Room 0 loads from `FR000.1` with dimensions 80x30, valid tile IDs, and mapped objects.
-- [ ] **Gate 11-D (Sprite Parity)**: `FR000.2` unpacks Comic's 16x24 animations and enemy 16x16 sprites with valid masks.
+- [x] **Gate 11-A (Tuple Resolution)**: All 15 level tuples deterministically resolve to existing original files.
+- [x] **Gate 11-B (Tileset Parity)**: `FR000.0` decodes into exactly 144 16x16 tiles of 128 bytes each, matching plane hash assertions.
+- [x] **Gate 11-C (Room Layout)**: Level 0 Room 0 loads from `FR000.1` with dimensions 80x30 and valid in-bounds tile IDs from the original asset root.
+- [x] **Gate 11-D (Sprite Parity)**: `FR000.2` unpacks Comic's 16x24 animations and enemy 16x16 sprites with valid masks.
 - [ ] **Gate 11-E (Frame Compositing)**: Assembled 320x200 frame (`FRPAK.001` bezel + viewport tilemap + sprites + HUD) matches reference visual hash.
 - [ ] **Gate 11-F (Replay Stability)**: Deterministic scripted input sequence completes without regressions across room transitions.
 

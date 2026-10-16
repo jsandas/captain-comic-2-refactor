@@ -370,6 +370,33 @@ std::uint8_t read_room_tile(const RuntimeState &state, std::size_t tile_x,
   return state.room_grid.tile_data[off];
 }
 
+void copy_bezel_canvas(EgaPlanarSurface &frame, const Ega4PlaneImage &bezel) {
+  const std::size_t width_bytes =
+      std::min<std::size_t>(bezel.width_bytes, frame.row_stride_bytes());
+  const std::size_t height_rows =
+      std::min<std::size_t>(bezel.height_rows, frame.height_rows());
+  const std::size_t bezel_row_bytes =
+      bezel.width_bytes == 0U ? 1U
+                              : static_cast<std::size_t>(bezel.width_bytes);
+
+  for (std::size_t plane = 0; plane < EgaPlanarSurface::kPlaneCount; ++plane) {
+    const auto &source = bezel.planes[plane];
+    if (source.empty()) {
+      continue;
+    }
+
+    for (std::size_t y = 0; y < height_rows; ++y) {
+      const auto source_row_offset = y * bezel_row_bytes;
+      if (source_row_offset + width_bytes > source.size()) {
+        break;
+      }
+      for (std::size_t x = 0; x < width_bytes; ++x) {
+        frame.set_plane_byte(plane, x, y, source[source_row_offset + x]);
+      }
+    }
+  }
+}
+
 void draw_fallback_background(EgaPlanarSurface &frame,
                               const RuntimeState &state) {
   frame.clear(static_cast<std::uint8_t>(
@@ -898,9 +925,15 @@ std::size_t estimate_runtime_state_bytes(const RuntimeState &state) {
 void render_bootstrap_frame(IFramePresenter &presenter, RuntimeState &state) {
   EgaPlanarSurface frame(320, 200);
   const bool has_room_grid = has_room_grid_data(state);
+  bool used_bezel_background = false;
   bool used_level_tileset_background = false;
   bool used_asset_background = false;
   std::optional<Ega4PlaneImage> asset;
+
+  if (state.bezel_frame.has_value()) {
+    copy_bezel_canvas(frame, *state.bezel_frame);
+    used_bezel_background = true;
+  }
 
   if (has_valid_level_tileset(state) && has_room_grid) {
     used_level_tileset_background =
@@ -912,9 +945,11 @@ void render_bootstrap_frame(IFramePresenter &presenter, RuntimeState &state) {
     used_asset_background = draw_room_tilemap_from_asset(frame, state, *asset);
   }
 
-  if (!used_level_tileset_background && !used_asset_background && has_room_grid) {
+  if (!used_level_tileset_background && !used_asset_background &&
+      has_room_grid) {
     draw_room_tilemap(frame, state);
-  } else if (!used_level_tileset_background && !used_asset_background) {
+  } else if (!used_level_tileset_background && !used_asset_background &&
+             !used_bezel_background) {
     draw_fallback_background(frame, state);
   }
 
