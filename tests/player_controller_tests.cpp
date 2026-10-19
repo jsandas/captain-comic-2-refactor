@@ -356,19 +356,40 @@ void test_verified_dos_feet_probe_tile_collision() {
   state.room_grid =
       make_flat_floor_grid(); // 2x2 grid, row 0: {0,0}, row 1 (y>=16): {2,2}
   const comic2::TileCollisionConfig collision{.solid_tile_threshold = 2};
+  const comic2::PlayerMotionConfig dos_motion =
+      comic2::make_original_dos_motion_config();
 
-  // With feet_offset_y = 13:
+  // With dos_motion.feet_probe_offset_y = 13:
   // At player y = 2, probe_y = 2 + 13 = 15 -> tile row 0 (air, tile 0) -> no
   // collision
-  expect(!comic2::player_check_jump_tile_collision(
-             state, 0, 2, collision, comic2::kOriginalDosFeetProbeOffsetY),
+  expect(!comic2::player_check_jump_tile_collision(state, 0, 2, collision,
+                                                   dos_motion),
          "feet probe at y=2 should not collide with floor at y=16");
 
   // At player y = 3, probe_y = 3 + 13 = 16 -> tile row 1 (solid, tile 2) ->
   // collision!
-  expect(comic2::player_check_jump_tile_collision(
-             state, 0, 3, collision, comic2::kOriginalDosFeetProbeOffsetY),
+  expect(comic2::player_check_jump_tile_collision(state, 0, 3, collision,
+                                                  dos_motion),
          "feet probe at y=3 should collide with floor at y=16");
+
+  // Verify that custom feet_probe_offset_y in motion config is respected
+  comic2::PlayerMotionConfig custom_motion = dos_motion;
+  custom_motion.feet_probe_offset_y = 10;
+  // With feet_offset_y = 10, player at y=3 has probe_y = 13 (row 0, tile 0) ->
+  // no collision
+  expect(!comic2::player_check_jump_tile_collision(state, 0, 3, collision,
+                                                   custom_motion),
+         "custom feet probe offset y=10 should not collide with floor at y=16 "
+         "when player is at y=3");
+
+  // Verify default argument uses make_original_dos_motion_config() with offset
+  // 13
+  expect(!comic2::player_check_jump_tile_collision(state, 0, 2, collision),
+         "default motion config feet probe at y=2 should not collide with "
+         "floor at y=16");
+  expect(comic2::player_check_jump_tile_collision(state, 0, 3, collision),
+         "default motion config feet probe at y=3 should collide with floor at "
+         "y=16");
 }
 
 void test_confirmed_inventory_fields_and_boots_effect() {
@@ -496,8 +517,7 @@ void test_max_air_drift_enforcement_and_accumulation() {
 
   // Further ticks with right pressed stay clamped at max_air_drift (+5)
   comic2::apply_airborne_physics_tick(state, dos_motion, collision);
-  expect(state.player.x_vel == 5,
-         "air drift must stay clamped at max bound 5");
+  expect(state.player.x_vel == 5, "air drift must stay clamped at max bound 5");
 
   // 3. Friction decay towards 0 when direction released
   state.input.right_pressed = false;

@@ -43,7 +43,7 @@ struct PlayerMotionConfig {
   std::int16_t gravity_per_tick = 1;
   std::int16_t max_fall_speed = 5;
   std::int16_t fall_start_velocity = 1;
-  std::int16_t feet_probe_offset_y = 13;
+  std::int16_t feet_probe_offset_y = kOriginalDosFeetProbeOffsetY;
   std::uint8_t default_jump_ticks = 5;
   bool truncate_jump_on_release = false;
   bool accumulate_air_drift = false;
@@ -71,7 +71,7 @@ get_effective_motion_config(const RuntimeState &state,
 bool player_check_jump_tile_collision(
     const RuntimeState &state, std::int16_t test_x, std::int16_t test_y,
     const TileCollisionConfig &collision,
-    std::int16_t feet_offset_y = kOriginalDosFeetProbeOffsetY);
+    const PlayerMotionConfig &motion = make_original_dos_motion_config());
 void apply_input_tick(RuntimeState &state, const PlayerMotionConfig &motion);
 void apply_grounded_physics_tick(RuntimeState &state,
                                  const PlayerMotionConfig &motion,

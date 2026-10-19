@@ -87,11 +87,11 @@ get_effective_motion_config(const RuntimeState &state,
 bool player_check_jump_tile_collision(const RuntimeState &state,
                                       std::int16_t test_x, std::int16_t test_y,
                                       const TileCollisionConfig &collision,
-                                      std::int16_t feet_offset_y) {
+                                      const PlayerMotionConfig &motion) {
   // Probes tile at feet level (matches player_do_jump 1000:2d61 probe at Y +
   // 0xD)
   const std::int16_t probe_y =
-      static_cast<std::int16_t>(test_y + feet_offset_y);
+      static_cast<std::int16_t>(test_y + motion.feet_probe_offset_y);
   const auto tile = get_tile_at_pixels(state.room_grid, test_x, probe_y);
   if (!tile.has_value()) {
     return false;
@@ -201,15 +201,16 @@ void apply_airborne_physics_tick(RuntimeState &state,
 
   if (effective_motion.accumulate_air_drift) {
     if (move_left && !move_right) {
-      state.player.x_vel = static_cast<std::int16_t>(
-          std::max<std::int32_t>(state.player.x_vel - effective_motion.air_drift_step,
-                                 -effective_motion.max_air_drift));
+      state.player.x_vel = static_cast<std::int16_t>(std::max<std::int32_t>(
+          state.player.x_vel - effective_motion.air_drift_step,
+          -effective_motion.max_air_drift));
     } else if (move_right && !move_left) {
-      state.player.x_vel = static_cast<std::int16_t>(
-          std::min<std::int32_t>(state.player.x_vel + effective_motion.air_drift_step,
-                                 effective_motion.max_air_drift));
+      state.player.x_vel = static_cast<std::int16_t>(std::min<std::int32_t>(
+          state.player.x_vel + effective_motion.air_drift_step,
+          effective_motion.max_air_drift));
     } else {
-      // Friction dampening towards 0 when no horizontal input (matches loc_2a88-2a9e)
+      // Friction dampening towards 0 when no horizontal input (matches
+      // loc_2a88-2a9e)
       if (state.player.x_vel > 0) {
         --state.player.x_vel;
       } else if (state.player.x_vel < 0) {
