@@ -1,9 +1,14 @@
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <limits>
+#include <optional>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "comic2/bootstrap.hpp"
@@ -24,6 +29,20 @@ void expect_eq(std::size_t actual, std::size_t expected, const char *message) {
   if (actual != expected) {
     throw std::runtime_error(message);
   }
+}
+
+bool require_original_assets() {
+  const char *value = std::getenv("COMIC2_REQUIRE_ORIGINAL_ASSETS");
+  if (value == nullptr || *value == '\0') {
+    return false;
+  }
+
+  std::string normalized(value);
+  std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+
+  return normalized == "1" || normalized == "true" || normalized == "yes" ||
+         normalized == "on";
 }
 
 std::vector<std::uint8_t>
@@ -1030,7 +1049,7 @@ void test_bootstrap_populates_frpak_catalog_for_known_files() {
   std::filesystem::remove_all(root);
 }
 
-std::filesystem::path find_original_asset_root() {
+std::optional<std::filesystem::path> find_original_asset_root() {
   std::vector<std::filesystem::path> seeds;
 
   const std::filesystem::path file_path(__FILE__);
@@ -1080,7 +1099,7 @@ std::filesystem::path find_original_asset_root() {
     }
   }
 
-  return {};
+  return std::nullopt;
 }
 
 void test_room_loader_prefers_exact_level_tuple_room_file() {
@@ -1268,9 +1287,18 @@ void test_phase11_masked_sprite_sheet_decode_synthetic() {
 
 void test_phase11_fr000_masked_sprite_sheet_decode_parity() {
   const auto root = find_original_asset_root();
-  expect(!root.empty(), "original asset root should be discoverable");
+  if (!root.has_value()) {
+    if (require_original_assets()) {
+      throw std::runtime_error(
+          "COMIC2_REQUIRE_ORIGINAL_ASSETS is set, but reference/original "
+          "assets containing FRDATA.* were not found");
+    }
+    std::cerr << "Skipping FR000 sprite-sheet parity test: reference/original "
+                 "assets are not present.\n";
+    return;
+  }
 
-  const auto path = root / "FR000.2";
+  const auto path = root.value() / "FR000.2";
   expect(std::filesystem::exists(path),
          "FR000.2 should exist in the original asset root");
 
@@ -1322,10 +1350,19 @@ void test_phase11_fr000_masked_sprite_sheet_decode_parity() {
 
 void test_phase11_level_resource_tuple_catalog() {
   const auto root = find_original_asset_root();
-  expect(!root.empty(), "original asset root should be discoverable");
+  if (!root.has_value()) {
+    if (require_original_assets()) {
+      throw std::runtime_error(
+          "COMIC2_REQUIRE_ORIGINAL_ASSETS is set, but reference/original "
+          "assets containing FRDATA.* were not found");
+    }
+    std::cerr << "Skipping level resource tuple catalog test: "
+                 "reference/original assets are not present.\n";
+    return;
+  }
 
   for (std::uint16_t level = 0; level <= 14; ++level) {
-    const auto tuple = comic2::resolve_level_resource_tuple(level, root);
+    const auto tuple = comic2::resolve_level_resource_tuple(level, root.value());
     expect(tuple.has_value(), "all 15 canonical level tuples should resolve in "
                               "the original asset root");
     expect(!tuple->tileset_filename.empty(),
@@ -1334,19 +1371,19 @@ void test_phase11_level_resource_tuple_catalog() {
            "level tuple should carry a room-layout filename");
     expect(!tuple->sprite_sheet_filename.empty(),
            "level tuple should carry a sprite-sheet filename");
-    expect(std::filesystem::exists(root / tuple->tileset_filename),
+    expect(std::filesystem::exists(root.value() / tuple->tileset_filename),
            "level tuple tileset should exist in the original asset root");
-    expect(std::filesystem::exists(root / tuple->room_layout_filename),
+    expect(std::filesystem::exists(root.value() / tuple->room_layout_filename),
            "level tuple room file should exist in the original asset root");
-    expect(std::filesystem::exists(root / tuple->sprite_sheet_filename),
+    expect(std::filesystem::exists(root.value() / tuple->sprite_sheet_filename),
            "level tuple sprite file should exist in the original asset root");
     if (tuple->has_script()) {
-      expect(std::filesystem::exists(root / tuple->script_filename),
+      expect(std::filesystem::exists(root.value() / tuple->script_filename),
              "level tuple script should exist in the original asset root");
     }
   }
 
-  const auto level0 = comic2::resolve_level_resource_tuple(0, root);
+  const auto level0 = comic2::resolve_level_resource_tuple(0, root.value());
   expect(level0.has_value(), "level 0 tuple should resolve to original files");
   expect(level0->tileset_filename == "FR000.0",
          "level 0 tileset filename should match original catalog");
@@ -1355,22 +1392,31 @@ void test_phase11_level_resource_tuple_catalog() {
   expect(level0->sprite_sheet_filename == "FR000.2",
          "level 0 sprite filename should match original catalog");
 
-  const auto level4 = comic2::resolve_level_resource_tuple(4, root);
+  const auto level4 = comic2::resolve_level_resource_tuple(4, root.value());
   expect(level4.has_value(), "level 4 tuple should resolve to original files");
   expect(level4->tileset_filename == "FR001.0",
          "level 4 should reuse FR001.0 tileset");
   expect(level4->room_layout_filename == "FR004.1",
          "level 4 room filename should match original catalog");
 
-  const auto invalid = comic2::resolve_level_resource_tuple(99, root);
+  const auto invalid = comic2::resolve_level_resource_tuple(99, root.value());
   expect(!invalid.has_value(), "out-of-range level ids should fail cleanly");
 }
 
 void test_phase11_fr000_room0_layout_loads_from_asset_root() {
   const auto root = find_original_asset_root();
-  expect(!root.empty(), "original asset root should be discoverable");
+  if (!root.has_value()) {
+    if (require_original_assets()) {
+      throw std::runtime_error(
+          "COMIC2_REQUIRE_ORIGINAL_ASSETS is set, but reference/original "
+          "assets containing FRDATA.* were not found");
+    }
+    std::cerr << "Skipping FR000 room 0 parity test: reference/original "
+                 "assets are not present.\n";
+    return;
+  }
 
-  const auto tileset_bytes = comic2::load_file_bytes(root / "FR000.0");
+  const auto tileset_bytes = comic2::load_file_bytes(root.value() / "FR000.0");
   expect(tileset_bytes.has_value(), "FR000.0 should be readable");
   const auto tileset = comic2::decode_level_tileset(
       std::span<const std::uint8_t>(*tileset_bytes));
@@ -1381,7 +1427,7 @@ void test_phase11_fr000_room0_layout_loads_from_asset_root() {
   state.tile_hazard_bounds = tileset->hazard_bounds;
 
   const bool loaded =
-      comic2::load_room_tilemap_from_asset_root(state, root, 0, 0);
+      comic2::load_room_tilemap_from_asset_root(state, root.value(), 0, 0);
   expect(loaded,
          "Level 0 Room 0 should load from FR000.1 in the original asset root");
   expect(state.room_grid.tile_w == 80,
@@ -1405,9 +1451,18 @@ void test_phase11_fr000_room0_layout_loads_from_asset_root() {
 
 void test_phase11_fr000_tileset_decode_parity() {
   const auto root = find_original_asset_root();
-  expect(!root.empty(), "original asset root should be discoverable");
+  if (!root.has_value()) {
+    if (require_original_assets()) {
+      throw std::runtime_error(
+          "COMIC2_REQUIRE_ORIGINAL_ASSETS is set, but reference/original "
+          "assets containing FRDATA.* were not found");
+    }
+    std::cerr << "Skipping FR000 tileset parity test: reference/original "
+                 "assets are not present.\n";
+    return;
+  }
 
-  const auto bytes = comic2::load_file_bytes(root / "FR000.0");
+  const auto bytes = comic2::load_file_bytes(root.value() / "FR000.0");
   expect(bytes.has_value(), "FR000.0 should be readable for decode parity");
 
   const auto decoded =
