@@ -304,16 +304,19 @@ void test_verified_dos_jump_physics_curve() {
   // Tick 1: Jump pressed on ground
   comic2::apply_input_tick(state, dos_motion);
   expect(state.player.y_vel == -7, "DOS jump tick 1 should set y_vel to -7");
-  expect(state.player.jump_counter == 4, "DOS jump tick 1 should decrement jump counter");
+  expect(state.player.jump_counter == 4,
+         "DOS jump tick 1 should decrement jump counter");
   expect(state.player.is_airborne, "DOS jump tick 1 should be airborne");
 
   // Tick 2: Airborne with jump held -> gravity applies
   comic2::apply_airborne_physics_tick(state, dos_motion,
                                       comic2::TileCollisionConfig{});
-  // y_vel was -7, airborne tick with jump_pressed & y_vel < 0 applies impulse (-7),
-  // y updates by y_vel, then gravity adds 5: -7 + 5 = -2
-  expect(state.player.y_vel == -2, "DOS jump tick 2 should advance y_vel by gravity");
-  expect(state.player.jump_counter == 3, "DOS jump tick 2 should consume jump tick");
+  // y_vel was -7, airborne tick with jump_pressed & y_vel < 0 applies impulse
+  // (-7), y updates by y_vel, then gravity adds 5: -7 + 5 = -2
+  expect(state.player.y_vel == -2,
+         "DOS jump tick 2 should advance y_vel by gravity");
+  expect(state.player.jump_counter == 3,
+         "DOS jump tick 2 should consume jump tick");
 
   // Fall without input to terminal velocity
   state.input.jump_pressed = false;
@@ -342,39 +345,47 @@ void test_verified_dos_short_hop_truncation() {
   comic2::apply_airborne_physics_tick(state, dos_motion,
                                       comic2::TileCollisionConfig{});
 
-  // Releasing jump early with truncate_jump_on_release zeroes jump counter (loc_2a2c)
+  // Releasing jump early with truncate_jump_on_release zeroes jump counter
+  // (loc_2a2c)
   expect(state.player.jump_counter == 0,
          "DOS short hop should truncate jump counter to 0 on release");
 }
 
 void test_verified_dos_feet_probe_tile_collision() {
   comic2::RuntimeState state;
-  state.room_grid = make_flat_floor_grid(); // 2x2 grid, row 0: {0,0}, row 1 (y>=16): {2,2}
+  state.room_grid =
+      make_flat_floor_grid(); // 2x2 grid, row 0: {0,0}, row 1 (y>=16): {2,2}
   const comic2::TileCollisionConfig collision{.solid_tile_threshold = 2};
 
   // With feet_offset_y = 13:
-  // At player y = 2, probe_y = 2 + 13 = 15 -> tile row 0 (air, tile 0) -> no collision
-  expect(!comic2::player_check_jump_tile_collision(state, 0, 2, collision,
-                                                   comic2::kOriginalDosFeetProbeOffsetY),
+  // At player y = 2, probe_y = 2 + 13 = 15 -> tile row 0 (air, tile 0) -> no
+  // collision
+  expect(!comic2::player_check_jump_tile_collision(
+             state, 0, 2, collision, comic2::kOriginalDosFeetProbeOffsetY),
          "feet probe at y=2 should not collide with floor at y=16");
 
-  // At player y = 3, probe_y = 3 + 13 = 16 -> tile row 1 (solid, tile 2) -> collision!
-  expect(comic2::player_check_jump_tile_collision(state, 0, 3, collision,
-                                                  comic2::kOriginalDosFeetProbeOffsetY),
+  // At player y = 3, probe_y = 3 + 13 = 16 -> tile row 1 (solid, tile 2) ->
+  // collision!
+  expect(comic2::player_check_jump_tile_collision(
+             state, 0, 3, collision, comic2::kOriginalDosFeetProbeOffsetY),
          "feet probe at y=3 should collide with floor at y=16");
 }
 
 void test_confirmed_inventory_fields_and_boots_effect() {
   comic2::RuntimeState state;
   expect(!state.player.boots_equipped, "boots should be unequipped by default");
-  expect(!state.player.lantern_equipped, "lantern should be unequipped by default");
-  expect(!state.player.corkscrew_equipped, "corkscrew should be unequipped by default");
+  expect(!state.player.lantern_equipped,
+         "lantern should be unequipped by default");
+  expect(!state.player.corkscrew_equipped,
+         "corkscrew should be unequipped by default");
   expect(!state.player.wand_equipped, "wand should be unequipped by default");
   expect(state.player.key_count == 0, "key count should start at 0");
-  expect(state.player.shield_power == 5, "shield power should start at default 5");
+  expect(state.player.shield_power == 5,
+         "shield power should start at default 5");
 
   const comic2::PlayerMotionConfig base_motion{};
-  const auto unequipped = comic2::get_effective_motion_config(state, base_motion);
+  const auto unequipped =
+      comic2::get_effective_motion_config(state, base_motion);
 
   state.player.boots_equipped = true;
   const auto equipped = comic2::get_effective_motion_config(state, base_motion);

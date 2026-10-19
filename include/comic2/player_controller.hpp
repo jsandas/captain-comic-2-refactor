@@ -11,7 +11,8 @@ inline constexpr std::uint8_t kModeSpeedBoost = 0x01U;
 inline constexpr std::uint8_t kModeInvulnerability = 0x02U;
 inline constexpr std::uint8_t kModeJumpBoost = 0x04U;
 
-// Authentic DOS 8086 constants verified from reference/comic2/comic2_standalone.asm:
+// Authentic DOS 8086 constants verified from
+// reference/comic2/comic2_standalone.asm:
 // - player_update_physics (1000:2a10):
 //     sub word [0x894], 0x7  -> jump impulse per tick: -7
 //     add CX, 0x5            -> gravity acceleration per tick: +5
@@ -20,7 +21,8 @@ inline constexpr std::uint8_t kModeJumpBoost = 0x04U;
 // - player_do_jump (1000:2d61):
 //     add BX, 0xd            -> feet probe Y offset: 13
 // - loc_243f / loc_2698:
-//     [DS:0x0899]            -> default max jump capacity: 5 ticks (6 with boots)
+//     [DS:0x0899]            -> default max jump capacity: 5 ticks (6 with
+//     boots)
 // - loc_2484:
 //     mov word [0x894], 0x5  -> fall start velocity: 5
 inline constexpr std::int16_t kOriginalDosWalkStep = 8;
