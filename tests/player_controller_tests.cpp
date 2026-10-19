@@ -271,23 +271,24 @@ void test_inactive_mode_effects_leave_motion_config_unchanged() {
 }
 
 void test_verified_dos_motion_constants() {
-  expect(comic2::kOriginalDosWalkStep == 8, "DOS walk step should be 8");
-  expect(comic2::kOriginalDosJumpImpulse == -7,
-         "DOS jump impulse should be -7");
-  expect(comic2::kOriginalDosAirDriftStep == 1,
-         "DOS air drift step should be 1");
-  expect(comic2::kOriginalDosMaxAirDrift == 5,
-         "DOS max air drift bound should be 5");
-  expect(comic2::kOriginalDosGravityPerTick == 5,
-         "DOS gravity per tick should be 5");
-  expect(comic2::kOriginalDosMaxFallSpeed == 23,
-         "DOS max fall speed should be 23");
-  expect(comic2::kOriginalDosFallStartVelocity == 5,
-         "DOS fall start velocity should be 5");
-  expect(comic2::kOriginalDosFeetProbeOffsetY == 13,
-         "DOS feet probe offset Y should be 13");
-  expect(comic2::kOriginalDosDefaultJumpTicks == 5,
-         "DOS default jump ticks should be 5");
+  static_assert(comic2::kOriginalDosWalkStep == 8,
+                "DOS walk step must be 8");
+  static_assert(comic2::kOriginalDosJumpImpulse == -7,
+                "DOS jump impulse must be -7");
+  static_assert(comic2::kOriginalDosAirDriftStep == 1,
+                "DOS air drift step must be 1");
+  static_assert(comic2::kOriginalDosMaxAirDrift == 5,
+                "DOS max air drift bound must be 5");
+  static_assert(comic2::kOriginalDosGravityPerTick == 5,
+                "DOS gravity per tick must be 5");
+  static_assert(comic2::kOriginalDosMaxFallSpeed == 23,
+                "DOS max fall speed must be 23");
+  static_assert(comic2::kOriginalDosFallStartVelocity == 5,
+                "DOS fall start velocity must be 5");
+  static_assert(comic2::kOriginalDosFeetProbeOffsetY == 13,
+                "DOS feet probe offset Y must be 13");
+  static_assert(comic2::kOriginalDosDefaultJumpTicks == 5,
+                "DOS default jump ticks must be 5");
 }
 
 void test_verified_dos_jump_physics_curve() {
