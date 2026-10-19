@@ -407,8 +407,9 @@ void test_confirmed_inventory_fields_and_boots_effect() {
   comic2::apply_grounded_physics_tick(state, base_motion, collision);
   expect(state.player.jump_counter == 5,
          "grounded replenishment without boots should restore 5 jump ticks");
-  expect(state.player.jump_counter_max == 5,
-         "grounded replenishment without boots should set jump_counter_max to 5");
+  expect(
+      state.player.jump_counter_max == 5,
+      "grounded replenishment without boots should set jump_counter_max to 5");
 
   // 2. Replenishment WITH boots on ground
   state.player.boots_equipped = true;
