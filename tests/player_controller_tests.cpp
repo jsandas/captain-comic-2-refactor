@@ -270,6 +270,274 @@ void test_inactive_mode_effects_leave_motion_config_unchanged() {
          "expired mode effects should not alter jump config");
 }
 
+void test_verified_dos_motion_constants() {
+  static_assert(comic2::kOriginalDosWalkStep == 8, "DOS walk step must be 8");
+  static_assert(comic2::kOriginalDosJumpImpulse == -7,
+                "DOS jump impulse must be -7");
+  static_assert(comic2::kOriginalDosAirDriftStep == 1,
+                "DOS air drift step must be 1");
+  static_assert(comic2::kOriginalDosMaxAirDrift == 5,
+                "DOS max air drift bound must be 5");
+  static_assert(comic2::kOriginalDosGravityPerTick == 5,
+                "DOS gravity per tick must be 5");
+  static_assert(comic2::kOriginalDosMaxFallSpeed == 23,
+                "DOS max fall speed must be 23");
+  static_assert(comic2::kOriginalDosFallStartVelocity == 5,
+                "DOS fall start velocity must be 5");
+  static_assert(comic2::kOriginalDosFeetProbeOffsetY == 13,
+                "DOS feet probe offset Y must be 13");
+  static_assert(comic2::kOriginalDosDefaultJumpTicks == 5,
+                "DOS default jump ticks must be 5");
+}
+
+void test_verified_dos_jump_physics_curve() {
+  comic2::RuntimeState state;
+  state.player.jump_counter = 5;
+  state.input.jump_pressed = true;
+
+  const auto dos_motion = comic2::make_original_dos_motion_config();
+  expect(dos_motion.jump_impulse == -7, "DOS config jump impulse should be -7");
+  expect(dos_motion.gravity_per_tick == 5, "DOS config gravity should be 5");
+  expect(dos_motion.max_fall_speed == 23,
+         "DOS config max fall speed should be 23");
+
+  // Tick 1: Jump pressed on ground
+  comic2::apply_input_tick(state, dos_motion);
+  expect(state.player.y_vel == -7, "DOS jump tick 1 should set y_vel to -7");
+  expect(state.player.jump_counter == 4,
+         "DOS jump tick 1 should decrement jump counter");
+  expect(state.player.is_airborne, "DOS jump tick 1 should be airborne");
+
+  // Tick 2: Airborne with jump held -> gravity applies
+  comic2::apply_airborne_physics_tick(state, dos_motion,
+                                      comic2::TileCollisionConfig{});
+  // y_vel was -7, airborne tick with jump_pressed & y_vel < 0 applies impulse
+  // (-7), y updates by y_vel, then gravity adds 5: -7 + 5 = -2
+  expect(state.player.y_vel == -2,
+         "DOS jump tick 2 should advance y_vel by gravity");
+  expect(state.player.jump_counter == 3,
+         "DOS jump tick 2 should consume jump tick");
+
+  // Fall without input to terminal velocity
+  state.input.jump_pressed = false;
+  state.player.jump_counter = 0;
+  state.player.y_vel = 20;
+  comic2::apply_airborne_physics_tick(state, dos_motion,
+                                      comic2::TileCollisionConfig{});
+  // 20 + 5 = 25, clamped to max_fall_speed (23)
+  expect(state.player.y_vel == 23,
+         "DOS fall velocity should clamp to max fall speed 23");
+}
+
+void test_verified_dos_short_hop_truncation() {
+  comic2::RuntimeState state;
+  state.player.jump_counter = 5;
+  state.input.jump_pressed = true;
+
+  const auto dos_motion = comic2::make_original_dos_motion_config();
+
+  // Tick 1: start jump
+  comic2::apply_input_tick(state, dos_motion);
+  expect(state.player.jump_counter == 4, "first tick consumes 1 jump unit");
+
+  // Player releases jump key early
+  state.input.jump_pressed = false;
+  comic2::apply_airborne_physics_tick(state, dos_motion,
+                                      comic2::TileCollisionConfig{});
+
+  // Releasing jump early with truncate_jump_on_release zeroes jump counter
+  // (loc_2a2c)
+  expect(state.player.jump_counter == 0,
+         "DOS short hop should truncate jump counter to 0 on release");
+}
+
+void test_verified_dos_feet_probe_tile_collision() {
+  comic2::RuntimeState state;
+  state.room_grid =
+      make_flat_floor_grid(); // 2x2 grid, row 0: {0,0}, row 1 (y>=16): {2,2}
+  const comic2::TileCollisionConfig collision{.solid_tile_threshold = 2};
+  const comic2::PlayerMotionConfig dos_motion =
+      comic2::make_original_dos_motion_config();
+
+  // With dos_motion.feet_probe_offset_y = 13:
+  // At player y = 2, probe_y = 2 + 13 = 15 -> tile row 0 (air, tile 0) -> no
+  // collision
+  expect(!comic2::player_check_jump_tile_collision(state, 0, 2, collision,
+                                                   dos_motion),
+         "feet probe at y=2 should not collide with floor at y=16");
+
+  // At player y = 3, probe_y = 3 + 13 = 16 -> tile row 1 (solid, tile 2) ->
+  // collision!
+  expect(comic2::player_check_jump_tile_collision(state, 0, 3, collision,
+                                                  dos_motion),
+         "feet probe at y=3 should collide with floor at y=16");
+
+  // Verify that custom feet_probe_offset_y in motion config is respected
+  comic2::PlayerMotionConfig custom_motion = dos_motion;
+  custom_motion.feet_probe_offset_y = 10;
+  // With feet_offset_y = 10, player at y=3 has probe_y = 13 (row 0, tile 0) ->
+  // no collision
+  expect(!comic2::player_check_jump_tile_collision(state, 0, 3, collision,
+                                                   custom_motion),
+         "custom feet probe offset y=10 should not collide with floor at y=16 "
+         "when player is at y=3");
+
+  // Verify default argument uses make_original_dos_motion_config() with offset
+  // 13
+  expect(!comic2::player_check_jump_tile_collision(state, 0, 2, collision),
+         "default motion config feet probe at y=2 should not collide with "
+         "floor at y=16");
+  expect(comic2::player_check_jump_tile_collision(state, 0, 3, collision),
+         "default motion config feet probe at y=3 should collide with floor at "
+         "y=16");
+}
+
+void test_confirmed_inventory_fields_and_boots_effect() {
+  comic2::RuntimeState state;
+  state.room_grid = make_flat_floor_grid();
+  const comic2::TileCollisionConfig collision{.solid_tile_threshold = 2};
+  const comic2::PlayerMotionConfig base_motion{};
+
+  expect(!state.player.boots_equipped, "boots should be unequipped by default");
+  expect(!state.player.lantern_equipped,
+         "lantern should be unequipped by default");
+  expect(!state.player.corkscrew_equipped,
+         "corkscrew should be unequipped by default");
+  expect(!state.player.wand_equipped, "wand should be unequipped by default");
+  expect(state.player.key_count == 0, "key count should start at 0");
+  expect(state.player.shield_power == 5,
+         "shield power should start at default 5");
+
+  const auto unequipped =
+      comic2::get_effective_motion_config(state, base_motion);
+
+  state.player.boots_equipped = true;
+  const auto equipped = comic2::get_effective_motion_config(state, base_motion);
+
+  expect(equipped.jump_impulse == unequipped.jump_impulse - 2,
+         "equipped boots should enhance jump impulse magnitude");
+  expect(equipped.default_jump_ticks == unequipped.default_jump_ticks + 1,
+         "equipped boots should increase default jump ticks to 6");
+
+  // 1. Replenishment without boots on ground
+  state.player.boots_equipped = false;
+  state.player.jump_counter = 0;
+  state.player.is_airborne = false;
+  state.input.jump_pressed = false;
+  state.player.y = -16; // resting on flat floor (tile y=16)
+  comic2::apply_grounded_physics_tick(state, base_motion, collision);
+  expect(state.player.jump_counter == 5,
+         "grounded replenishment without boots should restore 5 jump ticks");
+  expect(
+      state.player.jump_counter_max == 5,
+      "grounded replenishment without boots should set jump_counter_max to 5");
+
+  // 2. Replenishment WITH boots on ground
+  state.player.boots_equipped = true;
+  state.player.jump_counter = 0;
+  comic2::apply_grounded_physics_tick(state, base_motion, collision);
+  expect(state.player.jump_counter == 6,
+         "grounded replenishment with boots should restore 6 jump ticks");
+  expect(state.player.jump_counter_max == 6,
+         "grounded replenishment with boots should set jump_counter_max to 6");
+
+  // 3. Replenishment on landing from airborne with boots
+  state.player.jump_counter = 0;
+  state.player.is_airborne = true;
+  state.player.is_physics_active = true;
+  state.player.y = -3;
+  state.player.y_vel = 2;
+  comic2::apply_airborne_physics_tick(state, base_motion, collision);
+  expect(!state.player.is_airborne, "player should land on ground");
+  expect(state.player.jump_counter == 6,
+         "landing replenishment with boots should restore 6 jump ticks");
+
+  // 4. Gameplay jump consumption: verify all 6 ticks are consumed
+  state.input.jump_pressed = true;
+  comic2::apply_input_tick(state, base_motion);
+  expect(state.player.jump_counter == 5,
+         "jump tick 1 consumes 1 tick (5 remaining)");
+  expect(state.player.is_airborne, "player enters airborne state");
+
+  for (int tick = 2; tick <= 6; ++tick) {
+    comic2::apply_airborne_physics_tick(state, base_motion, collision);
+    const int expected_remaining = 6 - tick;
+    expect(state.player.jump_counter == expected_remaining,
+           "jump counter should decrement each held tick");
+  }
+  expect(state.player.jump_counter == 0,
+         "all 6 jump ticks with boots should be fully realized and consumed");
+}
+
+void test_max_air_drift_enforcement_and_accumulation() {
+  comic2::RuntimeState state;
+  const comic2::TileCollisionConfig collision{.solid_tile_threshold = 2};
+
+  // 1. Direct step mode: air_drift_step (10) clamped by max_air_drift (5)
+  comic2::PlayerMotionConfig clamped_motion{
+      .air_drift_step = 10,
+      .max_air_drift = 5,
+      .accumulate_air_drift = false,
+  };
+  state.player.x = 0;
+  state.player.y = -100;
+  state.player.is_airborne = true;
+  state.input.right_pressed = true;
+  comic2::apply_airborne_physics_tick(state, clamped_motion, collision);
+  expect(state.player.x == 5,
+         "air drift step 10 should be clamped to max_air_drift 5");
+  expect(state.player.x_vel == 5, "x_vel should be clamped to max_air_drift 5");
+
+  state.input.right_pressed = false;
+  state.input.left_pressed = true;
+  comic2::apply_airborne_physics_tick(state, clamped_motion, collision);
+  expect(state.player.x == 0, "moving left should clamp to -5 (5 - 5 = 0)");
+  expect(state.player.x_vel == -5, "x_vel should be clamped to -5");
+
+  // 2. Authentic DOS accumulated air drift mode ([-5, 5])
+  const auto dos_motion = comic2::make_original_dos_motion_config();
+  expect(dos_motion.accumulate_air_drift,
+         "DOS config must have accumulate_air_drift enabled");
+  expect(dos_motion.max_air_drift == 5, "DOS max_air_drift must be 5");
+  expect(dos_motion.air_drift_step == 1, "DOS air_drift_step must be 1");
+
+  state.player.x = 0;
+  state.player.y = -100;
+  state.player.x_vel = 0;
+  state.input.left_pressed = false;
+  state.input.right_pressed = true;
+
+  // Accumulate rightwards over multiple ticks
+  for (int tick = 1; tick <= 5; ++tick) {
+    comic2::apply_airborne_physics_tick(state, dos_motion, collision);
+    expect(state.player.x_vel == tick,
+           "air drift should accumulate by +1 each tick");
+  }
+  expect(state.player.x_vel == 5, "air drift should reach max bound of 5");
+
+  // Further ticks with right pressed stay clamped at max_air_drift (+5)
+  comic2::apply_airborne_physics_tick(state, dos_motion, collision);
+  expect(state.player.x_vel == 5, "air drift must stay clamped at max bound 5");
+
+  // 3. Friction decay towards 0 when direction released
+  state.input.right_pressed = false;
+  for (int expected_vel = 4; expected_vel >= 0; --expected_vel) {
+    comic2::apply_airborne_physics_tick(state, dos_motion, collision);
+    expect(state.player.x_vel == expected_vel,
+           "air drift should decay towards 0 via friction");
+  }
+  expect(state.player.x_vel == 0, "air drift should settle at 0");
+
+  // 4. Accumulate leftwards towards -5
+  state.input.left_pressed = true;
+  for (int tick = 1; tick <= 6; ++tick) {
+    comic2::apply_airborne_physics_tick(state, dos_motion, collision);
+    const int expected_clamped = (tick > 5) ? -5 : -tick;
+    expect(state.player.x_vel == expected_clamped,
+           "air drift should accumulate leftwards and clamp at -5");
+  }
+}
+
 } // namespace
 
 void run_player_controller_tests() {
@@ -284,4 +552,10 @@ void run_player_controller_tests() {
   test_grounded_physics_does_not_snap_when_rising();
   test_mode_effects_modify_motion_config_for_speed_and_jump();
   test_inactive_mode_effects_leave_motion_config_unchanged();
+  test_verified_dos_motion_constants();
+  test_verified_dos_jump_physics_curve();
+  test_verified_dos_short_hop_truncation();
+  test_verified_dos_feet_probe_tile_collision();
+  test_confirmed_inventory_fields_and_boots_effect();
+  test_max_air_drift_enforcement_and_accumulation();
 }

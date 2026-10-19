@@ -69,13 +69,29 @@ struct PlayerState {
   std::uint8_t mode_effect_ticks = 0;
 
   std::uint8_t jump_counter = 0;
+  std::uint8_t jump_counter_max =
+      5; // [DS:0x0899] base max jump capacity (5, increased to 6 with boots)
   std::uint8_t hp = 12;
-  std::uint8_t firepower = 1;
+  std::uint8_t shield_power =
+      5; // [DS:0x089a] current shield energy (default 5, max 8)
+  std::uint8_t firepower = 1; // [DS:0x08ac] blast power level (1-5)
   std::uint8_t gems = 0;
   std::uint8_t lives = 3;
   std::uint16_t score = 0;
-  std::uint8_t invuln_ticks = 0;
+  std::uint16_t score_high = 0; // [DS:0x0928] high word of 32-bit score counter
+  std::uint8_t invuln_ticks =
+      0; // [DS:0x0892] damage invulnerability frame countdown
   std::uint8_t damage_recoil_ticks = 0;
+  std::uint8_t weapon_cooldown =
+      0; // [DS:0x08a8] firing rate limiter cooldown timer
+
+  // Confirmed inventory and equipment fields from comic2_data.asm (DS:0x08ae -
+  // 0x08b6):
+  bool boots_equipped = false;   // [DS:0x08ae] High-jump / gravity boots flag
+  bool lantern_equipped = false; // [DS:0x08b0] Cavern lantern illumination flag
+  bool corkscrew_equipped = false; // [DS:0x08b2] Grate corkscrew unlock flag
+  bool wand_equipped = false;      // [DS:0x08b4] Teleportation wand flag
+  std::uint8_t key_count = 0;      // [DS:0x08b6] Door keys collected count
 
   bool operator==(const PlayerState &) const = default;
 };
@@ -148,6 +164,14 @@ struct ProgressionState {
   bool firepower_unlocked = false;
   bool lives_available = false;
   std::uint8_t mode_inventory_mask = 0;
+
+  // Inventory collection state confirmed from comic2_data.asm and savegame
+  // snapshot:
+  bool boots_acquired = false;
+  bool lantern_acquired = false;
+  bool corkscrew_acquired = false;
+  bool wand_acquired = false;
+  std::uint8_t keys_collected = 0;
 
   bool operator==(const ProgressionState &) const = default;
 };
