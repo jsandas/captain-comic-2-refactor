@@ -158,9 +158,10 @@ void apply_grounded_physics_tick(RuntimeState &state,
   resolve_ground_contact(state, collision);
 
   // Replenish jump counter when supported on ground and jump button released
-  // (matches loc_2698: mov AL, [0x899] ... mov [0x898], AL)
+  // (matches loc_2698: mov AL, [0x899] ... inc AL if boots ... mov [0x898], AL)
   if (!state.player.is_airborne && !state.input.jump_pressed) {
-    state.player.jump_counter = state.player.jump_counter_max;
+    state.player.jump_counter = effective_motion.default_jump_ticks;
+    state.player.jump_counter_max = effective_motion.default_jump_ticks;
   }
 }
 
@@ -210,7 +211,8 @@ void apply_airborne_physics_tick(RuntimeState &state,
 
   if (resolve_ground_contact(state, collision)) {
     if (!state.input.jump_pressed) {
-      state.player.jump_counter = state.player.jump_counter_max;
+      state.player.jump_counter = effective_motion.default_jump_ticks;
+      state.player.jump_counter_max = effective_motion.default_jump_ticks;
     }
     return;
   }

@@ -373,6 +373,10 @@ void test_verified_dos_feet_probe_tile_collision() {
 
 void test_confirmed_inventory_fields_and_boots_effect() {
   comic2::RuntimeState state;
+  state.room_grid = make_flat_floor_grid();
+  const comic2::TileCollisionConfig collision{.solid_tile_threshold = 2};
+  const comic2::PlayerMotionConfig base_motion{};
+
   expect(!state.player.boots_equipped, "boots should be unequipped by default");
   expect(!state.player.lantern_equipped,
          "lantern should be unequipped by default");
@@ -383,7 +387,6 @@ void test_confirmed_inventory_fields_and_boots_effect() {
   expect(state.player.shield_power == 5,
          "shield power should start at default 5");
 
-  const comic2::PlayerMotionConfig base_motion{};
   const auto unequipped =
       comic2::get_effective_motion_config(state, base_motion);
 
@@ -393,7 +396,55 @@ void test_confirmed_inventory_fields_and_boots_effect() {
   expect(equipped.jump_impulse == unequipped.jump_impulse - 2,
          "equipped boots should enhance jump impulse magnitude");
   expect(equipped.default_jump_ticks == unequipped.default_jump_ticks + 1,
-         "equipped boots should increase default jump ticks");
+         "equipped boots should increase default jump ticks to 6");
+
+  // 1. Replenishment without boots on ground
+  state.player.boots_equipped = false;
+  state.player.jump_counter = 0;
+  state.player.is_airborne = false;
+  state.input.jump_pressed = false;
+  state.player.y = -16; // resting on flat floor (tile y=16)
+  comic2::apply_grounded_physics_tick(state, base_motion, collision);
+  expect(state.player.jump_counter == 5,
+         "grounded replenishment without boots should restore 5 jump ticks");
+  expect(state.player.jump_counter_max == 5,
+         "grounded replenishment without boots should set jump_counter_max to 5");
+
+  // 2. Replenishment WITH boots on ground
+  state.player.boots_equipped = true;
+  state.player.jump_counter = 0;
+  comic2::apply_grounded_physics_tick(state, base_motion, collision);
+  expect(state.player.jump_counter == 6,
+         "grounded replenishment with boots should restore 6 jump ticks");
+  expect(state.player.jump_counter_max == 6,
+         "grounded replenishment with boots should set jump_counter_max to 6");
+
+  // 3. Replenishment on landing from airborne with boots
+  state.player.jump_counter = 0;
+  state.player.is_airborne = true;
+  state.player.is_physics_active = true;
+  state.player.y = -3;
+  state.player.y_vel = 2;
+  comic2::apply_airborne_physics_tick(state, base_motion, collision);
+  expect(!state.player.is_airborne, "player should land on ground");
+  expect(state.player.jump_counter == 6,
+         "landing replenishment with boots should restore 6 jump ticks");
+
+  // 4. Gameplay jump consumption: verify all 6 ticks are consumed
+  state.input.jump_pressed = true;
+  comic2::apply_input_tick(state, base_motion);
+  expect(state.player.jump_counter == 5,
+         "jump tick 1 consumes 1 tick (5 remaining)");
+  expect(state.player.is_airborne, "player enters airborne state");
+
+  for (int tick = 2; tick <= 6; ++tick) {
+    comic2::apply_airborne_physics_tick(state, base_motion, collision);
+    const int expected_remaining = 6 - tick;
+    expect(state.player.jump_counter == expected_remaining,
+           "jump counter should decrement each held tick");
+  }
+  expect(state.player.jump_counter == 0,
+         "all 6 jump ticks with boots should be fully realized and consumed");
 }
 
 } // namespace
