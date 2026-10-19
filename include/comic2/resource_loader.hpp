@@ -37,6 +37,16 @@ std::optional<FrpakCatalogRecord>
 find_frpak_catalog_record(const FrpakCatalog &catalog, std::uint16_t pak_id,
                           std::uint16_t record_id);
 
+std::optional<LevelResourceTuple>
+resolve_level_resource_tuple(std::uint16_t level_id,
+                             const std::filesystem::path &root);
+
+std::optional<LevelTilesetDecode>
+decode_level_tileset(std::span<const std::uint8_t> payload);
+
+std::optional<std::vector<MaskedSpriteRecord>>
+decode_masked_sprite_sheet(std::span<const std::uint8_t> payload);
+
 bool validate_frpak_catalog_record_bounds(const FrpakCatalogRecord &record,
                                           std::size_t file_size);
 

@@ -100,6 +100,50 @@ std::optional<std::filesystem::path> find_reference_assets_root() {
   return std::nullopt;
 }
 
+std::vector<std::uint8_t>
+make_test_room_resource_bytes(std::uint16_t level, std::uint16_t room,
+                              std::uint16_t tile_w, std::uint16_t tile_h,
+                              std::uint8_t seed = 0x00) {
+  std::vector<std::uint8_t> decoded_room_bytes(0x2D2, 0x00);
+  decoded_room_bytes[0] = seed;
+  decoded_room_bytes[0x2A0] = 0x00;
+  decoded_room_bytes[0x2A1] = 0x00;
+  decoded_room_bytes[0x2A2] = 0x04;
+  decoded_room_bytes[0x2A3] = 0x00;
+  decoded_room_bytes[0x2A4] = 0x08;
+  decoded_room_bytes[0x2A5] = 0x00;
+  decoded_room_bytes[0x2B0] = 0x00;
+  decoded_room_bytes[0x2B1] = 0x00;
+
+  std::vector<std::uint8_t> encoded;
+  std::size_t offset = 0;
+  while (offset < decoded_room_bytes.size()) {
+    const std::size_t chunk =
+        std::min<std::size_t>(127U, decoded_room_bytes.size() - offset);
+    encoded.push_back(static_cast<std::uint8_t>(chunk));
+    encoded.insert(encoded.end(),
+                   decoded_room_bytes.begin() +
+                       static_cast<std::ptrdiff_t>(offset),
+                   decoded_room_bytes.begin() +
+                       static_cast<std::ptrdiff_t>(offset + chunk));
+    offset += chunk;
+  }
+  encoded.push_back(0x00);
+
+  std::vector<std::uint8_t> resource_bytes(0x20 + encoded.size(), 0x00);
+  resource_bytes[2] = static_cast<std::uint8_t>(level & 0xFFU);
+  resource_bytes[3] = static_cast<std::uint8_t>((level >> 8) & 0xFFU);
+  resource_bytes[0x04] = static_cast<std::uint8_t>(tile_w & 0xFFU);
+  resource_bytes[0x05] = static_cast<std::uint8_t>((tile_w >> 8) & 0xFFU);
+  resource_bytes[0x06] = static_cast<std::uint8_t>(tile_h & 0xFFU);
+  resource_bytes[0x07] = static_cast<std::uint8_t>((tile_h >> 8) & 0xFFU);
+  resource_bytes[0x08] = 0x20;
+  resource_bytes[0x09] = 0x00;
+  std::copy(encoded.begin(), encoded.end(), resource_bytes.begin() + 0x20);
+  (void)room;
+  return resource_bytes;
+}
+
 struct RecordingPresenter : comic2::IFramePresenter {
   int last_width = 0;
   int last_height = 0;
@@ -220,6 +264,51 @@ void test_bootstrap_frame_interval_can_be_overridden() {
   check(interval == std::chrono::milliseconds(33),
         "bootstrap frame interval should accept an override for calibration");
   set_test_env("COMIC2_BOOTSTRAP_FRAME_MS", "", 1);
+}
+
+void test_scene_bootstrap_discovers_reference_assets_from_repo_subdirectory() {
+  const auto repo_root =
+      std::filesystem::temp_directory_path() / "comic2_repo_root_resolution";
+  const auto subdir = repo_root / "nested" / "launch";
+  const auto asset_root = repo_root / "reference" / "original";
+
+  std::filesystem::remove_all(repo_root);
+  std::filesystem::create_directories(subdir);
+  std::filesystem::create_directories(asset_root);
+
+  const auto room_bytes = make_test_room_resource_bytes(0, 0, 4, 3, 0x7AU);
+  std::ofstream(asset_root / "FRDATA.0", std::ios::binary)
+      .write(reinterpret_cast<const char *>(room_bytes.data()),
+             static_cast<std::streamsize>(room_bytes.size()));
+
+  const auto previous_cwd = std::filesystem::current_path();
+  std::filesystem::current_path(subdir);
+
+  try {
+    comic2::RuntimeState state = comic2::make_default_runtime_state();
+    const auto summary = comic2::initialize_runtime_scene(state, subdir);
+    const auto canonical_asset_root =
+        std::filesystem::weakly_canonical(asset_root);
+    const auto canonical_summary_root =
+        std::filesystem::weakly_canonical(summary.assets_root_used);
+
+    check(summary.room_grid_loaded,
+          "bootstrap should load the repo-root original asset directory from a "
+          "nested launch path");
+    check(
+        canonical_summary_root == canonical_asset_root,
+        "bootstrap should resolve the canonical reference/original directory");
+    check(std::filesystem::weakly_canonical(state.assets_root) ==
+              canonical_asset_root,
+          "runtime state should preserve the canonical asset root");
+  } catch (...) {
+    std::filesystem::current_path(previous_cwd);
+    std::filesystem::remove_all(repo_root);
+    throw;
+  }
+
+  std::filesystem::current_path(previous_cwd);
+  std::filesystem::remove_all(repo_root);
 }
 
 void test_integrated_loop_exits_cleanly_when_quit_is_requested() {
@@ -361,6 +450,100 @@ void test_render_bootstrap_frame_uses_room_tile_data() {
         "tile interior should use the base color derived from tile data");
   check(bottom_right_edge == 0x04,
         "tile border should remain accented at the far edge");
+}
+
+void test_render_bootstrap_frame_uses_level_tileset_bytes_when_available() {
+  auto state = comic2::make_default_runtime_state();
+  state.player.x = 300;
+  state.player.y = 180;
+  state.room_grid.tile_w = 1;
+  state.room_grid.tile_h = 1;
+  state.room_grid.row_pointers = {0};
+  state.room_grid.tile_data = {0x00};
+
+  comic2::Ega4PlaneImage tile;
+  tile.width_bytes = 2;
+  tile.height_rows = 16;
+  tile.row_span_bytes = 32;
+  for (std::size_t plane = 0; plane < tile.planes.size(); ++plane) {
+    tile.planes[plane].assign(32, 0x00);
+  }
+  for (std::size_t row = 0; row < 16; ++row) {
+    tile.planes[0][row * 2] = 0xFF;
+    tile.planes[0][row * 2 + 1] = 0xFF;
+  }
+  state.level_tileset = {tile};
+
+  comic2::MemoryFramePresenter presenter;
+  comic2::render_bootstrap_frame(presenter, state);
+
+  const auto &frame = presenter.last_frame();
+  const auto color = read_color_index(frame, 8, 8);
+
+  check(color == 0x01,
+        "bootstrap should render the level tileset tile bytes instead of the "
+        "diagnostic per-tile color fallback");
+}
+
+void set_bezel_pixel(comic2::Ega4PlaneImage &image, std::size_t x,
+                     std::size_t y, std::uint8_t color_index) {
+  const auto x_byte = x / 8U;
+  const auto bit = static_cast<std::uint8_t>(7U - (x % 8U));
+  const auto mask = static_cast<std::uint8_t>(1U << bit);
+  const auto row_offset = y * image.width_bytes;
+
+  for (std::size_t plane = 0; plane < image.planes.size(); ++plane) {
+    auto &plane_data = image.planes[plane];
+    auto value = plane_data[row_offset + x_byte];
+    if ((color_index >> plane) & 0x1U) {
+      value |= mask;
+    } else {
+      value &= static_cast<std::uint8_t>(~mask);
+    }
+    plane_data[row_offset + x_byte] = value;
+  }
+}
+
+void test_render_bootstrap_frame_uses_bezel_canvas_when_available() {
+  auto state = comic2::make_default_runtime_state();
+  state.bezel_frame = comic2::Ega4PlaneImage{};
+  auto &bezel = *state.bezel_frame;
+  bezel.width_bytes = 40U;
+  bezel.height_rows = 200U;
+  bezel.row_span_bytes = 0x1F40U;
+  for (auto &plane : bezel.planes) {
+    plane.assign(8000U, 0x00U);
+  }
+  set_bezel_pixel(bezel, 10U, 20U, 0x05U);
+
+  comic2::MemoryFramePresenter presenter;
+  comic2::render_bootstrap_frame(presenter, state);
+
+  check(presenter.has_frame(),
+        "bezel-backed renders should still present a frame");
+  const auto &frame = presenter.last_frame();
+  const auto color = read_color_index(frame, 10U, 20U);
+
+  check(color == 0x05U,
+        "render should start from the decoded bezel canvas when available");
+}
+
+void test_render_bootstrap_frame_falls_back_without_bezel_canvas() {
+  auto state = comic2::make_default_runtime_state();
+  state.bezel_frame.reset();
+  state.room_grid.tile_w = 0;
+  state.room_grid.tile_h = 0;
+
+  comic2::MemoryFramePresenter presenter;
+  comic2::render_bootstrap_frame(presenter, state);
+
+  check(presenter.has_frame(), "fallback render should still present a frame");
+  const auto &frame = presenter.last_frame();
+  const auto color = read_color_index(frame, 0U, 0U);
+
+  check(color == 0x0FU,
+        "render should keep the procedural fallback background when bezel data "
+        "is unavailable");
 }
 
 void test_render_bootstrap_frame_renders_scrolled_right_edge_tiles() {
@@ -782,12 +965,16 @@ void run_bootstrap_wiring_tests() {
   test_bootstrap_tick_wires_input_dispatch_and_render();
   test_bootstrap_frame_interval_defaults_to_original_tick_rate();
   test_bootstrap_frame_interval_can_be_overridden();
+  test_scene_bootstrap_discovers_reference_assets_from_repo_subdirectory();
   test_integrated_loop_exits_cleanly_when_quit_is_requested();
   test_dispatcher_moves_player_when_left_input_is_active();
   test_render_loop_renders_multiple_frames();
   test_render_loop_updates_state_while_presenting_frames();
   test_render_bootstrap_frame_uses_room_tile_data();
+  test_render_bootstrap_frame_uses_level_tileset_bytes_when_available();
   test_render_bootstrap_frame_renders_scrolled_right_edge_tiles();
+  test_render_bootstrap_frame_uses_bezel_canvas_when_available();
+  test_render_bootstrap_frame_falls_back_without_bezel_canvas();
   test_render_bootstrap_frame_renders_active_runtime_entities();
   test_render_bootstrap_frame_distinguishes_pickups_from_enemies();
   test_render_bootstrap_frame_renders_active_projectiles();

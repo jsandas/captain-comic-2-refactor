@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "asset_root_candidates.hpp"
 #include "comic2/bootstrap.hpp"
 #include "comic2/room_loader.hpp"
 
@@ -17,6 +18,88 @@ namespace {
 constexpr std::size_t kMaxDecodedBytes = 0x10000;
 constexpr std::uint16_t kFrpakMinPakId = 1;
 constexpr std::uint16_t kFrpakMaxPakId = 999;
+constexpr std::size_t kTilesetTileBytes = 128;
+
+const std::array<LevelResourceTuple, 15> &level_resource_catalog() {
+  static const std::array<LevelResourceTuple, 15> kTuples = {
+      LevelResourceTuple{.level_id = 0,
+                         .tileset_filename = "FR000.0",
+                         .room_layout_filename = "FR000.1",
+                         .sprite_sheet_filename = "FR000.2",
+                         .script_filename = "FR004.3"},
+      LevelResourceTuple{.level_id = 1,
+                         .tileset_filename = "FR001.0",
+                         .room_layout_filename = "FR001.1",
+                         .sprite_sheet_filename = "FR001.2",
+                         .script_filename = "FR001.3"},
+      LevelResourceTuple{.level_id = 2,
+                         .tileset_filename = "FR002.0",
+                         .room_layout_filename = "FR002.1",
+                         .sprite_sheet_filename = "FR002.2",
+                         .script_filename = ""},
+      LevelResourceTuple{.level_id = 3,
+                         .tileset_filename = "FR003.0",
+                         .room_layout_filename = "FR003.1",
+                         .sprite_sheet_filename = "FR003.2",
+                         .script_filename = "FR003.3"},
+      LevelResourceTuple{.level_id = 4,
+                         .tileset_filename = "FR001.0",
+                         .room_layout_filename = "FR004.1",
+                         .sprite_sheet_filename = "FR004.2",
+                         .script_filename = "FR004.3"},
+      LevelResourceTuple{.level_id = 5,
+                         .tileset_filename = "FR005.0",
+                         .room_layout_filename = "FR005.1",
+                         .sprite_sheet_filename = "FR005.2",
+                         .script_filename = "FR005.3"},
+      LevelResourceTuple{.level_id = 6,
+                         .tileset_filename = "FR006.0",
+                         .room_layout_filename = "FR006.1",
+                         .sprite_sheet_filename = "FR006.2",
+                         .script_filename = "FR006.3"},
+      LevelResourceTuple{.level_id = 7,
+                         .tileset_filename = "FR007.0",
+                         .room_layout_filename = "FR007.1",
+                         .sprite_sheet_filename = "FR007.2",
+                         .script_filename = ""},
+      LevelResourceTuple{.level_id = 8,
+                         .tileset_filename = "FR008.0",
+                         .room_layout_filename = "FR008.1",
+                         .sprite_sheet_filename = "FR008.2",
+                         .script_filename = ""},
+      LevelResourceTuple{.level_id = 9,
+                         .tileset_filename = "FR009.0",
+                         .room_layout_filename = "FR009.1",
+                         .sprite_sheet_filename = "FR009.2",
+                         .script_filename = ""},
+      LevelResourceTuple{.level_id = 10,
+                         .tileset_filename = "FR010.0",
+                         .room_layout_filename = "FR010.1",
+                         .sprite_sheet_filename = "FR010.2",
+                         .script_filename = "FR006.3"},
+      LevelResourceTuple{.level_id = 11,
+                         .tileset_filename = "FR011.0",
+                         .room_layout_filename = "FR011.1",
+                         .sprite_sheet_filename = "FR011.2",
+                         .script_filename = "FR006.3"},
+      LevelResourceTuple{.level_id = 12,
+                         .tileset_filename = "FR012.0",
+                         .room_layout_filename = "FR012.1",
+                         .sprite_sheet_filename = "FR012.2",
+                         .script_filename = ""},
+      LevelResourceTuple{.level_id = 13,
+                         .tileset_filename = "FR013.0",
+                         .room_layout_filename = "FR013.1",
+                         .sprite_sheet_filename = "FR013.2",
+                         .script_filename = "FR013.3"},
+      LevelResourceTuple{.level_id = 14,
+                         .tileset_filename = "FR014.0",
+                         .room_layout_filename = "FR014.1",
+                         .sprite_sheet_filename = "FR014.2",
+                         .script_filename = "FR013.3"},
+  };
+  return kTuples;
+}
 
 std::uint16_t read_u16(std::span<const std::uint8_t> bytes, std::size_t off) {
   if (off + 1 >= bytes.size()) {
@@ -144,6 +227,138 @@ bool validate_frpak_catalog_record_bounds(const FrpakCatalogRecord &record,
     return false;
   }
   return record.data_size <= (file_size - record.data_offset);
+}
+
+std::optional<LevelResourceTuple>
+resolve_level_resource_tuple(std::uint16_t level_id,
+                             const std::filesystem::path &root) {
+  if (level_id > 14) {
+    return std::nullopt;
+  }
+
+  const auto tuple = level_resource_catalog()[level_id];
+  const auto roots = detail::build_asset_root_candidates(root);
+  for (const auto &candidate_root : roots) {
+    const auto has_required_files = [&](const std::string &filename) {
+      if (filename.empty()) {
+        return true;
+      }
+      return path_exists(candidate_root / filename);
+    };
+
+    if (!has_required_files(tuple.tileset_filename) ||
+        !has_required_files(tuple.room_layout_filename) ||
+        !has_required_files(tuple.sprite_sheet_filename)) {
+      continue;
+    }
+
+    if (tuple.has_script() && !has_required_files(tuple.script_filename)) {
+      continue;
+    }
+
+    return tuple;
+  }
+
+  return std::nullopt;
+}
+
+std::optional<LevelTilesetDecode>
+decode_level_tileset(std::span<const std::uint8_t> payload) {
+  if (payload.size() < 6) {
+    return std::nullopt;
+  }
+
+  LevelTilesetDecode decoded{};
+  decoded.hazard_bounds[0] = read_u16(payload, 2);
+  decoded.hazard_bounds[1] = read_u16(payload, 4);
+
+  try {
+    const auto rle = decode_signed_rle(payload.subspan(6));
+    if (rle.bytes.size() % kTilesetTileBytes != 0) {
+      return std::nullopt;
+    }
+
+    const std::size_t tile_count = rle.bytes.size() / kTilesetTileBytes;
+    decoded.tiles.reserve(tile_count);
+    for (std::size_t tile_index = 0; tile_index < tile_count; ++tile_index) {
+      const std::size_t tile_offset = tile_index * kTilesetTileBytes;
+      Ega4PlaneImage tile{};
+      tile.row_span_bytes = 32;
+      tile.width_bytes = 2;
+      tile.height_rows = 16;
+      for (std::size_t plane = 0; plane < 4; ++plane) {
+        const std::size_t plane_offset = plane * 32U;
+        const auto begin = rle.bytes.begin() + static_cast<std::ptrdiff_t>(
+                                                   tile_offset + plane_offset);
+        const auto end = begin + static_cast<std::ptrdiff_t>(32);
+        tile.planes[plane].assign(begin, end);
+      }
+      decoded.tiles.push_back(tile);
+    }
+    return decoded;
+  } catch (const std::exception &) {
+    return std::nullopt;
+  }
+}
+
+std::optional<std::vector<MaskedSpriteRecord>>
+decode_masked_sprite_sheet(std::span<const std::uint8_t> payload) {
+  if (payload.empty()) {
+    return std::vector<MaskedSpriteRecord>{};
+  }
+
+  std::vector<MaskedSpriteRecord> sprites;
+  std::size_t offset = 0;
+
+  while (offset + 6 <= payload.size()) {
+    const auto width = read_u16(payload, offset);
+    const auto height = read_u16(payload, offset + 2);
+    const auto image_data_off = read_u16(payload, offset + 4);
+
+    if (width == 0 || height == 0) {
+      break;
+    }
+
+    MaskedSpriteRecord sprite{};
+    sprite.width_pixels = width;
+    sprite.height_rows = height;
+    sprite.image_data_off = image_data_off;
+    const std::size_t mask_byte_count = sprite.mask_byte_count();
+    const std::size_t record_header_size = 6U;
+    const std::size_t image_offset =
+        record_header_size + static_cast<std::size_t>(image_data_off);
+    if (image_offset < record_header_size + mask_byte_count) {
+      return std::nullopt;
+    }
+
+    const std::size_t record_size = record_header_size +
+                                    static_cast<std::size_t>(image_data_off) +
+                                    (4U * mask_byte_count);
+    if (offset + record_size > payload.size()) {
+      return std::nullopt;
+    }
+
+    const auto mask_begin = payload.begin() + static_cast<std::ptrdiff_t>(
+                                                  offset + record_header_size);
+    const auto mask_end =
+        mask_begin + static_cast<std::ptrdiff_t>(mask_byte_count);
+    sprite.mask_bytes.assign(mask_begin, mask_end);
+
+    const auto image_begin =
+        payload.begin() + static_cast<std::ptrdiff_t>(offset + image_offset);
+    for (std::size_t plane = 0; plane < sprite.planes.size(); ++plane) {
+      const auto plane_begin =
+          image_begin + static_cast<std::ptrdiff_t>(plane * mask_byte_count);
+      const auto plane_end =
+          plane_begin + static_cast<std::ptrdiff_t>(mask_byte_count);
+      sprite.planes[plane].assign(plane_begin, plane_end);
+    }
+
+    sprites.push_back(sprite);
+    offset += record_size;
+  }
+
+  return sprites;
 }
 
 std::optional<Ega4PlaneImage>
@@ -408,6 +623,25 @@ load_initial_bootstrap_resources(RuntimeState &state,
       clear_frpak_decode_cache(state);
     } catch (const std::exception &) {
       // Missing or unreadable FRPAK payloads should not stop bootstrap.
+    }
+  }
+
+  if (!state.bezel_frame.has_value()) {
+    const auto bezel_record =
+        find_frpak_catalog_record(state.frpak_catalog, 1U, 0U);
+    if (bezel_record.has_value()) {
+      const auto decoded = decode_frpak_catalog_record(state, *bezel_record);
+      if (decoded.has_value()) {
+        Ega4PlaneImage image = *decoded;
+        if (image.row_span_bytes > 0U && image.row_span_bytes % 40U == 0U) {
+          image.width_bytes = 40U;
+          image.height_rows =
+              static_cast<std::uint16_t>(image.row_span_bytes / 40U);
+        }
+        if (image.width_bytes == 40U && image.height_rows == 200U) {
+          state.bezel_frame = image;
+        }
+      }
     }
   }
 

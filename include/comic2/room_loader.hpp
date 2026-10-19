@@ -13,10 +13,22 @@
 
 namespace comic2 {
 
+struct RoomTableHeader {
+  std::uint16_t room_count = 0;
+  std::uint16_t level_id = 0;
+
+  bool operator==(const RoomTableHeader &) const = default;
+};
+
+std::optional<RoomTableHeader>
+parse_room_table_header(std::span<const std::uint8_t> bytes);
+
 struct RoomLoadSpec {
   std::filesystem::path source_path;
   std::uint16_t level = 0;
   std::uint16_t room = 0;
+  std::uint16_t room_count = 0;
+  std::uint16_t level_id = 0;
   ResourceAssetKind asset_kind = ResourceAssetKind::RoomPayload;
   std::size_t table_offset = 0x04;
   std::size_t room_entry_offset = 0;

@@ -1121,8 +1121,7 @@ Close the remaining gaps between Phase 9 gameplay systems (entity AI, audio, HUD
 - [x] Modal-confirm resolution for respawn vs game-over is implemented and covered by regression tests.
 - [x] Combat damage now transitions the player into a hurt animation state and is covered by regression tests.
 - [x] HUD mode/inventory overlay indicators are now rendered and covered by regression tests.
-- [x] Runtime palette state and runtime X-camera follow are now implemented and covered by regression tests.
-- [ ] The wider visual-fidelity, progression, event-script, mode-system, timing, and remaining validation-gate work remains pending.
+- [x] The visual-fidelity, animation, progression flow, event-script, mode-system, timing, and Phase 10 validation gates are completed.
 
 ### 10.1 Sprite Rendering Pipeline (Player, Entities, Projectiles & Items)
 - [x] **Player Sprite Sheet Integration**: The bootstrap render path now selects a player sprite frame from an animation-aware state model instead of relying only on HP data.
@@ -1209,3 +1208,228 @@ Close the remaining gaps between Phase 9 gameplay systems (entity AI, audio, HUD
 cmake --build build && ctest --test-dir build --output-on-failure
 ```
 
+---
+
+## Phase 11: Original Data-Driven Asset & Level Pipeline Integration
+
+### Goal
+Transition from bootstrap placeholder shapes, heuristic room probing, and synthetic tile atlas slicing to deterministic loading and rendering of original DOS game assets from `reference/original/` (or configured asset root). This brings genuine 16x16 tilesets, room layouts, enemy/player masked sprite sheets, and the authentic EGA HUD frame bezel into the active runtime.
+
+### Current Phase 11 status
+- [x] Original asset-root discovery is now canonicalized and resolves correctly when launched from a nested repo subdirectory, repo root, or CI workspace root.
+- [x] The bootstrap path now preserves the canonical asset root in runtime state instead of leaving a raw path alias.
+- [x] The bootstrap room renderer now prefers decoded `RuntimeState::level_tileset` bytes when available, while preserving FRPAK-backed and diagnostic fallback rendering paths.
+- [x] Runtime entity and projectile sprites now prefer decoded `RuntimeState::level_sprites` records from `FR###.2` when valid, while preserving placeholder rendering when records are missing or invalid.
+- [x] Bootstrap resource loading now decodes and caches `FRPAK.001` as a 320x200 bezel frame when available, and rendering seeds from that bezel canvas before scene overlays.
+- [ ] Remaining work is focused on the bezel/player viewport composition and replay-stability checks for the final live-gameplay validation gates.
+
+### Background & Asset Architecture Analysis
+Cross-referencing `comic2.asm` (specifically `load_resource` at line 2396 and table `unk_2E3CC` at line 147836) against `unpacked.exe` confirms the exact layout of the original asset pipeline:
+
+1. **Per-Level 4-File Tuples (`unk_2E3CC` Table)**
+   The game engine defines an 18-entry pointer table (15 playable levels, 0 to 14) indexing 8-byte tuples of 4 filename pointers:
+   - `File 1 (Tileset)`: Signed-RLE stream containing level tile graphics.
+   - `File 2 (Rooms/Layout)`: Room table header, Signed-RLE room tilemap payloads, and mapped entity records.
+   - `File 3 (Sprites)`: Sequential masked sprite records for player, enemies, items, and projectiles.
+   - `File 4 (Script)`: Optional 0xC00-byte block XOR-encoded with `0x25` (entity behavior / event logic).
+
+   | Level | File 1 (Tileset) | File 2 (Rooms/Layout) | File 3 (Sprites) | File 4 (Logic Script) |
+   |:-----:|:-----------------|:----------------------|:-----------------|:----------------------|
+   | **0** | `FR000.0`        | `FR000.1`             | `FR000.2`        | `FR004.3`             |
+   | **1** | `FR001.0`        | `FR001.1`             | `FR001.2`        | `FR001.3`             |
+   | **2** | `FR002.0`        | `FR002.1`             | `FR002.2`        | *None*                |
+   | **3** | `FR003.0`        | `FR003.1`             | `FR003.2`        | `FR003.3`             |
+   | **4** | `FR001.0`        | `FR004.1`             | `FR004.2`        | `FR004.3`             |
+   | **5** | `FR005.0`        | `FR005.1`             | `FR005.2`        | `FR005.3`             |
+   | **6** | `FR006.0`        | `FR006.1`             | `FR006.2`        | `FR006.3`             |
+   | **7** | `FR007.0`        | `FR007.1`             | `FR007.2`        | *None*                |
+   | **8** | `FR008.0`        | `FR008.1`             | `FR008.2`        | *None*                |
+   | **9** | `FR009.0`        | `FR009.1`             | `FR009.2`        | *None*                |
+   | **10**| `FR010.0`        | `FR010.1`             | `FR010.2`        | `FR006.3`             |
+   | **11**| `FR011.0`        | `FR011.1`             | `FR011.2`        | `FR006.3`             |
+   | **12**| `FR012.0`        | `FR012.1`             | `FR012.2`        | *None*                |
+   | **13**| `FR013.0`        | `FR013.1`             | `FR013.2`        | `FR013.3`             |
+   | **14**| `FR014.0`        | `FR014.1`             | `FR014.2`        | `FR013.3`             |
+
+2. **File Format Specifications**:
+   - **`FR###.0` (Level Tileset)**:
+     - 6-byte header: `hazard_min` (`uint16_t` at `+0x02`), `hazard_max` (`uint16_t` at `+0x04`).
+     - Payload: Signed-RLE stream decoding into `N` planar 16x16 tiles.
+     - Each tile is exactly 128 bytes: 16 rows * 2 bytes/row = 32 bytes per plane, across 4 EGA planes. E.g. `FR000.0` unpacks into exactly 144 tiles (18,432 bytes).
+   - **`FR###.1` (Room Data & Entity Placement)**:
+     - Header: `uint16_t room_count` (at `+0x00`), `uint16_t level_id` (at `+0x02`).
+     - Room entry table (6 bytes each): `uint16_t tile_w`, `uint16_t tile_h`, `uint16_t rle_data_off`.
+     - At `+rle_data_off`: Signed-RLE compressed tile grid indexing tiles 0..N, row pointer table at `+0x2A0`, and `MappedObject12` records starting at `+0x2B0`.
+   - **`FR###.2` (Masked Sprite Sheet)**:
+     - Sequential sequence of `MaskedSpriteRecord` structures: `uint16_t width_pixels`, `uint16_t height_rows`, `uint16_t image_data_off`.
+     - Mask planar bytes: `(width / 8) * height`.
+     - 4 planes of image data: `4 * (width / 8) * height`.
+     - E.g. `FR000.2` contains 16x24 Comic sprites (walk, jump, shoot), 16x16 enemies and collectibles, and 16x8 projectile frames.
+   - **`FRPAK.001` .. `FRPAK.007` (Full-Screen 320x200 EGA 4-Plane Images)**:
+     - `FRPAK.001`: In-game HUD bezel / border frame (320x200).
+     - `FRPAK.002`: Title / splash screen.
+     - `FRPAK.003` - `FRPAK.006`: Intro cinematic sequence frames.
+     - `FRPAK.007`: Game victory / ending sequence graphic.
+   - **`FRDATA.0` / `FRDATA.1`**:
+     - Game selection panel and options UI screens.
+
+---
+
+### Detailed Implementation Roadmap
+
+#### 11.1 Level Resource Catalog & Resolver (`unk_2E3CC` Table)
+- [x] Define `LevelResourceTuple` struct (`tileset_filename`, `room_layout_filename`, `sprite_sheet_filename`, `script_filename`).
+- [x] Implement canonical 15-level tuple mapping table directly matching original `unk_2E3CC` indirection.
+- [x] Implement `resolve_level_resource_tuple(uint16_t level_id, const std::filesystem::path &root)` with support for level 4 tileset reuse (`FR001.0`) and optional script nullability.
+- [x] Replace heuristic `FR###.#` directory searches in `src/room_loader.cpp` with exact tuple-based path resolution, while keeping the old scan as a guarded fallback for missing/corrupt canonical files.
+- [x] Add unit tests verifying resolution of all 15 level tuples against `reference/original/`.
+- [x] Harden original-asset discovery so tests and bootstrap logic can resolve the asset root when executed from a temp working directory, repo subdirectory, or CI workspace root instead of assuming the current process CWD is the repo root.
+
+#### 11.2 16x16 Planar Tileset Decoder (`FR###.0`)
+- [x] Implement `decode_level_tileset(std::span<const uint8_t> payload)` in `src/resource_loader.cpp`.
+- [x] Parse 6-byte tileset header and extract `hazard_min` and `hazard_max` into `RuntimeState::tile_hazard_bounds`.
+- [x] Decode signed-RLE payload from byte offset 6 into planar tile array:
+  - Each tile = 16x16 pixels, 2 bytes/row, 16 rows = 32 bytes per plane * 4 planes = 128 bytes.
+  - Store decoded tiles as `std::vector<Ega4PlaneImage>` (width=2, height=16) in `RuntimeState::level_tileset`.
+- [x] Add deterministic test verifying `FR000.0` decodes exactly 144 tiles (18,432 bytes) with stable plane-byte hashes.
+- [x] Add asset-root tuple load path that hydrates `RuntimeState::level_tileset` and `RuntimeState::tile_hazard_bounds` from `FR###.0` before committing the room payload, while preserving the existing fallback scan for missing/corrupt canonical room assets.
+- [x] Update `render_bootstrap_frame` to render room tiles directly from `RuntimeState::level_tileset` when populated, while preserving FRPAK-backed and diagnostic fallback behavior for missing or invalid assets.
+
+#### 11.3 Real Room Layout & Entity Spawn Pipeline (`FR###.1`)
+- [x] Update `load_room_tilemap_from_resource_file` to consume `FR###.1` payloads directly via the level tuple resolver.
+- [x] Parse room table header (`room_count`, `level_id`) and individual room dimensions (`tile_w`, `tile_h`).
+- [x] Decode Signed-RLE room tilemap bytes into `RuntimeState::room_grid.tile_data` with indices indexing `RuntimeState::level_tileset`.
+- [x] Extract `MappedObject12` records from room payload and populate `RuntimeState::mapped_objects`.
+- [x] Update bootstrap room-tile rendering to use `RuntimeState::level_tileset` when available instead of relying on `FRPAK.001` tile slicing.
+- [ ] Add tests verifying Room 0 through Room N layouts for Level 0, valid tile index bounds, and entity list population.
+
+#### 11.4 Masked Sprite Sheet Decoder (`FR###.2`)
+- [x] Implement `decode_masked_sprite_sheet(std::span<const uint8_t> payload)` in `src/resource_loader.cpp`.
+- [x] Parse sequential `MaskedSpriteRecord` entries (`width`, `height`, `image_data_off`, mask bytes, and 4-plane image bytes).
+- [x] Convert records into `MaskedSpriteRecord` entries with explicit mask data stored in `RuntimeState::level_sprites`.
+- [x] Map player animation states (`Idle`, `WalkCycle`, `JumpRise`, `JumpFall`, `Attack`, `Hurt`, `Death`) to Comic's 16x24 sprite frames in `FR###.2`.
+- [x] Map entity behavior types to enemy (16x16) and item (16x16) sprite records.
+- [x] Map projectile state to fireball (16x8) sprite records.
+- [x] Add tests verifying sprite count, dimensions, mask parity, and deterministic plane bytes for `FR000.2`.
+
+#### 11.5 Viewport & Screen Bezel Compositing (`FRPAK.001`)
+- [x] Decode `FRPAK.001` once as the static 320x200 HUD/bezel canvas (`RuntimeState::bezel_frame`).
+- [ ] Define the authentic in-game playfield viewport rectangle inside the 320x200 canvas (with clipping bounds).
+- [ ] Composite room tilemap, entities, player, and projectiles exclusively within the viewport area.
+- [ ] Render HUD status counters (firepower, gems, score, lives, collected mode items) onto the bezel panel locations (`x=0x100..0x120`, `y=0x5E, 0x77, 0x90, 0xA9`).
+- [ ] Add frame-hash regression tests verifying authentic 320x200 EGA frame compositing.
+
+#### 11.6 End-to-End Live Gameplay Bootstrap & Oracle Alignment
+- [ ] Wire `main()` and scene bootstrap to initialize Level 0 Room 0 directly from `reference/original/` assets.
+- [ ] Verify player movement, jump physics, tile hazard collisions, and projectile firing with real graphics.
+- [ ] Verify room transitions across level 0 rooms with full reload of room geometry and entity slots.
+- [ ] Validate frame-by-frame replay against recorded DOSBox oracle captures.
+
+---
+
+### Phase 11 Validation Gates
+- [x] **Gate 11-A (Tuple Resolution)**: All 15 level tuples deterministically resolve to existing original files.
+- [x] **Gate 11-B (Tileset Parity)**: `FR000.0` decodes into exactly 144 16x16 tiles of 128 bytes each, matching plane hash assertions.
+- [x] **Gate 11-C (Room Layout)**: Level 0 Room 0 loads from `FR000.1` with dimensions 80x30 and valid in-bounds tile IDs from the original asset root.
+- [x] **Gate 11-D (Sprite Parity)**: `FR000.2` unpacks Comic's 16x24 animations and enemy 16x16 sprites with valid masks.
+- [ ] **Gate 11-E (Frame Compositing)**: Assembled 320x200 frame (`FRPAK.001` bezel + viewport tilemap + sprites + HUD) matches reference visual hash.
+- [ ] **Gate 11-F (Replay Stability)**: Deterministic scripted input sequence completes without regressions across room transitions.
+
+---
+
+### Phase 11 PR-Sized Handoff Slices (Agent-Ready)
+
+#### PR 11-A1: Level Resource Tuple Catalog & Resolver
+**Objective**: Implement canonical `unk_2E3CC` 15-level tuple table and path resolver.
+**Files**: `include/comic2/resource_formats.hpp`, `include/comic2/resource_loader.hpp`, `src/resource_loader.cpp`, `tests/subsystem_scaffold_tests.cpp`.
+**Scope**: Add `LevelResourceTuple`, resolve 15 levels, validate against file existence in `reference/original/`.
+
+#### PR 11-B1: 16x16 Planar Tileset Decoder (`FR###.0`)
+**Objective**: Implement Signed-RLE decoder for 6-byte header + 128-byte tileset streams.
+**Files**: `include/comic2/resource_loader.hpp`, `src/resource_loader.cpp`, `include/comic2/game_state.hpp`, `tests/renderer_validation_tests.cpp`.
+**Scope**: Decode `FR000.0` into 144 16x16 tiles, parse hazard bounds, store in `RuntimeState`.
+
+#### PR 11-B2: Room Layout & Mapped Entity Wiring (`FR###.1`)
+**Objective**: Connect room loader to `FR###.1` files via resolver and render with decoded `level_tileset`.
+**Files**: `src/room_loader.cpp`, `src/bootstrap.cpp`, `tests/dispatcher_tests.cpp`, `tests/bootstrap_wiring_tests.cpp`.
+**Scope**: Load rooms from `FR000.1`, populate tile grid and mapped objects, render room using `level_tileset`.
+
+#### PR 11-C1: Masked Sprite Sheet Decoder (`FR###.2`)
+**Objective**: Decode sequential `MaskedSpriteRecord` streams into planar sprites with 1-bit masks.
+**Files**: `include/comic2/resource_formats.hpp`, `include/comic2/resource_loader.hpp`, `src/resource_loader.cpp`, `tests/renderer_validation_tests.cpp`.
+**Scope**: Parse `FR000.2` into Comic 16x24 frames, enemy 16x16 frames, and projectile 16x8 frames.
+
+#### PR 11-C2: Sprite Rendering Integration (Player, Enemies, Projectiles)
+**Objective**: Replace placeholder box sprites with decoded real sprites in renderer.
+**Files**: `src/renderer.cpp`, `src/bootstrap.cpp`, `tests/renderer_tests.cpp`.
+**Scope**: Blit real Comic walk/jump/shoot frames, enemy sprites, and projectiles using masked blit.
+**Status**: [x] Runtime entity and projectile rendering now tries `RuntimeState::level_sprites` first and retains placeholder fallback when records are absent or invalid.
+
+#### PR 11-D1: Bezel Compositing (`FRPAK.001`) & Viewport Clipping
+**Objective**: Composite in-game viewport and HUD status counters onto the `FRPAK.001` border bezel.
+**Files**: `src/bootstrap.cpp`, `src/renderer.cpp`, `tests/integration_gates_tests.cpp`.
+**Scope**: Draw `FRPAK.001` canvas, clip playfield viewport, blit HUD counters at original screen coords.
+
+#### PR 11-E1: End-to-End Live Gameplay Bootstrap & Gate Verification
+**Objective**: Verify end-to-end playability with real assets and pass all Gate 11 validation checks.
+**Files**: `src/main.cpp`, `src/bootstrap.cpp`, `tests/integration_gates_tests.cpp`.
+**Scope**: Validate full loop startup on Level 0 Room 0, room transitions, and oracle replay matching.
+
+---
+
+### Copy/Paste Agent Prompt Blocks (Phase 11)
+
+#### Prompt: PR 11-A1 (Level Resource Tuple Catalog & Resolver)
+```text
+Implement PR 11-A1 from PLAN.md exactly as scoped.
+
+Objective:
+- Implement the canonical 15-level tuple catalog (matching original unk_2E3CC table) and path resolver.
+
+Scope:
+- Add LevelResourceTuple struct to resource_formats.hpp.
+- Implement resolve_level_resource_tuple(level_id, root) in resource_loader.cpp.
+- Support level 4 tileset reuse (FR001.0) and nullable script file.
+- Keep existing fallback behavior intact when asset root does not contain original files.
+
+Allowed files:
+- include/comic2/resource_formats.hpp
+- include/comic2/resource_loader.hpp
+- src/resource_loader.cpp
+- tests/subsystem_scaffold_tests.cpp
+
+Required tests:
+- All 15 levels (0..14) map to expected tuple filenames.
+- Out-of-range level indices (>14) fail cleanly.
+- Resolver locates files in candidate asset roots.
+
+Validation:
+- cmake --build build && ctest --test-dir build --output-on-failure
+```
+
+#### Prompt: PR 11-B1 (16x16 Planar Tileset Decoder FR###.0)
+```text
+Implement PR 11-B1 from PLAN.md exactly as scoped.
+
+Objective:
+- Implement Signed-RLE decoder for FR###.0 tileset files into 128-byte 16x16 4-plane tiles.
+
+Scope:
+- Parse 6-byte header: hazard_min, hazard_max, attribute threshold into RuntimeState.
+- Decode signed-RLE stream starting at byte 6 into vector of 16x16 Ega4PlaneImage tiles (32 bytes per plane).
+- Store decoded tileset in RuntimeState::level_tileset.
+
+Allowed files:
+- include/comic2/resource_loader.hpp
+- src/resource_loader.cpp
+- include/comic2/game_state.hpp
+- tests/renderer_validation_tests.cpp
+
+Required tests:
+- FR000.0 header correctly extracts hazard bounds.
+- FR000.0 decodes exactly 144 tiles of 128 bytes each.
+- Plane-byte hashes for tiles match expected deterministic fixtures.
+
+Validation:
+- cmake --build build && ctest --test-dir build --output-on-failure
+```

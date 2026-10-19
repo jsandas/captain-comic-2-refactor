@@ -1,10 +1,17 @@
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <limits>
+#include <optional>
+#include <span>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
+#include "comic2/bootstrap.hpp"
 #include "comic2/entity_runtime.hpp"
 #include "comic2/projectiles.hpp"
 #include "comic2/room_loader.hpp"
@@ -24,6 +31,20 @@ void expect_eq(std::size_t actual, std::size_t expected, const char *message) {
   }
 }
 
+bool require_original_assets() {
+  const char *value = std::getenv("COMIC2_REQUIRE_ORIGINAL_ASSETS");
+  if (value == nullptr || *value == '\0') {
+    return false;
+  }
+
+  std::string normalized(value);
+  std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+
+  return normalized == "1" || normalized == "true" || normalized == "yes" ||
+         normalized == "on";
+}
+
 std::vector<std::uint8_t>
 encode_literal_signed_rle(const std::vector<std::uint8_t> &bytes) {
   std::vector<std::uint8_t> encoded;
@@ -38,6 +59,37 @@ encode_literal_signed_rle(const std::vector<std::uint8_t> &bytes) {
   }
   encoded.push_back(0x00);
   return encoded;
+}
+
+std::vector<std::uint8_t>
+make_test_room_resource_bytes(std::uint16_t level, std::uint16_t room,
+                              std::uint16_t tile_w, std::uint16_t tile_h,
+                              std::uint8_t seed = 0x00) {
+  std::vector<std::uint8_t> decoded_room_bytes(0x2D2, 0x00);
+  decoded_room_bytes[0] = seed;
+  decoded_room_bytes[0x2A0] = 0x00;
+  decoded_room_bytes[0x2A1] = 0x00;
+  decoded_room_bytes[0x2A2] = 0x04;
+  decoded_room_bytes[0x2A3] = 0x00;
+  decoded_room_bytes[0x2A4] = 0x08;
+  decoded_room_bytes[0x2A5] = 0x00;
+  decoded_room_bytes[0x2B0] = 0x00;
+  decoded_room_bytes[0x2B1] = 0x00;
+
+  const std::vector<std::uint8_t> encoded =
+      encode_literal_signed_rle(decoded_room_bytes);
+  std::vector<std::uint8_t> resource_bytes(0x20 + encoded.size(), 0x00);
+  resource_bytes[2] = static_cast<std::uint8_t>(level & 0xFFU);
+  resource_bytes[3] = static_cast<std::uint8_t>((level >> 8) & 0xFFU);
+  resource_bytes[0x04] = static_cast<std::uint8_t>(tile_w & 0xFFU);
+  resource_bytes[0x05] = static_cast<std::uint8_t>((tile_w >> 8) & 0xFFU);
+  resource_bytes[0x06] = static_cast<std::uint8_t>(tile_h & 0xFFU);
+  resource_bytes[0x07] = static_cast<std::uint8_t>((tile_h >> 8) & 0xFFU);
+  resource_bytes[0x08] = 0x20;
+  resource_bytes[0x09] = 0x00;
+  std::copy(encoded.begin(), encoded.end(), resource_bytes.begin() + 0x20);
+  (void)room;
+  return resource_bytes;
 }
 
 void test_entity_runtime_prunes_inactive_slots() {
@@ -417,8 +469,48 @@ void test_room_loader_rejects_huge_offset() {
   expect(!entry.has_value(), "decode should reject oversized offsets safely");
 }
 
+void test_room_loader_parses_room_count_and_level_id_header() {
+  std::vector<std::uint8_t> bytes(0x40, 0x00);
+  bytes[0] = 0x02;
+  bytes[1] = 0x00;
+  bytes[2] = 0x03;
+  bytes[3] = 0x00;
+  bytes[0x04] = 0x04;
+  bytes[0x05] = 0x00;
+  bytes[0x06] = 0x03;
+  bytes[0x07] = 0x00;
+  bytes[0x08] = 0x20;
+  bytes[0x09] = 0x00;
+  bytes[0x0A] = 0x08;
+  bytes[0x0B] = 0x00;
+  bytes[0x0C] = 0x06;
+  bytes[0x0D] = 0x00;
+  bytes[0x0E] = 0x20;
+  bytes[0x0F] = 0x00;
+
+  const auto header = comic2::parse_room_table_header(bytes);
+  expect(header.has_value(),
+         "room loader should parse an explicit FR###.1 header");
+  expect(header->room_count == 2,
+         "room table header should expose the explicit room count");
+  expect(header->level_id == 3,
+         "room table header should expose the explicit level id");
+
+  const auto spec = comic2::resolve_room_load_spec(
+      "/tmp/FR003.1", bytes, 3, 1, comic2::ResourceAssetKind::RoomPayload);
+  expect(spec.has_value(),
+         "resolver should honor the explicit room_count + level_id header");
+  expect(spec->room == 1, "resolver should select the requested room index");
+  expect(spec->room_entry.tile_w == 8,
+         "resolver should decode the selected room width from the table");
+  expect(spec->room_entry.tile_h == 6,
+         "resolver should decode the selected room height from the table");
+}
+
 void test_room_loader_rejects_out_of_bounds_room_index() {
-  std::vector<std::uint8_t> bytes(0x0A, 0x00);
+  std::vector<std::uint8_t> bytes(0x20, 0x00);
+  bytes[0] = 0x01;
+  bytes[1] = 0x00;
   bytes[2] = 0x03;
   bytes[3] = 0x00;
   bytes[0x04] = 0x04;
@@ -433,6 +525,24 @@ void test_room_loader_rejects_out_of_bounds_room_index() {
       comic2::load_room_tilemap_from_resource_buffer(state, bytes, 3, 1);
   expect(!loaded,
          "room loader should reject a room index that is outside the table");
+}
+
+void test_room_loader_rejects_malformed_room_header() {
+  std::vector<std::uint8_t> bytes = {0x05, 0x00, 0x03, 0x00};
+
+  const auto header = comic2::parse_room_table_header(bytes);
+  expect(header.has_value(),
+         "header parser should accept a structurally valid FR###.1 header");
+  expect(header->room_count == 5, "header parser should retain room_count");
+
+  const auto spec = comic2::resolve_room_load_spec(
+      "/tmp/FR003.1", bytes, 3, 0, comic2::ResourceAssetKind::RoomPayload);
+  expect(!spec.has_value(), "resolver should reject a malformed room header "
+                            "when the table is truncated");
+
+  std::vector<std::uint8_t> truncated = {0x02, 0x00, 0x03};
+  expect(!comic2::parse_room_table_header(truncated).has_value(),
+         "header parser should reject a truncated header");
 }
 
 void test_room_loader_rejects_sentinel_entries() {
@@ -501,8 +611,120 @@ void test_room_loader_populates_runtime_state_from_resource_buffer() {
   expect(state.room_grid.tile_h == 3, "room grid tile_h should match entry");
   expect(state.room_grid.row_pointers == std::vector<std::uint16_t>{0, 4, 8},
          "room loader should build row pointer table");
-  expect(state.room_grid.tile_data == decoded_room_bytes,
-         "room loader should store decoded room bytes");
+  const std::vector<std::uint8_t> expected_tile_data =
+      std::vector<std::uint8_t>{0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+                                0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+  expect(state.room_grid.tile_data == expected_tile_data,
+         "room loader should store only room tile indices, not the trailing "
+         "row-pointer and object metadata");
+}
+
+void test_room_loader_decodes_signed_rle_room_tilemap_dimensions() {
+  std::vector<std::uint8_t> decoded_room_bytes(0x2D2, 0x00);
+  const std::vector<std::uint8_t> tile_data = {
+      0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B};
+  std::copy(tile_data.begin(), tile_data.end(), decoded_room_bytes.begin());
+  decoded_room_bytes[0x2A0] = 0x00;
+  decoded_room_bytes[0x2A1] = 0x00;
+  decoded_room_bytes[0x2A2] = 0x04;
+  decoded_room_bytes[0x2A3] = 0x00;
+  decoded_room_bytes[0x2A4] = 0x08;
+  decoded_room_bytes[0x2A5] = 0x00;
+
+  const auto encoded = encode_literal_signed_rle(decoded_room_bytes);
+  std::vector<std::uint8_t> resource_bytes(0x20 + encoded.size(), 0x00);
+  resource_bytes[2] = 0x00;
+  resource_bytes[3] = 0x00;
+  resource_bytes[0x04] = 0x04;
+  resource_bytes[0x05] = 0x00;
+  resource_bytes[0x06] = 0x03;
+  resource_bytes[0x07] = 0x00;
+  resource_bytes[0x08] = 0x20;
+  resource_bytes[0x09] = 0x00;
+  std::copy(encoded.begin(), encoded.end(), resource_bytes.begin() + 0x20);
+
+  comic2::RuntimeState state;
+  state.level_tileset.resize(16);
+  const bool loaded = comic2::load_room_tilemap_from_resource_buffer(
+      state, resource_bytes, 0, 0);
+
+  expect(
+      loaded,
+      "valid Signed-RLE room tilemap payload should decode into runtime state");
+  expect(state.room_grid.tile_w == 4 && state.room_grid.tile_h == 3,
+         "room loader should preserve Level 0 Room 0 dimensions");
+  expect(state.room_grid.tile_data == tile_data,
+         "room loader should decode tile indices without trailing metadata");
+}
+
+void test_room_loader_validates_tile_indices_against_tileset_size() {
+  std::vector<std::uint8_t> decoded_room_bytes(0x2D2, 0x00);
+  const std::vector<std::uint8_t> tile_data = {
+      0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B};
+  std::copy(tile_data.begin(), tile_data.end(), decoded_room_bytes.begin());
+  decoded_room_bytes[0x2A0] = 0x00;
+  decoded_room_bytes[0x2A1] = 0x00;
+  decoded_room_bytes[0x2A2] = 0x04;
+  decoded_room_bytes[0x2A3] = 0x00;
+  decoded_room_bytes[0x2A4] = 0x08;
+  decoded_room_bytes[0x2A5] = 0x00;
+
+  const auto encoded = encode_literal_signed_rle(decoded_room_bytes);
+  std::vector<std::uint8_t> resource_bytes(0x20 + encoded.size(), 0x00);
+  resource_bytes[2] = 0x00;
+  resource_bytes[3] = 0x00;
+  resource_bytes[0x04] = 0x04;
+  resource_bytes[0x05] = 0x00;
+  resource_bytes[0x06] = 0x03;
+  resource_bytes[0x07] = 0x00;
+  resource_bytes[0x08] = 0x20;
+  resource_bytes[0x09] = 0x00;
+  std::copy(encoded.begin(), encoded.end(), resource_bytes.begin() + 0x20);
+
+  comic2::RuntimeState state;
+  state.level_tileset.resize(16);
+  const bool loaded = comic2::load_room_tilemap_from_resource_buffer(
+      state, resource_bytes, 0, 0);
+
+  expect(loaded, "tile indices within the loaded tileset bounds should pass");
+  expect(state.room_grid.tile_data[0] == 0x00,
+         "the first validated room tile should remain in range");
+}
+
+void test_room_loader_rejects_out_of_range_tile_indices_cleanly() {
+  std::vector<std::uint8_t> decoded_room_bytes(0x2D2, 0x00);
+  const std::vector<std::uint8_t> tile_data = {
+      0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x10,
+  };
+  std::copy(tile_data.begin(), tile_data.end(), decoded_room_bytes.begin());
+  decoded_room_bytes[0x2A0] = 0x00;
+  decoded_room_bytes[0x2A1] = 0x00;
+  decoded_room_bytes[0x2A2] = 0x04;
+  decoded_room_bytes[0x2A3] = 0x00;
+  decoded_room_bytes[0x2A4] = 0x08;
+  decoded_room_bytes[0x2A5] = 0x00;
+
+  const auto encoded = encode_literal_signed_rle(decoded_room_bytes);
+  std::vector<std::uint8_t> resource_bytes(0x20 + encoded.size(), 0x00);
+  resource_bytes[2] = 0x00;
+  resource_bytes[3] = 0x00;
+  resource_bytes[0x04] = 0x04;
+  resource_bytes[0x05] = 0x00;
+  resource_bytes[0x06] = 0x03;
+  resource_bytes[0x07] = 0x00;
+  resource_bytes[0x08] = 0x20;
+  resource_bytes[0x09] = 0x00;
+  std::copy(encoded.begin(), encoded.end(), resource_bytes.begin() + 0x20);
+
+  comic2::RuntimeState state;
+  state.level_tileset.resize(16);
+  const bool loaded = comic2::load_room_tilemap_from_resource_buffer(
+      state, resource_bytes, 0, 0);
+
+  expect(!loaded,
+         "tile index 0x10 should fail validation when the tileset is smaller");
+  expect(state.room_grid.tile_data.empty(),
+         "failed validation should leave room tile data unset for safety");
 }
 
 void test_room_loader_handles_self_referential_resource_bytes_span() {
@@ -827,6 +1049,502 @@ void test_bootstrap_populates_frpak_catalog_for_known_files() {
   std::filesystem::remove_all(root);
 }
 
+std::optional<std::filesystem::path> find_original_asset_root() {
+  std::vector<std::filesystem::path> seeds;
+
+  const std::filesystem::path file_path(__FILE__);
+  if (file_path.is_absolute()) {
+    seeds.push_back(file_path.parent_path().parent_path());
+  }
+
+  seeds.push_back(std::filesystem::current_path());
+
+  if (const char *github_workspace = std::getenv("GITHUB_WORKSPACE");
+      github_workspace != nullptr && *github_workspace != '\0') {
+    seeds.emplace_back(github_workspace);
+  }
+
+  for (const auto &seed : seeds) {
+    std::filesystem::path cursor = seed;
+    for (;;) {
+      const auto reference_candidate = cursor / "reference" / "original";
+      if (std::filesystem::exists(reference_candidate) &&
+          std::filesystem::is_directory(reference_candidate)) {
+        for (const auto &entry :
+             std::filesystem::directory_iterator(reference_candidate)) {
+          const auto name = entry.path().filename().string();
+          if (name.rfind("FRDATA.", 0) == 0 && entry.is_regular_file()) {
+            return reference_candidate;
+          }
+        }
+      }
+
+      const auto original_candidate = cursor / "original";
+      if (std::filesystem::exists(original_candidate) &&
+          std::filesystem::is_directory(original_candidate)) {
+        for (const auto &entry :
+             std::filesystem::directory_iterator(original_candidate)) {
+          const auto name = entry.path().filename().string();
+          if (name.rfind("FRDATA.", 0) == 0 && entry.is_regular_file()) {
+            return original_candidate;
+          }
+        }
+      }
+
+      const auto parent = cursor.parent_path();
+      if (parent == cursor || parent.empty()) {
+        break;
+      }
+      cursor = parent;
+    }
+  }
+
+  return std::nullopt;
+}
+
+void test_room_loader_prefers_exact_level_tuple_room_file() {
+  const auto root =
+      std::filesystem::temp_directory_path() / "comic2_room_tuple_exact";
+  std::filesystem::remove_all(root);
+  std::filesystem::create_directories(root);
+
+  const auto target_bytes = make_test_room_resource_bytes(4, 0, 4, 3, 0xAAU);
+  const auto fallback_bytes = make_test_room_resource_bytes(3, 0, 4, 3, 0x55U);
+
+  std::ofstream(root / "FR004.1", std::ios::binary)
+      .write(reinterpret_cast<const char *>(target_bytes.data()),
+             static_cast<std::streamsize>(target_bytes.size()));
+  std::ofstream(root / "FR003.1", std::ios::binary)
+      .write(reinterpret_cast<const char *>(fallback_bytes.data()),
+             static_cast<std::streamsize>(fallback_bytes.size()));
+  std::ofstream(root / "FR001.0", std::ios::binary).write("\x00", 1);
+  std::ofstream(root / "FR004.2", std::ios::binary).write("\x00", 1);
+  std::ofstream(root / "FR004.3", std::ios::binary).write("\x00", 1);
+
+  comic2::RuntimeState state;
+  const bool loaded =
+      comic2::load_room_tilemap_from_asset_root(state, root, 4, 0);
+  expect(loaded,
+         "asset-root room load should succeed with the exact level tuple");
+  expect(state.room_grid.tile_data[0] == 0xAA,
+         "asset-root loader should prefer the canonical FR004.1 room payload");
+
+  std::filesystem::remove_all(root);
+}
+
+void test_room_loader_falls_back_when_canonical_room_file_is_corrupt() {
+  const auto root =
+      std::filesystem::temp_directory_path() / "comic2_room_tuple_fallback";
+  std::filesystem::remove_all(root);
+  std::filesystem::create_directories(root);
+
+  const auto fallback_bytes = make_test_room_resource_bytes(4, 0, 4, 3, 0x66U);
+  std::ofstream(root / "FR004.1", std::ios::binary).write("\x00\x00\x00", 3);
+  std::ofstream(root / "FR004.9", std::ios::binary)
+      .write(reinterpret_cast<const char *>(fallback_bytes.data()),
+             static_cast<std::streamsize>(fallback_bytes.size()));
+  std::ofstream(root / "FR001.0", std::ios::binary).write("\x00", 1);
+  std::ofstream(root / "FR004.2", std::ios::binary).write("\x00", 1);
+  std::ofstream(root / "FR004.3", std::ios::binary).write("\x00", 1);
+
+  comic2::RuntimeState state;
+  const bool loaded =
+      comic2::load_room_tilemap_from_asset_root(state, root, 4, 0);
+  expect(loaded, "asset-root room loader should fallback when the canonical "
+                 "room file is corrupt");
+  expect(state.room_grid.tile_data[0] == 0x66,
+         "fallback scan should keep using a valid room payload when the "
+         "canonical file is unusable");
+
+  std::filesystem::remove_all(root);
+}
+
+void test_room_loader_loads_level_tileset_from_asset_root_tuple() {
+  const auto root =
+      std::filesystem::temp_directory_path() / "comic2_room_tileset_tuple";
+  std::filesystem::remove_all(root);
+  std::filesystem::create_directories(root);
+
+  const std::vector<std::uint8_t> tileset_payload = {
+      0x00, 0x00, 0x1A, 0x00, 0x28, 0x00, 0x80, 0x00, 0x80, 0x01, 0x00,
+  };
+  const auto room_bytes = make_test_room_resource_bytes(0, 0, 4, 3, 0x01U);
+
+  std::ofstream(root / "FR000.0", std::ios::binary)
+      .write(reinterpret_cast<const char *>(tileset_payload.data()),
+             static_cast<std::streamsize>(tileset_payload.size()));
+  std::ofstream(root / "FR000.1", std::ios::binary)
+      .write(reinterpret_cast<const char *>(room_bytes.data()),
+             static_cast<std::streamsize>(room_bytes.size()));
+  std::ofstream(root / "FR000.2", std::ios::binary).write("\x00", 1);
+  std::ofstream(root / "FR004.3", std::ios::binary).write("\x00", 1);
+
+  comic2::RuntimeState state;
+  const bool loaded =
+      comic2::load_room_tilemap_from_asset_root(state, root, 0, 0);
+  expect(
+      loaded,
+      "asset-root loader should load a canonical tuple with a valid tileset");
+  expect_eq(state.level_tileset.size(), 2,
+            "level tileset should decode exactly two 16x16 4-plane tiles");
+  expect(state.tile_hazard_bounds[0] == 0x001A &&
+             state.tile_hazard_bounds[1] == 0x0028,
+         "tuple tileset hazard bounds should be committed to runtime state");
+  expect(state.room_grid.tile_data[0] == 0x01,
+         "room payload should still load after tuple tileset hydrate");
+
+  std::filesystem::remove_all(root);
+}
+
+std::vector<std::uint8_t> make_test_masked_sprite_sheet_bytes() {
+  auto append_record =
+      [](std::vector<std::uint8_t> &out, std::uint16_t width,
+         std::uint16_t height, const std::vector<std::uint8_t> &mask,
+         const std::array<std::vector<std::uint8_t>, 4> &planes) {
+        const std::size_t image_offset = mask.size();
+        const std::size_t record_size = 6U + image_offset + (4U * mask.size());
+        std::vector<std::uint8_t> record(record_size, 0x00);
+        record[0] = static_cast<std::uint8_t>(width & 0xFFU);
+        record[1] = static_cast<std::uint8_t>((width >> 8) & 0xFFU);
+        record[2] = static_cast<std::uint8_t>(height & 0xFFU);
+        record[3] = static_cast<std::uint8_t>((height >> 8) & 0xFFU);
+        record[4] = static_cast<std::uint8_t>(image_offset & 0xFFU);
+        record[5] = static_cast<std::uint8_t>((image_offset >> 8) & 0xFFU);
+        std::copy(mask.begin(), mask.end(), record.begin() + 6);
+        const std::size_t plane_bytes = mask.size();
+        for (std::size_t plane = 0; plane < 4; ++plane) {
+          std::copy(planes[plane].begin(), planes[plane].end(),
+                    record.begin() +
+                        static_cast<std::ptrdiff_t>(6U + image_offset +
+                                                    plane * plane_bytes));
+        }
+        out.insert(out.end(), record.begin(), record.end());
+      };
+
+  std::vector<std::uint8_t> payload;
+
+  std::vector<std::uint8_t> record1_mask(48, 0x00);
+  for (std::size_t i = 0; i < record1_mask.size(); ++i) {
+    record1_mask[i] = static_cast<std::uint8_t>((i % 5U) + 1U);
+  }
+  std::array<std::vector<std::uint8_t>, 4> record1_planes = {
+      std::vector<std::uint8_t>(48, 0x11U),
+      std::vector<std::uint8_t>(48, 0x22U),
+      std::vector<std::uint8_t>(48, 0x33U),
+      std::vector<std::uint8_t>(48, 0x44U),
+  };
+  append_record(payload, 16, 24, record1_mask, record1_planes);
+
+  std::vector<std::uint8_t> record2_mask(8, 0x00);
+  for (std::size_t i = 0; i < record2_mask.size(); ++i) {
+    record2_mask[i] = static_cast<std::uint8_t>((i % 7U) + 2U);
+  }
+  std::array<std::vector<std::uint8_t>, 4> record2_planes = {
+      std::vector<std::uint8_t>(8, 0xAAU),
+      std::vector<std::uint8_t>(8, 0xBBU),
+      std::vector<std::uint8_t>(8, 0xCCU),
+      std::vector<std::uint8_t>(8, 0xDDU),
+  };
+  append_record(payload, 8, 8, record2_mask, record2_planes);
+
+  std::vector<std::uint8_t> terminator(6, 0x00);
+  payload.insert(payload.end(), terminator.begin(), terminator.end());
+  return payload;
+}
+
+void test_phase11_masked_sprite_sheet_decode_synthetic() {
+  const auto payload = make_test_masked_sprite_sheet_bytes();
+  const auto decoded = comic2::decode_masked_sprite_sheet(payload);
+
+  expect(decoded.has_value(), "synthetic sprite payload should decode");
+  expect_eq(decoded->size(), 2,
+            "synthetic sprite sheet should decode exactly two records");
+
+  expect(decoded->at(0).width_pixels == 16,
+         "first sprite width should match the synthetic record");
+  expect(decoded->at(0).height_rows == 24,
+         "first sprite height should match the synthetic record");
+  expect(decoded->at(0).image_data_off == 48,
+         "first sprite image offset should match mask byte count");
+  expect(decoded->at(0).mask_bytes.size() == 48,
+         "first sprite mask should be 2 bytes x 24 rows");
+  expect(decoded->at(0).planes[0].size() == 48,
+         "first sprite plane 0 should contain the expected image bytes");
+  expect(decoded->at(0).planes[0][0] == 0x11U,
+         "first sprite plane 0 should preserve its synthetic image bytes");
+  expect(decoded->at(0).planes[3][47] == 0x44U,
+         "first sprite plane 3 should preserve the last synthetic image byte");
+
+  expect(decoded->at(1).width_pixels == 8,
+         "second sprite width should match the synthetic record");
+  expect(decoded->at(1).mask_bytes.size() == 8,
+         "second sprite mask size should match 8x8 / 8 bytes");
+  expect(decoded->at(1).planes[1][0] == 0xBBU,
+         "second sprite plane 1 should preserve raw image data");
+  expect(decoded->at(1).planes[3][7] == 0xDDU,
+         "second sprite plane 3 should preserve the last raw image byte");
+}
+
+void test_phase11_fr000_masked_sprite_sheet_decode_parity() {
+  const auto root = find_original_asset_root();
+  if (!root.has_value()) {
+    if (require_original_assets()) {
+      throw std::runtime_error(
+          "COMIC2_REQUIRE_ORIGINAL_ASSETS is set, but reference/original "
+          "assets containing FRDATA.* were not found");
+    }
+    std::cerr << "Skipping FR000 sprite-sheet parity test: reference/original "
+                 "assets are not present.\n";
+    return;
+  }
+
+  const auto path = root.value() / "FR000.2";
+  expect(std::filesystem::exists(path),
+         "FR000.2 should exist in the original asset root");
+
+  const auto bytes = comic2::load_file_bytes(path);
+  expect(bytes.has_value(),
+         "FR000.2 should be readable for sprite decode parity");
+
+  const auto decoded =
+      comic2::decode_masked_sprite_sheet(std::span<const std::uint8_t>(*bytes));
+  expect(decoded.has_value(), "FR000.2 should decode as a valid sprite sheet");
+  expect_eq(decoded->size(), 32,
+            "FR000.2 should contain 32 sequential masked records");
+
+  const std::array<std::size_t, 4> sample_points = {0U, 1U, 8U, 31U};
+  for (const auto index : sample_points) {
+    expect(index < decoded->size(),
+           "FR000.2 sample record index should stay within the decoded sheet");
+    const auto &sprite = decoded->at(index);
+    expect(sprite.width_pixels > 0 && sprite.height_rows > 0,
+           "FR000.2 sample sprite should have valid non-zero dimensions");
+    expect(sprite.mask_bytes.size() ==
+               ((sprite.width_pixels + 7U) / 8U) * sprite.height_rows,
+           "FR000.2 mask payload should match the packed 1-bit bitmap sizing");
+    expect(sprite.planes.size() == 4,
+           "FR000.2 sample sprite should expose the four EGA image planes");
+    for (const auto &plane : sprite.planes) {
+      expect(plane.size() == sprite.mask_bytes.size(),
+             "FR000.2 sprite plane payloads should match the mask dimensions");
+    }
+  }
+
+  expect(decoded->front().width_pixels == 16,
+         "first sprite in FR000.2 should be a 16-pixel wide Comic frame");
+  expect(decoded->front().height_rows == 24,
+         "first sprite in FR000.2 should be 24 rows tall");
+  expect(decoded->front().mask_bytes.size() == 48,
+         "first FR000.2 mask should be 48 bytes for 16x24 data");
+  expect(decoded->front().planes.size() == 4,
+         "FR000.2 sprite plane array should carry four image planes");
+  expect(decoded->front().planes[0].size() == 48,
+         "FR000.2 first sprite plane 0 should be 48 bytes");
+  expect(decoded->front().planes[1].size() == 48,
+         "FR000.2 first sprite plane 1 should be 48 bytes");
+  expect(decoded->front().planes[2].size() == 48,
+         "FR000.2 first sprite plane 2 should be 48 bytes");
+  expect(decoded->front().planes[3].size() == 48,
+         "FR000.2 first sprite plane 3 should be 48 bytes");
+}
+
+void test_phase11_level_resource_tuple_catalog() {
+  const auto root = find_original_asset_root();
+  if (!root.has_value()) {
+    if (require_original_assets()) {
+      throw std::runtime_error(
+          "COMIC2_REQUIRE_ORIGINAL_ASSETS is set, but reference/original "
+          "assets containing FRDATA.* were not found");
+    }
+    std::cerr << "Skipping level resource tuple catalog test: "
+                 "reference/original assets are not present.\n";
+    return;
+  }
+
+  for (std::uint16_t level = 0; level <= 14; ++level) {
+    const auto tuple =
+        comic2::resolve_level_resource_tuple(level, root.value());
+    expect(tuple.has_value(), "all 15 canonical level tuples should resolve in "
+                              "the original asset root");
+    expect(!tuple->tileset_filename.empty(),
+           "level tuple should carry a tileset filename");
+    expect(!tuple->room_layout_filename.empty(),
+           "level tuple should carry a room-layout filename");
+    expect(!tuple->sprite_sheet_filename.empty(),
+           "level tuple should carry a sprite-sheet filename");
+    expect(std::filesystem::exists(root.value() / tuple->tileset_filename),
+           "level tuple tileset should exist in the original asset root");
+    expect(std::filesystem::exists(root.value() / tuple->room_layout_filename),
+           "level tuple room file should exist in the original asset root");
+    expect(std::filesystem::exists(root.value() / tuple->sprite_sheet_filename),
+           "level tuple sprite file should exist in the original asset root");
+    if (tuple->has_script()) {
+      expect(std::filesystem::exists(root.value() / tuple->script_filename),
+             "level tuple script should exist in the original asset root");
+    }
+  }
+
+  const auto level0 = comic2::resolve_level_resource_tuple(0, root.value());
+  expect(level0.has_value(), "level 0 tuple should resolve to original files");
+  expect(level0->tileset_filename == "FR000.0",
+         "level 0 tileset filename should match original catalog");
+  expect(level0->room_layout_filename == "FR000.1",
+         "level 0 room filename should match original catalog");
+  expect(level0->sprite_sheet_filename == "FR000.2",
+         "level 0 sprite filename should match original catalog");
+
+  const auto level4 = comic2::resolve_level_resource_tuple(4, root.value());
+  expect(level4.has_value(), "level 4 tuple should resolve to original files");
+  expect(level4->tileset_filename == "FR001.0",
+         "level 4 should reuse FR001.0 tileset");
+  expect(level4->room_layout_filename == "FR004.1",
+         "level 4 room filename should match original catalog");
+
+  const auto invalid = comic2::resolve_level_resource_tuple(99, root.value());
+  expect(!invalid.has_value(), "out-of-range level ids should fail cleanly");
+}
+
+void test_phase11_fr000_room0_layout_loads_from_asset_root() {
+  const auto root = find_original_asset_root();
+  if (!root.has_value()) {
+    if (require_original_assets()) {
+      throw std::runtime_error(
+          "COMIC2_REQUIRE_ORIGINAL_ASSETS is set, but reference/original "
+          "assets containing FRDATA.* were not found");
+    }
+    std::cerr << "Skipping FR000 room 0 parity test: reference/original "
+                 "assets are not present.\n";
+    return;
+  }
+
+  const auto tileset_bytes = comic2::load_file_bytes(root.value() / "FR000.0");
+  expect(tileset_bytes.has_value(), "FR000.0 should be readable");
+  const auto tileset = comic2::decode_level_tileset(
+      std::span<const std::uint8_t>(*tileset_bytes));
+  expect(tileset.has_value(), "FR000.0 should decode to a valid tileset");
+
+  comic2::RuntimeState state;
+  state.level_tileset = tileset->tiles;
+  state.tile_hazard_bounds = tileset->hazard_bounds;
+
+  const bool loaded =
+      comic2::load_room_tilemap_from_asset_root(state, root.value(), 0, 0);
+  expect(loaded,
+         "Level 0 Room 0 should load from FR000.1 in the original asset root");
+  expect(state.room_grid.tile_w == 80,
+         "Level 0 Room 0 should resolve to the original 80-tile width");
+  expect(state.room_grid.tile_h == 30,
+         "Level 0 Room 0 should resolve to the original 30-tile height");
+  expect_eq(state.room_grid.tile_data.size(), 2400U,
+            "Level 0 Room 0 should unpack the full 80x30 room tile buffer");
+  expect(state.room_grid.row_pointers.size() == 30,
+         "Level 0 Room 0 row-pointer table should cover every room row");
+  expect(!state.room_grid.tile_data.empty(),
+         "Level 0 Room 0 tile data should remain populated after load");
+  for (const auto tile_index : state.room_grid.tile_data) {
+    expect(static_cast<std::size_t>(tile_index) < state.level_tileset.size(),
+           "room tile indices should remain in bounds for the loaded tileset");
+  }
+  expect(!state.room_resource_bytes.empty(),
+         "Level 0 Room 0 should retain the loaded room bytes for downstream "
+         "parsing");
+}
+
+void test_phase11_fr000_tileset_decode_parity() {
+  const auto root = find_original_asset_root();
+  if (!root.has_value()) {
+    if (require_original_assets()) {
+      throw std::runtime_error(
+          "COMIC2_REQUIRE_ORIGINAL_ASSETS is set, but reference/original "
+          "assets containing FRDATA.* were not found");
+    }
+    std::cerr << "Skipping FR000 tileset parity test: reference/original "
+                 "assets are not present.\n";
+    return;
+  }
+
+  const auto bytes = comic2::load_file_bytes(root.value() / "FR000.0");
+  expect(bytes.has_value(), "FR000.0 should be readable for decode parity");
+
+  const auto decoded =
+      comic2::decode_level_tileset(std::span<const std::uint8_t>(*bytes));
+  expect(decoded.has_value(), "FR000.0 should decode as a valid tileset");
+  expect(decoded->hazard_bounds[0] == 0x002A,
+         "hazard min should be parsed from the FR000.0 header");
+  expect(decoded->hazard_bounds[1] == 0x0033,
+         "hazard max should be parsed from the FR000.0 header");
+  expect_eq(decoded->tiles.size(), 144,
+            "FR000.0 should decode to exactly 144 16x16 4-plane tiles");
+  expect(decoded->tiles[0].row_span_bytes == 32,
+         "tile row span should reflect 2 bytes x 16 rows per plane");
+  expect(decoded->tiles[0].width_bytes == 2,
+         "tile width bytes should be 2 bytes for a 16-pixel row");
+  expect(decoded->tiles[0].height_rows == 16,
+         "tile height should remain 16 rows for each 16x16 tile");
+  expect(decoded->tiles[0].planes[0].size() == 32,
+         "each plane should contribute exactly 32 bytes in a 16x16 tile");
+}
+
+void test_phase11_player_animation_state_mapping_contract() {
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  state.level_sprites.resize(16);
+  for (std::size_t i = 0; i < state.level_sprites.size(); ++i) {
+    auto &sprite = state.level_sprites[i];
+    sprite.width_pixels = 16;
+    sprite.height_rows = 24;
+    sprite.mask_bytes.assign(48, 0xFFU);
+    for (std::size_t plane = 0; plane < sprite.planes.size(); ++plane) {
+      sprite.planes[plane].assign(48, static_cast<std::uint8_t>(i + plane));
+    }
+  }
+
+  auto assert_index = [&](std::uint8_t animation_state, std::uint8_t frame,
+                          bool facing_right, std::size_t expected) {
+    state.player.animation_state = animation_state;
+    state.player.animation_frame = frame;
+    state.player.facing_right = facing_right;
+    const auto actual = comic2::select_player_sprite_frame(state);
+    expect(actual == expected,
+           "player animation contract should map to the expected sprite index");
+  };
+
+  assert_index(static_cast<std::uint8_t>(comic2::PlayerAnimationState::Idle), 0,
+               true, 0U);
+  assert_index(
+      static_cast<std::uint8_t>(comic2::PlayerAnimationState::WalkCycle), 0,
+      true, 1U);
+  assert_index(
+      static_cast<std::uint8_t>(comic2::PlayerAnimationState::WalkCycle), 1,
+      true, 2U);
+  assert_index(
+      static_cast<std::uint8_t>(comic2::PlayerAnimationState::WalkCycle), 2,
+      true, 3U);
+  assert_index(
+      static_cast<std::uint8_t>(comic2::PlayerAnimationState::JumpRise), 0,
+      true, 4U);
+  assert_index(static_cast<std::uint8_t>(comic2::PlayerAnimationState::Attack),
+               0, true, 5U);
+  assert_index(static_cast<std::uint8_t>(comic2::PlayerAnimationState::Hurt), 0,
+               true, 6U);
+  assert_index(static_cast<std::uint8_t>(comic2::PlayerAnimationState::Death),
+               0, true, 7U);
+
+  assert_index(static_cast<std::uint8_t>(comic2::PlayerAnimationState::Idle), 0,
+               false, 8U);
+  assert_index(
+      static_cast<std::uint8_t>(comic2::PlayerAnimationState::WalkCycle), 2,
+      false, 11U);
+  assert_index(
+      static_cast<std::uint8_t>(comic2::PlayerAnimationState::JumpRise), 0,
+      false, 12U);
+  assert_index(static_cast<std::uint8_t>(comic2::PlayerAnimationState::Attack),
+               0, false, 13U);
+  assert_index(static_cast<std::uint8_t>(comic2::PlayerAnimationState::Hurt), 0,
+               false, 14U);
+  assert_index(static_cast<std::uint8_t>(comic2::PlayerAnimationState::Death),
+               0, false, 15U);
+}
+
 } // namespace
 
 void run_subsystem_scaffold_tests() {
@@ -844,10 +1562,15 @@ void run_subsystem_scaffold_tests() {
   test_ent_activation_pipeline_integration();
   test_room_loader_decodes_frdata_entry();
   test_room_loader_resolves_room_payload_location();
+  test_room_loader_parses_room_count_and_level_id_header();
   test_room_loader_rejects_huge_offset();
   test_room_loader_rejects_out_of_bounds_room_index();
+  test_room_loader_rejects_malformed_room_header();
   test_room_loader_rejects_sentinel_entries();
   test_room_loader_populates_runtime_state_from_resource_buffer();
+  test_room_loader_decodes_signed_rle_room_tilemap_dimensions();
+  test_room_loader_validates_tile_indices_against_tileset_size();
+  test_room_loader_rejects_out_of_range_tile_indices_cleanly();
   test_room_loader_handles_self_referential_resource_bytes_span();
   test_room_loader_decodes_mapped_objects_from_payload();
   test_room_loader_wires_runtime_tables_from_loaded_mapped_objects();
@@ -857,4 +1580,13 @@ void run_subsystem_scaffold_tests() {
   test_frpak_catalog_rejects_zero_row_span_header();
   test_frpak_catalog_record_bounds_validation();
   test_bootstrap_populates_frpak_catalog_for_known_files();
+  test_room_loader_prefers_exact_level_tuple_room_file();
+  test_room_loader_falls_back_when_canonical_room_file_is_corrupt();
+  test_room_loader_loads_level_tileset_from_asset_root_tuple();
+  test_phase11_masked_sprite_sheet_decode_synthetic();
+  test_phase11_player_animation_state_mapping_contract();
+  test_phase11_fr000_masked_sprite_sheet_decode_parity();
+  test_phase11_level_resource_tuple_catalog();
+  test_phase11_fr000_room0_layout_loads_from_asset_root();
+  test_phase11_fr000_tileset_decode_parity();
 }

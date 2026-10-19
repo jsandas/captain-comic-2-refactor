@@ -11,6 +11,7 @@
 #include <thread>
 #include <vector>
 
+#include "asset_root_candidates.hpp"
 #include "comic2/default_handlers.hpp"
 #include "comic2/input_handler.hpp"
 #include "comic2/oracle.hpp"
@@ -19,10 +20,10 @@
 
 namespace comic2 {
 
-std::size_t select_player_sprite_frame(const RuntimeState &state) {
+namespace {
+std::size_t fallback_player_sprite_frame_index(const RuntimeState &state) {
   const auto animation_state =
       static_cast<PlayerAnimationState>(state.player.animation_state);
-
   const auto facing_offset = state.player.facing_right ? 0U : 8U;
 
   switch (animation_state) {
@@ -42,6 +43,112 @@ std::size_t select_player_sprite_frame(const RuntimeState &state) {
   default:
     return static_cast<std::size_t>(state.player.hp % 4U) + facing_offset;
   }
+}
+
+bool has_valid_player_sprite_sheet(const RuntimeState &state) {
+  if (state.level_sprites.size() < 16U) {
+    return false;
+  }
+
+  return std::all_of(state.level_sprites.begin(), state.level_sprites.end(),
+                     [](const MaskedSpriteRecord &sprite) {
+                       return sprite.width_pixels > 0U &&
+                              sprite.height_rows > 0U &&
+                              !sprite.mask_bytes.empty() &&
+                              !sprite.planes[0].empty();
+                     });
+}
+
+std::size_t mapped_player_sprite_frame_index(const RuntimeState &state) {
+  const auto animation_state =
+      static_cast<PlayerAnimationState>(state.player.animation_state);
+  const auto facing_offset = state.player.facing_right ? 0U : 8U;
+
+  std::size_t base_index = 0U;
+  switch (animation_state) {
+  case PlayerAnimationState::Idle:
+    base_index = 0U;
+    break;
+  case PlayerAnimationState::WalkCycle:
+    base_index =
+        1U + (static_cast<std::size_t>(state.player.animation_frame) % 3U);
+    break;
+  case PlayerAnimationState::JumpRise:
+  case PlayerAnimationState::JumpFall:
+    base_index = 4U;
+    break;
+  case PlayerAnimationState::Attack:
+    base_index = 5U;
+    break;
+  case PlayerAnimationState::Hurt:
+    base_index = 6U;
+    break;
+  case PlayerAnimationState::Death:
+    base_index = 7U;
+    break;
+  default:
+    base_index = 0U;
+    break;
+  }
+
+  return base_index + facing_offset;
+}
+
+bool draw_level_sprite_record(EgaPlanarSurface &frame,
+                              const RuntimeState &state,
+                              std::size_t sprite_index) {
+  if (sprite_index >= state.level_sprites.size()) {
+    return false;
+  }
+
+  const auto &record = state.level_sprites[sprite_index];
+  if (record.width_pixels == 0U || record.height_rows == 0U ||
+      record.mask_bytes.size() != record.mask_byte_count() ||
+      record.planes[0].size() != record.mask_byte_count() ||
+      record.mask_bytes.empty() || record.planes[0].empty()) {
+    return false;
+  }
+
+  Ega4PlaneImage sprite{};
+  sprite.width_bytes =
+      static_cast<std::uint16_t>((record.width_pixels + 7U) / 8U);
+  sprite.height_rows = record.height_rows;
+  sprite.row_span_bytes = static_cast<std::uint16_t>(
+      sprite.width_bytes * static_cast<std::uint16_t>(record.height_rows));
+
+  for (std::size_t plane = 0; plane < record.planes.size(); ++plane) {
+    const auto &source = record.planes[plane];
+    auto &target = sprite.planes[plane];
+    target.assign(source.begin(), source.end());
+  }
+
+  const std::int32_t px = state.player.x - state.camera_x;
+  const std::int32_t py = state.player.y - state.camera_y;
+  if (!is_sprite_in_viewport(px, py,
+                             static_cast<std::int32_t>(record.width_pixels),
+                             static_cast<std::int32_t>(record.height_rows))) {
+    return true;
+  }
+
+  const std::size_t clamped_px =
+      static_cast<std::size_t>(std::max<std::int16_t>(
+          0, std::min<std::int16_t>(px, frame.width_pixels() -
+                                            record.width_pixels)));
+  const std::size_t clamped_py =
+      static_cast<std::size_t>(std::max<std::int16_t>(
+          0, std::min<std::int16_t>(py,
+                                    frame.height_rows() - record.height_rows)));
+  gfx_rle_blit_masked_or_4plane(frame, clamped_px, clamped_py, sprite);
+  return true;
+}
+} // namespace
+
+std::size_t select_player_sprite_frame(const RuntimeState &state) {
+  if (has_valid_player_sprite_sheet(state)) {
+    return mapped_player_sprite_frame_index(state);
+  }
+
+  return fallback_player_sprite_frame_index(state);
 }
 
 bool should_render_player_sprite(const RuntimeState &state) {
@@ -76,6 +183,25 @@ bool has_room_grid_data(const RuntimeState &state) {
          !state.room_grid.tile_data.empty();
 }
 
+bool has_valid_level_tileset(const RuntimeState &state) {
+  if (state.level_tileset.empty()) {
+    return false;
+  }
+
+  return std::all_of(
+      state.level_tileset.begin(), state.level_tileset.end(),
+      [](const auto &tile) {
+        if (tile.width_bytes != 2U || tile.height_rows != kTileSizePixels ||
+            tile.row_span_bytes != 32U) {
+          return false;
+        }
+
+        return std::all_of(
+            tile.planes.begin(), tile.planes.end(),
+            [](const auto &plane) { return plane.size() == 32U; });
+      });
+}
+
 void clamp_player_to_room_bounds(RuntimeState &state) {
   if (!has_room_grid_data(state)) {
     return;
@@ -102,31 +228,6 @@ void clamp_player_to_room_bounds(RuntimeState &state) {
   } else if (state.player.y > max_y) {
     state.player.y = static_cast<std::int16_t>(max_y);
   }
-}
-
-std::vector<std::filesystem::path>
-build_asset_root_candidates(const std::filesystem::path &root) {
-  std::vector<std::filesystem::path> candidates;
-  candidates.push_back(root);
-  candidates.push_back(root / "reference" / "original");
-  candidates.push_back(root / "original");
-
-  std::vector<std::filesystem::path> deduped;
-  for (const auto &candidate : candidates) {
-    std::error_code ec;
-    const auto normalized = std::filesystem::weakly_canonical(candidate, ec);
-    const auto key = ec ? candidate.lexically_normal() : normalized;
-
-    const bool already_present =
-        std::any_of(deduped.begin(), deduped.end(),
-                    [&](const auto &existing) { return existing == key; });
-
-    if (!already_present) {
-      deduped.push_back(key);
-    }
-  }
-
-  return deduped;
 }
 
 void init_keyboard_handler() {
@@ -171,6 +272,33 @@ std::uint8_t read_room_tile(const RuntimeState &state, std::size_t tile_x,
     return 0;
   }
   return state.room_grid.tile_data[off];
+}
+
+void copy_bezel_canvas(EgaPlanarSurface &frame, const Ega4PlaneImage &bezel) {
+  const std::size_t width_bytes =
+      std::min<std::size_t>(bezel.width_bytes, frame.row_stride_bytes());
+  const std::size_t height_rows =
+      std::min<std::size_t>(bezel.height_rows, frame.height_rows());
+  const std::size_t bezel_row_bytes =
+      bezel.width_bytes == 0U ? 1U
+                              : static_cast<std::size_t>(bezel.width_bytes);
+
+  for (std::size_t plane = 0; plane < EgaPlanarSurface::kPlaneCount; ++plane) {
+    const auto &source = bezel.planes[plane];
+    if (source.empty()) {
+      continue;
+    }
+
+    for (std::size_t y = 0; y < height_rows; ++y) {
+      const auto source_row_offset = y * bezel_row_bytes;
+      if (source_row_offset + width_bytes > source.size()) {
+        break;
+      }
+      for (std::size_t x = 0; x < width_bytes; ++x) {
+        frame.set_plane_byte(plane, x, y, source[source_row_offset + x]);
+      }
+    }
+  }
 }
 
 void draw_fallback_background(EgaPlanarSurface &frame,
@@ -332,6 +460,61 @@ bool extract_tile_from_asset(const Ega4PlaneImage &atlas,
   return true;
 }
 
+bool draw_room_tilemap_from_level_tileset(EgaPlanarSurface &frame,
+                                          const RuntimeState &state) {
+  if (!has_room_grid_data(state) || !has_valid_level_tileset(state)) {
+    return false;
+  }
+
+  const std::size_t visible_tiles_x =
+      static_cast<std::size_t>(frame.width_pixels()) / kTileSizePixels;
+  const std::size_t start_tile_x =
+      state.camera_x > 0 ? static_cast<std::size_t>(state.camera_x) /
+                               static_cast<std::size_t>(kTileSizePixels)
+                         : 0U;
+  const std::size_t end_tile_x =
+      std::min(static_cast<std::size_t>(state.room_grid.tile_w),
+               start_tile_x + visible_tiles_x + 1U);
+
+  for (std::size_t tile_y = 0; tile_y < state.room_grid.tile_h; ++tile_y) {
+    const std::int32_t py0 =
+        static_cast<std::int32_t>(tile_y * kTileSizePixels) - state.camera_y;
+
+    if (py0 + kTileSizePixels <= 0) {
+      continue;
+    }
+    if (py0 >= static_cast<std::int32_t>(frame.height_rows())) {
+      break;
+    }
+    if (py0 < 0) {
+      continue;
+    }
+    if (py0 + kTileSizePixels >
+        static_cast<std::int32_t>(frame.height_rows())) {
+      break;
+    }
+
+    for (std::size_t tile_x = start_tile_x; tile_x < end_tile_x; ++tile_x) {
+      const std::uint8_t tile_id = read_room_tile(state, tile_x, tile_y);
+      if (tile_id >= state.level_tileset.size()) {
+        return false;
+      }
+
+      const std::int32_t px0 =
+          static_cast<std::int32_t>(tile_x * kTileSizePixels) - state.camera_x;
+      if (px0 < 0 || px0 + kTileSizePixels > frame.width_pixels()) {
+        continue;
+      }
+
+      gfx_rle_blit_opaque_4plane(frame, static_cast<std::size_t>(px0),
+                                 static_cast<std::size_t>(py0),
+                                 state.level_tileset[tile_id]);
+    }
+  }
+
+  return true;
+}
+
 bool draw_room_tilemap_from_asset(EgaPlanarSurface &frame,
                                   const RuntimeState &state,
                                   const Ega4PlaneImage &atlas) {
@@ -393,6 +576,13 @@ bool draw_room_tilemap_from_asset(EgaPlanarSurface &frame,
 bool draw_player_sprite_from_asset(EgaPlanarSurface &frame,
                                    const RuntimeState &state,
                                    const Ega4PlaneImage &atlas) {
+  if (has_valid_player_sprite_sheet(state)) {
+    const std::size_t sprite_index = select_player_sprite_frame(state);
+    if (draw_level_sprite_record(frame, state, sprite_index)) {
+      return true;
+    }
+  }
+
   const std::size_t sprite_index = select_player_sprite_frame(state);
   Ega4PlaneImage sprite;
   if (!extract_tile_from_asset(atlas, sprite_index, sprite)) {
@@ -508,22 +698,24 @@ initialize_runtime_scene(RuntimeState &state,
                          const std::filesystem::path &root) {
   SceneBootstrapSummary summary{};
 
-  const auto candidates = build_asset_root_candidates(root);
+  const auto candidates = detail::build_asset_root_candidates(root);
   for (const auto &candidate : candidates) {
     RuntimeState candidate_state = state;
+    const auto canonical_candidate =
+        std::filesystem::weakly_canonical(candidate);
     const auto load =
-        load_initial_bootstrap_resources(candidate_state, candidate);
+        load_initial_bootstrap_resources(candidate_state, canonical_candidate);
     summary.metadata_files_tried += load.metadata_files_tried;
     summary.sprite_files_tried += load.sprite_files_tried;
 
     if (load.room_grid_loaded) {
       candidate_state.player.is_physics_active = true;
       clamp_player_to_room_bounds(candidate_state);
-      candidate_state.assets_root = candidate;
+      candidate_state.assets_root = canonical_candidate;
       state = candidate_state;
       summary.room_grid_loaded = true;
       summary.using_placeholder = false;
-      summary.assets_root_used = candidate;
+      summary.assets_root_used = canonical_candidate;
       break;
     }
   }
@@ -637,16 +829,31 @@ std::size_t estimate_runtime_state_bytes(const RuntimeState &state) {
 void render_bootstrap_frame(IFramePresenter &presenter, RuntimeState &state) {
   EgaPlanarSurface frame(320, 200);
   const bool has_room_grid = has_room_grid_data(state);
+  bool used_bezel_background = false;
+  bool used_level_tileset_background = false;
   bool used_asset_background = false;
   std::optional<Ega4PlaneImage> asset;
 
-  if ((asset = try_decode_bootstrap_asset(state)).has_value()) {
+  if (state.bezel_frame.has_value()) {
+    copy_bezel_canvas(frame, *state.bezel_frame);
+    used_bezel_background = true;
+  }
+
+  if (has_valid_level_tileset(state) && has_room_grid) {
+    used_level_tileset_background =
+        draw_room_tilemap_from_level_tileset(frame, state);
+  }
+
+  if (!used_level_tileset_background &&
+      (asset = try_decode_bootstrap_asset(state)).has_value()) {
     used_asset_background = draw_room_tilemap_from_asset(frame, state, *asset);
   }
 
-  if (!used_asset_background && has_room_grid) {
+  if (!used_level_tileset_background && !used_asset_background &&
+      has_room_grid) {
     draw_room_tilemap(frame, state);
-  } else if (!used_asset_background) {
+  } else if (!used_level_tileset_background && !used_asset_background &&
+             !used_bezel_background) {
     draw_fallback_background(frame, state);
   }
 

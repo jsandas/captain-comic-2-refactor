@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace comic2 {
@@ -40,6 +41,40 @@ struct Ega4PlaneImage {
   std::array<std::vector<std::uint8_t>, kEgaPlaneCount> planes;
 
   bool operator==(const Ega4PlaneImage &) const = default;
+};
+
+struct MaskedSpriteRecord {
+  std::uint16_t width_pixels = 0;
+  std::uint16_t height_rows = 0;
+  std::uint16_t image_data_off = 0;
+  std::vector<std::uint8_t> mask_bytes;
+  std::array<std::vector<std::uint8_t>, kEgaPlaneCount> planes;
+
+  std::size_t mask_byte_count() const {
+    return static_cast<std::size_t>(width_pixels / 8U) *
+           static_cast<std::size_t>(height_rows);
+  }
+
+  bool operator==(const MaskedSpriteRecord &) const = default;
+};
+
+struct LevelResourceTuple {
+  std::uint16_t level_id = 0;
+  std::string tileset_filename;
+  std::string room_layout_filename;
+  std::string sprite_sheet_filename;
+  std::string script_filename;
+
+  bool has_script() const { return !script_filename.empty(); }
+
+  bool operator==(const LevelResourceTuple &) const = default;
+};
+
+struct LevelTilesetDecode {
+  std::array<std::uint16_t, 2> hazard_bounds{0, 0};
+  std::vector<Ega4PlaneImage> tiles;
+
+  bool operator==(const LevelTilesetDecode &) const = default;
 };
 
 struct SignedRleResult {

@@ -181,11 +181,15 @@ struct RuntimeState {
   std::optional<PendingRoomTransition> pending_room_transition;
 
   RoomTileGrid room_grid;
+  std::array<std::uint16_t, 2> tile_hazard_bounds{0, 0};
+  std::vector<Ega4PlaneImage> level_tileset;
+  std::vector<MaskedSpriteRecord> level_sprites;
   std::vector<std::uint8_t> room_resource_bytes;
   std::vector<std::uint8_t> level_metadata_bytes;
   FrpakCatalog frpak_catalog;
   std::vector<std::uint8_t> sprite_resource_bytes;
   std::vector<FrpakDecodedRecordCacheEntry> frpak_decode_cache;
+  std::optional<Ega4PlaneImage> bezel_frame;
 
   PlayerState player;
   InputState input;
