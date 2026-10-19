@@ -1362,7 +1362,8 @@ void test_phase11_level_resource_tuple_catalog() {
   }
 
   for (std::uint16_t level = 0; level <= 14; ++level) {
-    const auto tuple = comic2::resolve_level_resource_tuple(level, root.value());
+    const auto tuple =
+        comic2::resolve_level_resource_tuple(level, root.value());
     expect(tuple.has_value(), "all 15 canonical level tuples should resolve in "
                               "the original asset root");
     expect(!tuple->tileset_filename.empty(),
