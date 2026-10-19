@@ -448,6 +448,76 @@ void test_confirmed_inventory_fields_and_boots_effect() {
          "all 6 jump ticks with boots should be fully realized and consumed");
 }
 
+void test_max_air_drift_enforcement_and_accumulation() {
+  comic2::RuntimeState state;
+  const comic2::TileCollisionConfig collision{.solid_tile_threshold = 2};
+
+  // 1. Direct step mode: air_drift_step (10) clamped by max_air_drift (5)
+  comic2::PlayerMotionConfig clamped_motion{
+      .air_drift_step = 10,
+      .max_air_drift = 5,
+      .accumulate_air_drift = false,
+  };
+  state.player.x = 0;
+  state.player.y = -100;
+  state.player.is_airborne = true;
+  state.input.right_pressed = true;
+  comic2::apply_airborne_physics_tick(state, clamped_motion, collision);
+  expect(state.player.x == 5,
+         "air drift step 10 should be clamped to max_air_drift 5");
+  expect(state.player.x_vel == 5, "x_vel should be clamped to max_air_drift 5");
+
+  state.input.right_pressed = false;
+  state.input.left_pressed = true;
+  comic2::apply_airborne_physics_tick(state, clamped_motion, collision);
+  expect(state.player.x == 0, "moving left should clamp to -5 (5 - 5 = 0)");
+  expect(state.player.x_vel == -5, "x_vel should be clamped to -5");
+
+  // 2. Authentic DOS accumulated air drift mode ([-5, 5])
+  const auto dos_motion = comic2::make_original_dos_motion_config();
+  expect(dos_motion.accumulate_air_drift,
+         "DOS config must have accumulate_air_drift enabled");
+  expect(dos_motion.max_air_drift == 5, "DOS max_air_drift must be 5");
+  expect(dos_motion.air_drift_step == 1, "DOS air_drift_step must be 1");
+
+  state.player.x = 0;
+  state.player.y = -100;
+  state.player.x_vel = 0;
+  state.input.left_pressed = false;
+  state.input.right_pressed = true;
+
+  // Accumulate rightwards over multiple ticks
+  for (int tick = 1; tick <= 5; ++tick) {
+    comic2::apply_airborne_physics_tick(state, dos_motion, collision);
+    expect(state.player.x_vel == tick,
+           "air drift should accumulate by +1 each tick");
+  }
+  expect(state.player.x_vel == 5, "air drift should reach max bound of 5");
+
+  // Further ticks with right pressed stay clamped at max_air_drift (+5)
+  comic2::apply_airborne_physics_tick(state, dos_motion, collision);
+  expect(state.player.x_vel == 5,
+         "air drift must stay clamped at max bound 5");
+
+  // 3. Friction decay towards 0 when direction released
+  state.input.right_pressed = false;
+  for (int expected_vel = 4; expected_vel >= 0; --expected_vel) {
+    comic2::apply_airborne_physics_tick(state, dos_motion, collision);
+    expect(state.player.x_vel == expected_vel,
+           "air drift should decay towards 0 via friction");
+  }
+  expect(state.player.x_vel == 0, "air drift should settle at 0");
+
+  // 4. Accumulate leftwards towards -5
+  state.input.left_pressed = true;
+  for (int tick = 1; tick <= 6; ++tick) {
+    comic2::apply_airborne_physics_tick(state, dos_motion, collision);
+    const int expected_clamped = (tick > 5) ? -5 : -tick;
+    expect(state.player.x_vel == expected_clamped,
+           "air drift should accumulate leftwards and clamp at -5");
+  }
+}
+
 } // namespace
 
 void run_player_controller_tests() {
@@ -467,4 +537,5 @@ void run_player_controller_tests() {
   test_verified_dos_short_hop_truncation();
   test_verified_dos_feet_probe_tile_collision();
   test_confirmed_inventory_fields_and_boots_effect();
+  test_max_air_drift_enforcement_and_accumulation();
 }

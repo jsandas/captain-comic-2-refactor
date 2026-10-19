@@ -115,6 +115,9 @@ void apply_input_tick(RuntimeState &state, const PlayerMotionConfig &motion) {
     state.player.is_physics_active = true;
     state.player.y_vel = effective_motion.jump_impulse;
     --state.player.jump_counter;
+    if (effective_motion.accumulate_air_drift) {
+      state.player.x_vel = 0;
+    }
     if (!was_airborne) {
       queue_audio_event(state, AudioEvent::Jump);
     }
@@ -139,6 +142,9 @@ void apply_grounded_physics_tick(RuntimeState &state,
     state.player.is_physics_active = true;
     state.player.y_vel = effective_motion.jump_impulse;
     --state.player.jump_counter;
+    if (effective_motion.accumulate_air_drift) {
+      state.player.x_vel = 0;
+    }
     if (!was_airborne) {
       queue_audio_event(state, AudioEvent::Jump);
     }
@@ -193,15 +199,41 @@ void apply_airborne_physics_tick(RuntimeState &state,
 
   detail::update_facing_direction_from_input(state);
 
-  if (move_left && !move_right) {
-    state.player.x -= effective_motion.air_drift_step;
-    state.player.x_vel =
-        static_cast<std::int16_t>(-effective_motion.air_drift_step);
-  } else if (move_right && !move_left) {
-    state.player.x += effective_motion.air_drift_step;
-    state.player.x_vel = effective_motion.air_drift_step;
+  if (effective_motion.accumulate_air_drift) {
+    if (move_left && !move_right) {
+      state.player.x_vel = static_cast<std::int16_t>(
+          std::max<std::int32_t>(state.player.x_vel - effective_motion.air_drift_step,
+                                 -effective_motion.max_air_drift));
+    } else if (move_right && !move_left) {
+      state.player.x_vel = static_cast<std::int16_t>(
+          std::min<std::int32_t>(state.player.x_vel + effective_motion.air_drift_step,
+                                 effective_motion.max_air_drift));
+    } else {
+      // Friction dampening towards 0 when no horizontal input (matches loc_2a88-2a9e)
+      if (state.player.x_vel > 0) {
+        --state.player.x_vel;
+      } else if (state.player.x_vel < 0) {
+        ++state.player.x_vel;
+      }
+    }
+    state.player.x += state.player.x_vel;
   } else {
-    state.player.x_vel = 0;
+    // Direct step mode: strictly enforce max_air_drift bound
+    const std::int16_t clamped_step =
+        (effective_motion.max_air_drift > 0)
+            ? std::min(effective_motion.air_drift_step,
+                       effective_motion.max_air_drift)
+            : effective_motion.air_drift_step;
+
+    if (move_left && !move_right) {
+      state.player.x -= clamped_step;
+      state.player.x_vel = static_cast<std::int16_t>(-clamped_step);
+    } else if (move_right && !move_left) {
+      state.player.x += clamped_step;
+      state.player.x_vel = clamped_step;
+    } else {
+      state.player.x_vel = 0;
+    }
   }
 
   state.player.y += state.player.y_vel;
@@ -213,6 +245,9 @@ void apply_airborne_physics_tick(RuntimeState &state,
     if (!state.input.jump_pressed) {
       state.player.jump_counter = effective_motion.default_jump_ticks;
       state.player.jump_counter_max = effective_motion.default_jump_ticks;
+    }
+    if (effective_motion.accumulate_air_drift) {
+      state.player.x_vel = 0;
     }
     return;
   }

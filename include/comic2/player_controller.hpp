@@ -46,6 +46,7 @@ struct PlayerMotionConfig {
   std::int16_t feet_probe_offset_y = 13;
   std::uint8_t default_jump_ticks = 5;
   bool truncate_jump_on_release = false;
+  bool accumulate_air_drift = false;
 };
 
 inline PlayerMotionConfig make_original_dos_motion_config() {
@@ -60,6 +61,7 @@ inline PlayerMotionConfig make_original_dos_motion_config() {
       .feet_probe_offset_y = kOriginalDosFeetProbeOffsetY,
       .default_jump_ticks = kOriginalDosDefaultJumpTicks,
       .truncate_jump_on_release = true,
+      .accumulate_air_drift = true,
   };
 }
 
