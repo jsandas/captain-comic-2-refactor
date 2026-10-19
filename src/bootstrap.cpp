@@ -187,20 +187,18 @@ bool has_valid_level_tileset(const RuntimeState &state) {
     return false;
   }
 
-  for (const auto &tile : state.level_tileset) {
-    if (tile.width_bytes != 2U || tile.height_rows != kTileSizePixels ||
-        tile.row_span_bytes != 32U) {
-      return false;
-    }
+  return std::all_of(
+      state.level_tileset.begin(), state.level_tileset.end(),
+      [](const auto &tile) {
+        if (tile.width_bytes != 2U || tile.height_rows != kTileSizePixels ||
+            tile.row_span_bytes != 32U) {
+          return false;
+        }
 
-    for (const auto &plane : tile.planes) {
-      if (plane.size() != 32U) {
-        return false;
-      }
-    }
-  }
-
-  return true;
+        return std::all_of(
+            tile.planes.begin(), tile.planes.end(),
+            [](const auto &plane) { return plane.size() == 32U; });
+      });
 }
 
 void clamp_player_to_room_bounds(RuntimeState &state) {

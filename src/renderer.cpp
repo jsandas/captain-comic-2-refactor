@@ -216,13 +216,10 @@ bool is_valid_masked_sprite_record(const MaskedSpriteRecord &record) {
     return false;
   }
 
-  for (const auto &plane : record.planes) {
-    if (plane.size() != expected_mask_bytes) {
-      return false;
-    }
-  }
-
-  return true;
+  return std::all_of(record.planes.begin(), record.planes.end(),
+                     [expected_mask_bytes](const auto &plane) {
+                       return plane.size() == expected_mask_bytes;
+                     });
 }
 
 Ega4PlaneImage make_masked_sprite_image(const MaskedSpriteRecord &record) {
