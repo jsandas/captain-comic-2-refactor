@@ -615,7 +615,7 @@ void draw_runtime_projectile_sprites(EgaPlanarSurface &frame,
     }
 
     const std::int32_t max_x = std::max<std::int32_t>(
-        0, static_cast<std::int32_t>(frame.width_pixels()) - 8);
+        0, static_cast<std::int32_t>(frame.width_pixels()) - 16);
     const std::int32_t max_y = std::max<std::int32_t>(
         0, static_cast<std::int32_t>(frame.height_rows()) - 8);
     const std::int32_t clamped_x =
