@@ -271,8 +271,7 @@ void test_inactive_mode_effects_leave_motion_config_unchanged() {
 }
 
 void test_verified_dos_motion_constants() {
-  static_assert(comic2::kOriginalDosWalkStep == 8,
-                "DOS walk step must be 8");
+  static_assert(comic2::kOriginalDosWalkStep == 8, "DOS walk step must be 8");
   static_assert(comic2::kOriginalDosJumpImpulse == -7,
                 "DOS jump impulse must be -7");
   static_assert(comic2::kOriginalDosAirDriftStep == 1,
