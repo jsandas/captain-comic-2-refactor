@@ -1,7 +1,13 @@
 # Implementation Plan
 
 ## Project Objective
-Reverse-engineer **Captain Comic II: Fractured Reality** into a clean C++ reimplementation, using the annotated `comic2.asm` disassembly as the primary reference. `unpacked.exe.test.c` (Ghidra pseudo-C) is a secondary cross-reference only — neither source file is intended to compile.
+Reverse-engineer **Captain Comic II: Fractured Reality** into a clean, modern C++ reimplementation using **SDL2** for video presentation, input handling, and audio synthesis, while maintaining 100% headless testability.
+
+### Primary Ground-Truth References
+1. **`reference/comic2/comic2_standalone.asm`**: Complete, compilable 16-bit 8086 MS-DOS NASM assembly source code (`nasm -f bin comic2_standalone.asm -o comic2.exe`). This is the authoritative ground truth for program structure, instruction logic, control flow, hardware interrupts, and authentic DOS physics curves.
+2. **`reference/comic2/comic2_data.asm`**: Complete, structured disassembly of the 141 KB data segment (`data_0.bin`). Authoritative reference for EGA font glyph patterns (`0x0D2D0`), audio frequency/melody tables (`0x2170A`), high-score records, string constants, and memory addresses.
+3. **`reference/comic2/comic2.asm`**: Historical annotated IDA disassembly, preserved as a secondary reference for cross-referencing legacy label annotations.
+4. **`reference/comic2/unpacked.exe.test.c`**: Ghidra decompilation, used as secondary high-level structural cross-reference.
 
 ---
 
@@ -50,6 +56,25 @@ The main game loop (`game_loop`, was `sub_35DE`) was fragmented into 21 chunks i
 - [x] `comic_num_lives` = `word_2526F` (`ds:28Fh`)
 - [x] `comic_firepower` = `byte_251FC` (`ds:1FCh`)
 - [x] `comic_gems` = `word_25204` (`ds:204h`)
+- [x] **Verified DOS Physics Curves** (transcribed from `comic2_standalone.asm` `player_update_physics` `1000:2a10` & `player_do_jump` `1000:2d61`):
+  - Walk step speed = 8 px/tick (`kOriginalDosWalkStep`)
+  - Jump impulse = -7 px/tick (`kOriginalDosJumpImpulse`)
+  - Air drift step = 1 px/tick, max air drift clamp = [-5, 5] px/tick (`kOriginalDosMaxAirDrift`)
+  - Gravity acceleration = 5 px/tick (`kOriginalDosGravityPerTick`)
+  - Terminal fall speed = 23 px/tick (`kOriginalDosMaxFallSpeed`)
+  - Fall start velocity = 5 px/tick (`kOriginalDosFallStartVelocity`)
+  - Feet collision probe offset Y = 13 px (`kOriginalDosFeetProbeOffsetY`)
+  - Base jump capacity = 5 ticks (`[DS:0x0899]`), boosted to 6 ticks with boots
+  - Variable jump height: truncates upward jump velocity upon jump key release
+- [x] **Confirmed Inventory & Progression Fields** (transcribed from `comic2_data.asm` `DS:0x08ae - 0x08b6`):
+  - `shield_power` = `[DS:0x089a]` (current shield energy: default 5, max 8)
+  - `boots_equipped` = `[DS:0x08ae]` (High-jump gravity boots flag)
+  - `lantern_equipped` = `[DS:0x08b0]` (Cavern illumination flag)
+  - `corkscrew_equipped` = `[DS:0x08b2]` (Grate passage unlock flag)
+  - `wand_equipped` = `[DS:0x08b4]` (Teleportation wand flag)
+  - `key_count` = `[DS:0x08b6]` (Door keys collected count)
+  - `weapon_cooldown` = `[DS:0x08a8]` (Fireball firing rate limiter cooldown timer)
+  - `score_high` = `[DS:0x0928]` (32-bit score counter high word)
 
 ---
 
@@ -1224,7 +1249,7 @@ Transition from bootstrap placeholder shapes, heuristic room probing, and synthe
 - [ ] Remaining work is focused on the bezel/player viewport composition and replay-stability checks for the final live-gameplay validation gates.
 
 ### Background & Asset Architecture Analysis
-Cross-referencing `comic2.asm` (specifically `load_resource` at line 2396 and table `unk_2E3CC` at line 147836) against `unpacked.exe` confirms the exact layout of the original asset pipeline:
+Cross-referencing `comic2_standalone.asm` (specifically `io_load_resource` at `1000:095c` and level table `table_level_tuples` at `1000:812c`) against `comic2_data.asm` and `comic2.asm` (`unk_2E3CC` at line 147836) confirms the exact layout of the original asset pipeline:
 
 1. **Per-Level 4-File Tuples (`unk_2E3CC` Table)**
    The game engine defines an 18-entry pointer table (15 playable levels, 0 to 14) indexing 8-byte tuples of 4 filename pointers:
@@ -1339,96 +1364,225 @@ Cross-referencing `comic2.asm` (specifically `load_resource` at line 2396 and ta
 
 ### Phase 11 PR-Sized Handoff Slices (Agent-Ready)
 
-#### PR 11-A1: Level Resource Tuple Catalog & Resolver
-**Objective**: Implement canonical `unk_2E3CC` 15-level tuple table and path resolver.
+#### PR 11-A1: Level Resource Tuple Catalog & Resolver [COMPLETED]
+**Objective**: Implement canonical `table_level_tuples` (matching `unk_2E3CC`) 15-level tuple table and path resolver.
 **Files**: `include/comic2/resource_formats.hpp`, `include/comic2/resource_loader.hpp`, `src/resource_loader.cpp`, `tests/subsystem_scaffold_tests.cpp`.
-**Scope**: Add `LevelResourceTuple`, resolve 15 levels, validate against file existence in `reference/original/`.
+**Scope**: Added `LevelResourceTuple`, resolved 15 levels, validated against file existence in `reference/original/`.
 
-#### PR 11-B1: 16x16 Planar Tileset Decoder (`FR###.0`)
+#### PR 11-B1: 16x16 Planar Tileset Decoder (`FR###.0`) [COMPLETED]
 **Objective**: Implement Signed-RLE decoder for 6-byte header + 128-byte tileset streams.
 **Files**: `include/comic2/resource_loader.hpp`, `src/resource_loader.cpp`, `include/comic2/game_state.hpp`, `tests/renderer_validation_tests.cpp`.
-**Scope**: Decode `FR000.0` into 144 16x16 tiles, parse hazard bounds, store in `RuntimeState`.
+**Scope**: Decoded `FR000.0` into 144 16x16 tiles, parsed hazard bounds, stored in `RuntimeState`.
 
-#### PR 11-B2: Room Layout & Mapped Entity Wiring (`FR###.1`)
+#### PR 11-B2: Room Layout & Mapped Entity Wiring (`FR###.1`) [COMPLETED]
 **Objective**: Connect room loader to `FR###.1` files via resolver and render with decoded `level_tileset`.
 **Files**: `src/room_loader.cpp`, `src/bootstrap.cpp`, `tests/dispatcher_tests.cpp`, `tests/bootstrap_wiring_tests.cpp`.
-**Scope**: Load rooms from `FR000.1`, populate tile grid and mapped objects, render room using `level_tileset`.
+**Scope**: Loaded rooms from `FR000.1`, populated tile grid and mapped objects, rendered room using `level_tileset`.
 
-#### PR 11-C1: Masked Sprite Sheet Decoder (`FR###.2`)
+#### PR 11-C1: Masked Sprite Sheet Decoder (`FR###.2`) [COMPLETED]
 **Objective**: Decode sequential `MaskedSpriteRecord` streams into planar sprites with 1-bit masks.
 **Files**: `include/comic2/resource_formats.hpp`, `include/comic2/resource_loader.hpp`, `src/resource_loader.cpp`, `tests/renderer_validation_tests.cpp`.
-**Scope**: Parse `FR000.2` into Comic 16x24 frames, enemy 16x16 frames, and projectile 16x8 frames.
+**Scope**: Parsed `FR000.2` into Comic 16x24 frames, enemy 16x16 frames, and projectile 16x8 frames.
 
-#### PR 11-C2: Sprite Rendering Integration (Player, Enemies, Projectiles)
+#### PR 11-C2: Sprite Rendering Integration (Player, Enemies, Projectiles) [COMPLETED]
 **Objective**: Replace placeholder box sprites with decoded real sprites in renderer.
 **Files**: `src/renderer.cpp`, `src/bootstrap.cpp`, `tests/renderer_tests.cpp`.
 **Scope**: Blit real Comic walk/jump/shoot frames, enemy sprites, and projectiles using masked blit.
 **Status**: [x] Runtime entity and projectile rendering now tries `RuntimeState::level_sprites` first and retains placeholder fallback when records are absent or invalid.
 
-#### PR 11-D1: Bezel Compositing (`FRPAK.001`) & Viewport Clipping
-**Objective**: Composite in-game viewport and HUD status counters onto the `FRPAK.001` border bezel.
-**Files**: `src/bootstrap.cpp`, `src/renderer.cpp`, `tests/integration_gates_tests.cpp`.
-**Scope**: Draw `FRPAK.001` canvas, clip playfield viewport, blit HUD counters at original screen coords.
+#### PR 11-D1: Authentic Bezel Compositing (`FRPAK.001`), Viewport Clipping & HUD Counters [NEXT]
+**Objective**: Composite in-game viewport and authentic HUD status counters onto the `FRPAK.001` border bezel using font glyphs from `comic2_data.asm`.
+**Files**: `src/bootstrap.cpp`, `src/renderer.cpp`, `include/comic2/renderer.hpp`, `tests/integration_gates_tests.cpp`.
+**Scope**:
+- Render 8x8 font glyphs from `font_glyphs_start` (`0x0D2D0` in `comic2_data.asm`) to blit HUD digits and characters (`hud_draw_digits`, `hud_draw_char`).
+- Implement authentic HUD elements matching `comic2_standalone.asm`:
+  - `hud_draw_shield_bar` (`1000:38b3`): 8-pip shield energy bar using `[DS:0x089a]`.
+  - `hud_draw_digits`: BCD counters for firepower (`[DS:0x08ac]`), gems (`[DS:0x08b8]`), lives (`[DS:0x0926]`), and keys (`[DS:0x08b6]`).
+  - `hud_update_score`: 32-bit score display (`score` + `score_high`).
+  - Mode items display: icons for Boots (`DS:0x08ae`), Lantern (`DS:0x08b0`), Corkscrew (`DS:0x08b2`), Wand (`DS:0x08b4`).
+- Clip the room tilemap, entities, and projectiles inside the authentic playfield viewport rect (`x=8..248`, `y=8..184`).
+- Pass Gate 11-E (Frame Compositing hash verification).
 
 #### PR 11-E1: End-to-End Live Gameplay Bootstrap & Gate Verification
 **Objective**: Verify end-to-end playability with real assets and pass all Gate 11 validation checks.
 **Files**: `src/main.cpp`, `src/bootstrap.cpp`, `tests/integration_gates_tests.cpp`.
-**Scope**: Validate full loop startup on Level 0 Room 0, room transitions, and oracle replay matching.
+**Scope**: Validate full loop startup on Level 0 Room 0, room transitions, and oracle replay matching. Pass Gate 11-F.
 
 ---
 
-### Copy/Paste Agent Prompt Blocks (Phase 11)
+## Phase 12: Native Audio Architecture (PC Speaker / PIT 8253 Timer & SDL2 Audio)
 
-#### Prompt: PR 11-A1 (Level Resource Tuple Catalog & Resolver)
+### Goal
+Implement authentic DOS PC speaker square-wave synthesis driven by the PIT 8253 timer interrupt routine (`isr_timer_sound_int08` at `1000:0866`) and the audio frequency/duration data tables from `comic2_data.asm` (`0x2170A - 0x218AA`), streaming the output via SDL2 audio (`SDL_OpenAudioDevice`).
+
+### Background & Audio System Layout
+In `comic2_standalone.asm` and `comic2_data.asm`, sound is implemented via:
+1. **Interrupt Service Routine (`isr_timer_sound_int08` at `1000:0866`)**:
+   - Ticks at ~18.2 Hz (or accelerated timer rate).
+   - Reads tone divisor words and duration counts from `sound_data_offset`.
+   - Programs 8253 PIT Channel 2 (Ports `0x42` / `0x61`) to emit square waves on the PC speaker.
+2. **Sound Variables**:
+   - `sound_is_playing` (`byte [0x0247]`): Boolean playback active flag.
+   - `sound_is_enabled` (`byte [0x0248]`): Sound mute/unmute toggle.
+   - `sound_priority` (`byte [0x0249]`): Current playing sound priority level (prevents low-priority SFX from overriding high-priority SFX).
+   - `sound_data_offset` (`word [0x024a]`): Current pointer into active sound data stream.
+   - `sound_note_counter` (`word [0x024c]`): Remaining duration ticks for the current frequency.
+   - `sound_data_segment` (`word [0x024e]`): Audio data segment.
+3. **Sound Data Tables (`comic2_data.asm` `0x2170a - 0x218aa`)**:
+   - Contains 56 sound effect and musical tune streams.
+   - Format: Sequence of `(frequency_divisor: uint16_t, duration_ticks: uint16_t)` pairs, terminated by `0x0000, 0x0000`.
+   - INT 3 Dispatch: Game triggers sound effects via `int 3` with `AX` = sound command ID, `BX` = priority/table index.
+
+### Phase 12 Implementation Roadmap
+- [ ] Implement `AudioSynthesizer` generating mono 16-bit PCM samples at 44,100 Hz (`freq = 1193180 / divisor`).
+- [ ] Implement `SoundDriver` mirroring `isr_timer_sound_int08` step logic, duration ticks, and priority preemption.
+- [ ] Connect `SoundDriver` to SDL2 audio device via `SDL_AudioSpec` callback or audio queue.
+- [ ] Provide a deterministic headless `NullAudioSink` for unit tests and CI.
+- [ ] Wire sound effect triggers into player events: jump, shoot, enemy hit, gem pickup, damage hurt, death.
+
+### Phase 12 Validation Gates
+- [ ] **Gate 12-A (Frequency Parity)**: PIT divisors deterministically map to exact audio frequencies and sample counts.
+- [ ] **Gate 12-B (SFX Priority)**: High-priority SFX (player hurt/death) preempts low-priority SFX (gem pickup, step).
+- [ ] **Gate 12-C (Headless Testability)**: Audio engine runs 1,000 game ticks in headless mode without touching SDL2 audio devices.
+
+---
+
+## Phase 13: Room Logic Scripts & Entity Behaviors (`FR###.3` & Dispatcher)
+
+### Goal
+Replace provisional entity stubs with exact bytecode execution of `FR###.3` room scripts (0xC00-byte XOR-0x25 encoded blocks) and authentic entity state machines from `comic2_standalone.asm` (`ent_update_object_behaviors` dispatch table).
+
+### Background & Script Layout
+1. **`FR###.3` Script Payload**:
+   - Read and decrypted via `io_read_xor25_block_9ec0` (`1000:1049`).
+   - Contains room trigger coordinate zones `(x1, y1, x2, y2)`, event flags, and target room teleport/transition targets.
+   - Proximity probe: `check_comic_near_room_event_anchor` (`1000:262a`) triggers dialog, item reveal, or camera shift.
+2. **Entity Behaviors (`ent_update_object_behaviors` at `1000:3b25`)**:
+   - Dispatches active entity runtime slots (`unk_256E0`) based on type ID:
+     - Type 0-3: Slimes (ground hop, wall bounce, gravity).
+     - Type 4-7: Bats / Flyers (sine wave hover, swoop attack toward Comic).
+     - Type 8-11: Eyeballs / Tracking enemies (horizontal chase direction `ent_set_horizontal_chase_direction_to_comic`).
+     - Type 12-15: Boss entities (multi-phase projectile patterns, damage thresholds).
+     - Type 16+: Item pickups (gems, keys, firepower disks, mode items).
+
+### Phase 13 Implementation Roadmap
+- [ ] Implement `decode_level_script(span<uint8_t> payload)` applying `byte ^ 0x25` decoding.
+- [ ] Implement room event zone trigger evaluator in `room_loader.cpp`.
+- [ ] Port authentic entity physics helpers from `comic2_standalone.asm`:
+  - `ent_move_x_and_bounce` (`1000:4a4e`)
+  - `ent_apply_gravity_and_move_y` (`1000:4a99`)
+  - `ent_move_y_and_bounce` (`1000:4b01`)
+  - `ent_probe_x_collision_strict` (`1000:4bf7`)
+- [ ] Wire entity damage reactions, projectile collision hitboxes, and item drop spawning.
+
+### Phase 13 Validation Gates
+- [ ] **Gate 13-A (Script Decode Parity)**: `FR004.3` XOR-0x25 decrypts to expected event trigger table matching reference bytes.
+- [ ] **Gate 13-B (Entity Movement Parity)**: Slimes and flying entities trace deterministic movement curves matching DOSBox recordings.
+- [ ] **Gate 13-C (Trigger Activation)**: Comic entering an event coordinate zone fires the associated script event.
+
+---
+
+## Phase 14: Equipment, Progression & Special Mechanics
+
+### Goal
+Implement Comic's full inventory powerups, equipment abilities, and world interaction mechanics confirmed from `comic2_data.asm` (`DS:0x08ae - 0x08b6`).
+
+### Scope & Mechanics
+1. **High-Jump Gravity Boots (`DS:0x08ae`)**:
+   - Increases max jump duration from 5 ticks to 6 ticks (`jump_counter_max = 6`).
+   - Allows reaching high ledges in cavern rooms.
+2. **Cavern Lantern (`DS:0x08b0`)**:
+   - Illuminates dark cavern rooms by dynamically swapping the EGA palette or uncovering a radial visibility viewport around Comic.
+3. **Drainage Corkscrew (`DS:0x08b2`)**:
+   - Enables Comic to break through metal grate tiles blocking secret conduits and passageways.
+4. **Teleportation Wand (`DS:0x08b4`)**:
+   - Consumes charge or teleports Comic back to room entrance / warp beacon.
+5. **Keys & Locked Grates (`DS:0x08b6`)**:
+   - Door key pickup decrements key counter upon touching locked door tiles, changing tile ID to passable passage.
+6. **Firepower Progression (Levels 1-5, `DS:0x08ac`)**:
+   - Blast upgrade sprites, projectile counts, and firing rate cooldown timer (`DS:0x08a8`).
+
+### Phase 14 Validation Gates
+- [ ] **Gate 14-A (Boots Trajectory)**: Boots jump achieves verified 6-tick peak height.
+- [ ] **Gate 14-B (Palette Darkness)**: Dark room without lantern applies black palette mask; with lantern renders visible field.
+- [ ] **Gate 14-C (Tile Modification)**: Corkscrew and keys transform impassable tiles to passable tiles in runtime grid.
+
+---
+
+## Phase 15: Frontend, Game Flow Lifecycle & Save/Config Persistence
+
+### Goal
+Implement the complete frontend, title sequence, options configuration, save game management, and victory/defeat progression matching the authentic MS-DOS game lifecycle.
+
+### Background & System Flow
+1. **Startup & Calibration Sequence**:
+   - `entry` -> `vid_set_ega_palette` -> `ui_story_screen` -> `sys_main_dispatcher`.
+   - Joystick calibration (`scratch_calibrate_joystick_msg` at `0x00000`).
+   - Keyboard remapping (`scratch_define_keys_msg` at `0x001a0`).
+2. **Main Menu & Player Selection (`ui_main_menu` at `1000:6e76`)**:
+   - Displays `FRDATA.0` and `FRDATA.1` panels.
+   - Player slot selection: "ENTER A NEW PLAYER", "RETIRE A PLAYER".
+   - High score table: read/write `ds_high_scores_buffer` (`0x216a4`).
+3. **Save Game & Configuration Serialization**:
+   - `GAME.000` (savegame snapshot at `0x21693`): Serializes PlayerState, inventory flags, room coordinates, level ID, and score.
+   - `FR.CFG` (configuration file at `0x2168c`): Serializes key bindings, joystick calibration, and sound toggle.
+4. **Cinematics & Transitions**:
+   - Title screen: `FRPAK.002` full-screen 320x200 blit.
+   - Intro cutscene: `play_intro_cinematic` (`1000:6164`), cycling `FRPAK.003` through `FRPAK.006`.
+   - Victory ending: `FRPAK.007` victory graphic display and award medals ceremony.
+
+### Phase 15 Validation Gates
+- [ ] **Gate 15-A (Savegame Roundtrip)**: Saved `GAME.000` binary exactly matches original DOS save game file structure.
+- [ ] **Gate 15-B (Config Persistence)**: Custom key definitions and sound settings correctly save and restore from `FR.CFG`.
+- [ ] **Gate 15-C (End-to-End Game Flow)**: State machine smoothly transitions: Title -> Intro -> Menu -> Gameplay -> Save -> Victory without memory leaks or state corruption.
+
+---
+
+### Copy/Paste Agent Prompt Blocks
+
+#### Prompt: PR 11-D1 (Authentic Bezel Compositing & HUD Status Counters)
 ```text
-Implement PR 11-A1 from PLAN.md exactly as scoped.
+Implement PR 11-D1 from PLAN.md exactly as scoped.
 
 Objective:
-- Implement the canonical 15-level tuple catalog (matching original unk_2E3CC table) and path resolver.
+- Composite the 320x200 in-game HUD border bezel (FRPAK.001) with playfield viewport clipping and authentic HUD status counters.
 
 Scope:
-- Add LevelResourceTuple struct to resource_formats.hpp.
-- Implement resolve_level_resource_tuple(level_id, root) in resource_loader.cpp.
-- Support level 4 tileset reuse (FR001.0) and nullable script file.
-- Keep existing fallback behavior intact when asset root does not contain original files.
+- Use font_glyphs_start bitmap data (0x0D2D0 in reference/comic2/comic2_data.asm) to render 8x8 font characters and digits.
+- Implement HUD counters matching comic2_standalone.asm (hud_render_all 1000:3881, hud_draw_shield_bar 1000:38b3, hud_draw_digits 1000:38e4, hud_draw_lives 1000:38af):
+  - 8-pip shield bar from RuntimeState::player.shield_power.
+  - BCD counters for firepower, gems, lives, and keys.
+  - 32-bit score counter from score and score_high.
+  - Equipment icons for boots, lantern, corkscrew, and wand.
+- Restrict room tilemap, entities, and projectiles to the authentic playfield viewport rect (x=8..248, y=8..184).
 
 Allowed files:
-- include/comic2/resource_formats.hpp
-- include/comic2/resource_loader.hpp
-- src/resource_loader.cpp
-- tests/subsystem_scaffold_tests.cpp
-
-Required tests:
-- All 15 levels (0..14) map to expected tuple filenames.
-- Out-of-range level indices (>14) fail cleanly.
-- Resolver locates files in candidate asset roots.
+- include/comic2/renderer.hpp
+- src/renderer.cpp
+- src/bootstrap.cpp
+- tests/integration_gates_tests.cpp
 
 Validation:
 - cmake --build build && ctest --test-dir build --output-on-failure
 ```
 
-#### Prompt: PR 11-B1 (16x16 Planar Tileset Decoder FR###.0)
+#### Prompt: PR 11-E1 (End-to-End Live Gameplay Bootstrap)
 ```text
-Implement PR 11-B1 from PLAN.md exactly as scoped.
+Implement PR 11-E1 from PLAN.md exactly as scoped.
 
 Objective:
-- Implement Signed-RLE decoder for FR###.0 tileset files into 128-byte 16x16 4-plane tiles.
+- Wire Level 0 Room 0 end-to-end live gameplay startup using canonical original assets with authentic DOS physics and pass Gate 11-F.
 
 Scope:
-- Parse 6-byte header: hazard_min, hazard_max, attribute threshold into RuntimeState.
-- Decode signed-RLE stream starting at byte 6 into vector of 16x16 Ega4PlaneImage tiles (32 bytes per plane).
-- Store decoded tileset in RuntimeState::level_tileset.
+- Initialize RuntimeState directly from reference/original/ assets via resolve_level_resource_tuple.
+- Ensure Level 0 Room 0 loads tileset FR000.0, layout FR000.1, and sprites FR000.2.
+- Verify player input, jump physics, collision probes, entity updates, and room transitions work end-to-end.
 
 Allowed files:
-- include/comic2/resource_loader.hpp
-- src/resource_loader.cpp
-- include/comic2/game_state.hpp
-- tests/renderer_validation_tests.cpp
-
-Required tests:
-- FR000.0 header correctly extracts hazard bounds.
-- FR000.0 decodes exactly 144 tiles of 128 bytes each.
-- Plane-byte hashes for tiles match expected deterministic fixtures.
+- src/main.cpp
+- src/bootstrap.cpp
+- tests/integration_gates_tests.cpp
+- tests/end_to_end_tests.cpp
 
 Validation:
 - cmake --build build && ctest --test-dir build --output-on-failure
