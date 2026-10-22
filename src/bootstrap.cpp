@@ -461,7 +461,9 @@ bool extract_tile_from_asset(const Ega4PlaneImage &atlas,
 }
 
 bool draw_room_tilemap_from_level_tileset(EgaPlanarSurface &frame,
-                                          const RuntimeState &state) {
+                                          const RuntimeState &state,
+                                          std::int32_t x_offset = 0,
+                                          std::int32_t y_offset = 0) {
   if (!has_room_grid_data(state) || !has_valid_level_tileset(state)) {
     return false;
   }
@@ -478,7 +480,8 @@ bool draw_room_tilemap_from_level_tileset(EgaPlanarSurface &frame,
 
   for (std::size_t tile_y = 0; tile_y < state.room_grid.tile_h; ++tile_y) {
     const std::int32_t py0 =
-        static_cast<std::int32_t>(tile_y * kTileSizePixels) - state.camera_y;
+        static_cast<std::int32_t>(tile_y * kTileSizePixels) - state.camera_y +
+        y_offset;
 
     if (py0 + kTileSizePixels <= 0) {
       continue;
@@ -501,8 +504,10 @@ bool draw_room_tilemap_from_level_tileset(EgaPlanarSurface &frame,
       }
 
       const std::int32_t px0 =
-          static_cast<std::int32_t>(tile_x * kTileSizePixels) - state.camera_x;
-      if (px0 < 0 || px0 + kTileSizePixels > frame.width_pixels()) {
+          static_cast<std::int32_t>(tile_x * kTileSizePixels) - state.camera_x +
+          x_offset;
+      if (px0 < x_offset ||
+          px0 + kTileSizePixels > x_offset + kPlayfieldWidth) {
         continue;
       }
 
@@ -575,7 +580,9 @@ bool draw_room_tilemap_from_asset(EgaPlanarSurface &frame,
 
 bool draw_player_sprite_from_asset(EgaPlanarSurface &frame,
                                    const RuntimeState &state,
-                                   const Ega4PlaneImage &atlas) {
+                                   const Ega4PlaneImage &atlas,
+                                   std::int32_t x_offset = 0,
+                                   std::int32_t y_offset = 0) {
   if (has_valid_player_sprite_sheet(state)) {
     const std::size_t sprite_index = select_player_sprite_frame(state);
     if (draw_level_sprite_record(frame, state, sprite_index)) {
@@ -589,8 +596,8 @@ bool draw_player_sprite_from_asset(EgaPlanarSurface &frame,
     return false;
   }
 
-  const std::int32_t px = state.player.x - state.camera_x;
-  const std::int32_t py = state.player.y - state.camera_y;
+  const std::int32_t px = state.player.x - state.camera_x + x_offset;
+  const std::int32_t py = state.player.y - state.camera_y + y_offset;
   if (!is_sprite_in_viewport(px, py, 16, 16)) {
     return true;
   }
@@ -606,7 +613,9 @@ bool draw_player_sprite_from_asset(EgaPlanarSurface &frame,
 }
 bool draw_timed_overlay_sprite_from_asset(EgaPlanarSurface &frame,
                                           const RuntimeState &state,
-                                          const Ega4PlaneImage &atlas) {
+                                          const Ega4PlaneImage &atlas,
+                                          std::int32_t x_offset = 0,
+                                          std::int32_t y_offset = 0) {
   if (!should_render_timed_overlay(state)) {
     return false;
   }
@@ -618,8 +627,8 @@ bool draw_timed_overlay_sprite_from_asset(EgaPlanarSurface &frame,
     return false;
   }
 
-  const std::int32_t px = state.player.x - state.camera_x;
-  const std::int32_t py = state.player.y - state.camera_y;
+  const std::int32_t px = state.player.x - state.camera_x + x_offset;
+  const std::int32_t py = state.player.y - state.camera_y + y_offset;
   if (!is_sprite_in_viewport(px, py, 16, 16)) {
     return true;
   }
@@ -651,9 +660,10 @@ std::optional<Ega4PlaneImage> try_decode_bootstrap_asset(RuntimeState &state) {
   return image;
 }
 
-void draw_player_marker(EgaPlanarSurface &frame, const RuntimeState &state) {
-  const std::int32_t px0 = state.player.x - state.camera_x;
-  const std::int32_t py0 = state.player.y - state.camera_y;
+void draw_player_marker(EgaPlanarSurface &frame, const RuntimeState &state,
+                        std::int32_t x_offset = 0, std::int32_t y_offset = 0) {
+  const std::int32_t px0 = state.player.x - state.camera_x + x_offset;
+  const std::int32_t py0 = state.player.y - state.camera_y + y_offset;
   const std::uint8_t body_color = state.player.is_airborne ? 0x0E : 0x0C;
 
   if (!is_sprite_in_viewport(px0, py0, 8, 16)) {
@@ -668,14 +678,16 @@ void draw_player_marker(EgaPlanarSurface &frame, const RuntimeState &state) {
 }
 
 void draw_room_event_anchor_sprite(EgaPlanarSurface &frame,
-                                   const RuntimeState &state) {
+                                   const RuntimeState &state,
+                                   std::int32_t x_offset = 0,
+                                   std::int32_t y_offset = 0) {
   const auto &anchor = state.room_event_anchor;
   if (!anchor.active) {
     return;
   }
 
-  const std::int32_t px0 = anchor.x - state.camera_x;
-  const std::int32_t py0 = anchor.y - state.camera_y;
+  const std::int32_t px0 = anchor.x - state.camera_x + x_offset;
+  const std::int32_t py0 = anchor.y - state.camera_y + y_offset;
   if (!is_sprite_in_viewport(px0, py0, 12, 12)) {
     return;
   }
@@ -839,9 +851,14 @@ void render_bootstrap_frame(IFramePresenter &presenter, RuntimeState &state) {
     used_bezel_background = true;
   }
 
+  // When a bezel is present, render game content inside the authentic playfield
+  // viewport (offset from the bezel border). Without a bezel, use offset 0.
+  const std::int32_t vp_x = used_bezel_background ? kPlayfieldX : 0;
+  const std::int32_t vp_y = used_bezel_background ? kPlayfieldY : 0;
+
   if (has_valid_level_tileset(state) && has_room_grid) {
     used_level_tileset_background =
-        draw_room_tilemap_from_level_tileset(frame, state);
+        draw_room_tilemap_from_level_tileset(frame, state, vp_x, vp_y);
   }
 
   if (!used_level_tileset_background &&
@@ -858,34 +875,35 @@ void render_bootstrap_frame(IFramePresenter &presenter, RuntimeState &state) {
   }
 
   // Phase 10.1: draw background first.
-  draw_runtime_entity_sprites(frame, state);
+  draw_runtime_entity_sprites(frame, state, vp_x, vp_y);
 
   // Phase 10.1: draw projectiles above entities.
-  draw_runtime_projectile_sprites(frame, state);
+  draw_runtime_projectile_sprites(frame, state, vp_x, vp_y);
 
   // Phase 10.5: draw room-event anchors above projectiles.
-  draw_room_event_anchor_sprite(frame, state);
+  draw_room_event_anchor_sprite(frame, state, vp_x, vp_y);
 
   // Phase 10.1: draw the player above projectiles.
   if (used_asset_background && should_render_player_sprite(state)) {
-    if (!draw_player_sprite_from_asset(frame, state, *asset)) {
-      draw_player_marker(frame, state);
+    if (!draw_player_sprite_from_asset(frame, state, *asset, vp_x, vp_y)) {
+      draw_player_marker(frame, state, vp_x, vp_y);
     }
   }
 
   if (!used_asset_background && should_render_player_sprite(state)) {
-    draw_player_marker(frame, state);
+    draw_player_marker(frame, state, vp_x, vp_y);
   }
 
   // Phase 10.1: draw any timed overlay last before the HUD.
   if (used_asset_background && should_render_timed_overlay(state)) {
-    if (!draw_timed_overlay_sprite_from_asset(frame, state, *asset)) {
-      draw_player_marker(frame, state);
+    if (!draw_timed_overlay_sprite_from_asset(frame, state, *asset, vp_x,
+                                              vp_y)) {
+      draw_player_marker(frame, state, vp_x, vp_y);
     }
   }
 
   if (!used_asset_background && should_render_timed_overlay(state)) {
-    draw_player_marker(frame, state);
+    draw_player_marker(frame, state, vp_x, vp_y);
   }
 
   if (state.transition_state.active) {

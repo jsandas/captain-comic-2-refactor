@@ -499,6 +499,62 @@ bool is_sprite_in_viewport(std::int32_t x, std::int32_t y, std::int32_t width,
          (y + height > viewport_y) && (y < viewport_bottom);
 }
 
+// Standard IBM CP437 8x8 font glyph table (partial — digits and common HUD
+// characters). Each entry is 8 bytes, one byte per row, bit 7 = leftmost pixel.
+std::array<std::uint8_t, 8> get_font_glyph_8x8(char c) {
+  // clang-format off
+  static constexpr std::uint8_t kDigits[10][8] = {
+    {0x3C,0x66,0x6E,0x76,0x66,0x66,0x3C,0x00}, // '0'
+    {0x18,0x38,0x18,0x18,0x18,0x18,0x7E,0x00}, // '1'
+    {0x3C,0x66,0x06,0x0C,0x18,0x30,0x7E,0x00}, // '2'
+    {0x3C,0x66,0x06,0x1C,0x06,0x66,0x3C,0x00}, // '3'
+    {0x06,0x0E,0x1E,0x66,0x7F,0x06,0x06,0x00}, // '4'
+    {0x7E,0x60,0x60,0x7C,0x06,0x66,0x3C,0x00}, // '5'
+    {0x3C,0x66,0x60,0x7C,0x66,0x66,0x3C,0x00}, // '6'
+    {0x7E,0x66,0x06,0x0C,0x18,0x18,0x18,0x00}, // '7'
+    {0x3C,0x66,0x66,0x3C,0x66,0x66,0x3C,0x00}, // '8'
+    {0x3C,0x66,0x66,0x3E,0x06,0x66,0x3C,0x00}, // '9'
+  };
+  // clang-format on
+  if (c >= '0' && c <= '9') {
+    const auto &row = kDigits[static_cast<std::size_t>(c - '0')];
+    std::array<std::uint8_t, 8> result{};
+    std::copy(std::begin(row), std::end(row), result.begin());
+    return result;
+  }
+  if (c == ':') {
+    return {0x00, 0x18, 0x18, 0x00, 0x18, 0x18, 0x00, 0x00};
+  }
+  if (c == '-') {
+    return {0x00, 0x00, 0x00, 0x7E, 0x00, 0x00, 0x00, 0x00};
+  }
+  // Blank glyph for unrecognised characters
+  return {};
+}
+
+void blit_font_glyph(EgaPlanarSurface &surface, std::int32_t x, std::int32_t y,
+                     char c, std::uint8_t color_index) {
+  const auto glyph = get_font_glyph_8x8(c);
+  for (std::int32_t row = 0; row < 8; ++row) {
+    const std::uint8_t bits = glyph[static_cast<std::size_t>(row)];
+    for (std::int32_t col = 0; col < 8; ++col) {
+      if ((bits >> (7 - col)) & 0x1U) {
+        set_surface_pixel(surface, x + col, y + row, color_index);
+      }
+    }
+  }
+}
+
+void blit_string(EgaPlanarSurface &surface, std::int32_t x, std::int32_t y,
+                 const char *text, std::uint8_t color_index) {
+  if (text == nullptr) {
+    return;
+  }
+  for (; *text != '\0'; ++text, x += 8) {
+    blit_font_glyph(surface, x, y, *text, color_index);
+  }
+}
+
 void gfx_rle_blit_masked_or_4plane(EgaPlanarSurface &dest, std::size_t x_pixels,
                                    std::size_t y_rows,
                                    const Ega4PlaneImage &image_data) {
@@ -554,14 +610,15 @@ void gfx_rle_blit_masked_or_4plane(EgaPlanarSurface &dest, std::size_t x_pixels,
 }
 
 void draw_runtime_entity_sprites(EgaPlanarSurface &frame,
-                                 const RuntimeState &state) {
+                                 const RuntimeState &state,
+                                 std::int32_t x_offset, std::int32_t y_offset) {
   for (const auto &slot : state.runtime_slots) {
     if (!is_runtime_slot_active(slot)) {
       continue;
     }
 
-    const std::int32_t px0 = slot.x - state.camera_x;
-    const std::int32_t py0 = slot.y - state.camera_y;
+    const std::int32_t px0 = slot.x - state.camera_x + x_offset;
+    const std::int32_t py0 = slot.y - state.camera_y + y_offset;
     if (px0 < -16 || py0 < -16) {
       continue;
     }
@@ -592,14 +649,16 @@ void draw_runtime_entity_sprites(EgaPlanarSurface &frame,
 }
 
 void draw_runtime_projectile_sprites(EgaPlanarSurface &frame,
-                                     const RuntimeState &state) {
+                                     const RuntimeState &state,
+                                     std::int32_t x_offset,
+                                     std::int32_t y_offset) {
   for (const auto &projectile : state.projectiles) {
     if (!projectile.active) {
       continue;
     }
 
-    const std::int32_t px0 = projectile.x - state.camera_x;
-    const std::int32_t py0 = projectile.y - state.camera_y;
+    const std::int32_t px0 = projectile.x - state.camera_x + x_offset;
+    const std::int32_t py0 = projectile.y - state.camera_y + y_offset;
     if (px0 < -8 || py0 < -8) {
       continue;
     }
