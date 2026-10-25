@@ -74,6 +74,39 @@ void draw_rect(EgaPlanarSurface &surface, std::size_t x, std::size_t y,
   }
 }
 
+void draw_rect_unaligned(EgaPlanarSurface &surface, std::size_t x, std::size_t y,
+                         std::size_t w, std::size_t h, std::uint8_t color) {
+  if (w == 0 || h == 0) {
+    return;
+  }
+
+  for (std::size_t py = 0; py < h; ++py) {
+    const std::size_t y_row = y + py;
+    if (y_row >= surface.height_rows()) {
+      break;
+    }
+    for (std::size_t px = 0; px < w; ++px) {
+      const std::size_t x_pixel = x + px;
+      if (x_pixel >= surface.width_pixels()) {
+        break;
+      }
+      const std::size_t x_byte = x_pixel / 8U;
+      const std::uint8_t bit_mask =
+          static_cast<std::uint8_t>(1U << (7U - (x_pixel % 8U)));
+      for (std::size_t plane = 0; plane < EgaPlanarSurface::kPlaneCount;
+           ++plane) {
+        auto value = surface.get_plane_byte(plane, x_byte, y_row);
+        if (((color >> plane) & 0x1U) != 0U) {
+          value = static_cast<std::uint8_t>(value | bit_mask);
+        } else {
+          value = static_cast<std::uint8_t>(value & ~bit_mask);
+        }
+        surface.set_plane_byte(plane, x_byte, y_row, value);
+      }
+    }
+  }
+}
+
 bool should_draw_hud_overlay(const RuntimeState &state) {
   return state.ui.menu_state != MenuState::None || state.ui.modal_active ||
          state.player.score != 0 || state.player.gems != 0 ||
@@ -146,8 +179,8 @@ void hud_render_overlay(EgaPlanarSurface &surface, const RuntimeState &state) {
       const auto pips = std::min<std::uint8_t>(8U, state.player.shield_power);
       for (std::uint8_t i = 0; i < 8U; ++i) {
         const std::uint8_t color = (i < pips) ? 0x0AU : 0x08U;
-        draw_rect(surface, static_cast<std::size_t>(kHudX + i * 4), 0x5EU, 3U,
-                  6U, color);
+        draw_rect_unaligned(surface, static_cast<std::size_t>(kHudX + i * 4),
+                            0x5EU, 3U, 6U, color);
       }
     }
 

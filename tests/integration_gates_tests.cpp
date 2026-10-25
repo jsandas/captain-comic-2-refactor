@@ -769,9 +769,9 @@ void test_gate_11e_bezel_border_not_overwritten_by_tiles() {
 void test_gate_11e_no_bezel_tiles_reach_full_frame_width() {
   // Without a bezel the tileset renderer must draw across the full 320-px
   // frame (not stop at kPlayfieldWidth = 240). Use a 20-tile-wide room and
-  // an all-white tile; pixels at x ≥ 240 (e.g. column 300) must be written.
+  // an all-white tile; pixels at x >= 240 (e.g. column 300) must be written.
   auto state = comic2::make_default_runtime_state();
-  // No bezel — state.bezel_frame stays std::nullopt.
+  // No bezel - state.bezel_frame stays std::nullopt.
 
   state.room_grid.tile_w = 20; // 20 * 16 = 320 px wide
   state.room_grid.tile_h = 1;
@@ -849,7 +849,7 @@ void test_gate_11e_hud_counters_appear_in_bezel_panel_region() {
   // (x=258..286, y=90..175).
   auto state = comic2::make_default_runtime_state();
   state.bezel_frame = make_gate11_bezel_with_sentinel(0x05U, 0x00U);
-  state.player.score = 1000U; // non-zero → overlay guard passes
+  state.player.score = 1000U; // non-zero -> overlay guard passes
   state.player.gems = 3U;
   state.player.lives = 2U;
   state.player.firepower = 2U;
