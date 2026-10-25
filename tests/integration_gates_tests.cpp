@@ -790,8 +790,7 @@ void test_gate_11e_no_bezel_tiles_reach_full_frame_width() {
   comic2::MemoryFramePresenter presenter;
   comic2::render_bootstrap_frame(presenter, state);
 
-  expect(presenter.has_frame(),
-         "Gate 11-E no-bezel: frame must be presented");
+  expect(presenter.has_frame(), "Gate 11-E no-bezel: frame must be presented");
   const auto &frame = presenter.last_frame();
 
   // Column 300 (tile 18, right portion) must be the tile color 0x0F.
@@ -841,7 +840,6 @@ void test_gate_11e_no_bezel_tiles_reach_full_frame_height() {
          "Gate 11-E no-bezel: tiles must reach full frame height (y=184) when "
          "no bezel is active");
 }
-
 
 void test_gate_11e_hud_counters_appear_in_bezel_panel_region() {
   // Arrange: state with a bezel and non-trivial player stats so

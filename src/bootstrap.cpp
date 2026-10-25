@@ -354,8 +354,8 @@ void draw_room_tile(EgaPlanarSurface &frame, std::int32_t px0, std::int32_t py0,
 }
 
 void draw_room_tilemap(EgaPlanarSurface &frame, const RuntimeState &state,
-                      std::int32_t x_offset = 0, std::int32_t y_offset = 0,
-                      std::int32_t clip_w = 0, std::int32_t clip_h = 0) {
+                       std::int32_t x_offset = 0, std::int32_t y_offset = 0,
+                       std::int32_t clip_w = 0, std::int32_t clip_h = 0) {
   const std::int32_t vp_right =
       x_offset +
       (clip_w > 0 ? clip_w
@@ -576,8 +576,9 @@ bool draw_room_tilemap_from_asset(EgaPlanarSurface &frame,
 
   Ega4PlaneImage tile;
   for (std::size_t tile_y = 0; tile_y < state.room_grid.tile_h; ++tile_y) {
-    const std::int32_t py0 = static_cast<std::int32_t>(tile_y * kTileSizePixels) -
-                             state.camera_y + y_offset;
+    const std::int32_t py0 =
+        static_cast<std::int32_t>(tile_y * kTileSizePixels) - state.camera_y +
+        y_offset;
 
     if (py0 + kTileSizePixels <= y_offset) {
       continue; // tile entirely above viewport top
@@ -598,8 +599,9 @@ bool draw_room_tilemap_from_asset(EgaPlanarSurface &frame,
         return false;
       }
 
-      const std::int32_t px0 = static_cast<std::int32_t>(tile_x * kTileSizePixels) -
-                               state.camera_x + x_offset;
+      const std::int32_t px0 =
+          static_cast<std::int32_t>(tile_x * kTileSizePixels) - state.camera_x +
+          x_offset;
       if (px0 < x_offset || px0 + kTileSizePixels > vp_right) {
         continue; // partial horizontal tiles unsupported (no sub-tile clip yet)
       }
@@ -894,14 +896,14 @@ void render_bootstrap_frame(IFramePresenter &presenter, RuntimeState &state) {
   const std::int32_t vp_h = used_bezel_background ? kPlayfieldHeight : 0;
 
   if (has_valid_level_tileset(state) && has_room_grid) {
-    used_level_tileset_background =
-        draw_room_tilemap_from_level_tileset(frame, state, vp_x, vp_y, vp_w, vp_h);
+    used_level_tileset_background = draw_room_tilemap_from_level_tileset(
+        frame, state, vp_x, vp_y, vp_w, vp_h);
   }
 
   if (!used_level_tileset_background &&
       (asset = try_decode_bootstrap_asset(state)).has_value()) {
-    used_asset_background =
-        draw_room_tilemap_from_asset(frame, state, *asset, vp_x, vp_y, vp_w, vp_h);
+    used_asset_background = draw_room_tilemap_from_asset(
+        frame, state, *asset, vp_x, vp_y, vp_w, vp_h);
   }
 
   if (!used_level_tileset_background && !used_asset_background &&

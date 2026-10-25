@@ -74,8 +74,9 @@ void draw_rect(EgaPlanarSurface &surface, std::size_t x, std::size_t y,
   }
 }
 
-void draw_rect_unaligned(EgaPlanarSurface &surface, std::size_t x, std::size_t y,
-                         std::size_t w, std::size_t h, std::uint8_t color) {
+void draw_rect_unaligned(EgaPlanarSurface &surface, std::size_t x,
+                         std::size_t y, std::size_t w, std::size_t h,
+                         std::uint8_t color) {
   if (w == 0 || h == 0) {
     return;
   }
