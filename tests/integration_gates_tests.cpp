@@ -766,6 +766,83 @@ void test_gate_11e_bezel_border_not_overwritten_by_tiles() {
          "Gate 11-E: bottom bezel border must not be overwritten by tile draw");
 }
 
+void test_gate_11e_no_bezel_tiles_reach_full_frame_width() {
+  // Without a bezel the tileset renderer must draw across the full 320-px
+  // frame (not stop at kPlayfieldWidth = 240). Use a 20-tile-wide room and
+  // an all-white tile; pixels at x ≥ 240 (e.g. column 300) must be written.
+  auto state = comic2::make_default_runtime_state();
+  // No bezel — state.bezel_frame stays std::nullopt.
+
+  state.room_grid.tile_w = 20; // 20 * 16 = 320 px wide
+  state.room_grid.tile_h = 1;
+  state.room_grid.row_pointers = {0};
+  state.room_grid.tile_data.assign(20U, 0U);
+
+  comic2::Ega4PlaneImage tile;
+  tile.width_bytes = 2U;
+  tile.height_rows = 16U;
+  tile.row_span_bytes = 32U;
+  for (auto &plane : tile.planes) {
+    plane.assign(32U, 0xFFU); // all-white (color 0x0F)
+  }
+  state.level_tileset = {tile};
+
+  comic2::MemoryFramePresenter presenter;
+  comic2::render_bootstrap_frame(presenter, state);
+
+  expect(presenter.has_frame(),
+         "Gate 11-E no-bezel: frame must be presented");
+  const auto &frame = presenter.last_frame();
+
+  // Column 300 (tile 18, right portion) must be the tile color 0x0F.
+  const auto right_pixel = read_gate11_color(frame, 300U, 0U);
+  expect(right_pixel == 0x0FU,
+         "Gate 11-E no-bezel: tiles must reach full frame width (x=300) when "
+         "no bezel is active");
+}
+
+void test_gate_11e_no_bezel_tiles_reach_full_frame_height() {
+  // Without a bezel the tileset renderer must not stop at kPlayfieldHeight=176.
+  // Use a 12-tile-tall room (192 px); tile 11 covers y=176..191. With the
+  // old broken code (vp_bottom = y_offset + kPlayfieldHeight = 176) that tile
+  // would have been skipped; with the fix (vp_bottom = frame height = 200) it
+  // is drawn. Check row 184, which sits inside tile 11.
+  auto state = comic2::make_default_runtime_state();
+
+  state.room_grid.tile_w = 1;
+  state.room_grid.tile_h = 12; // 12 * 16 = 192 px; tile 11 = rows 176..191
+  state.room_grid.row_pointers.resize(12);
+  for (std::size_t i = 0; i < 12U; ++i) {
+    state.room_grid.row_pointers[i] = static_cast<std::uint16_t>(i);
+  }
+  state.room_grid.tile_data.assign(12U, 0U);
+
+  comic2::Ega4PlaneImage tile;
+  tile.width_bytes = 2U;
+  tile.height_rows = 16U;
+  tile.row_span_bytes = 32U;
+  for (auto &plane : tile.planes) {
+    plane.assign(32U, 0xFFU); // all-white (color 0x0F)
+  }
+  state.level_tileset = {tile};
+
+  comic2::MemoryFramePresenter presenter;
+  comic2::render_bootstrap_frame(presenter, state);
+
+  expect(presenter.has_frame(),
+         "Gate 11-E no-bezel height: frame must be presented");
+  const auto &frame = presenter.last_frame();
+
+  // Row 184 is inside tile 11 (rows 176..191), which fits within the 200-row
+  // frame. The old broken path would have stopped at vp_bottom=176 and never
+  // drawn this tile.
+  const auto bottom_pixel = read_gate11_color(frame, 0U, 184U);
+  expect(bottom_pixel == 0x0FU,
+         "Gate 11-E no-bezel: tiles must reach full frame height (y=184) when "
+         "no bezel is active");
+}
+
+
 void test_gate_11e_hud_counters_appear_in_bezel_panel_region() {
   // Arrange: state with a bezel and non-trivial player stats so
   // hud_render_overlay actually paints something in the right-panel region
@@ -864,4 +941,6 @@ void run_integration_gate_tests() {
   test_gate_11e_blit_string_writes_pixels_on_surface();
   test_gate_11e_bezel_border_not_overwritten_by_tiles();
   test_gate_11e_hud_counters_appear_in_bezel_panel_region();
+  test_gate_11e_no_bezel_tiles_reach_full_frame_width();
+  test_gate_11e_no_bezel_tiles_reach_full_frame_height();
 }

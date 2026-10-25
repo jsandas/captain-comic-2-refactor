@@ -463,13 +463,25 @@ bool extract_tile_from_asset(const Ega4PlaneImage &atlas,
 bool draw_room_tilemap_from_level_tileset(EgaPlanarSurface &frame,
                                           const RuntimeState &state,
                                           std::int32_t x_offset = 0,
-                                          std::int32_t y_offset = 0) {
+                                          std::int32_t y_offset = 0,
+                                          std::int32_t clip_w = 0,
+                                          std::int32_t clip_h = 0) {
   if (!has_room_grid_data(state) || !has_valid_level_tileset(state)) {
     return false;
   }
 
+  // 0 means "fill from offset to frame edge" — avoids hardcoding bezel sizes.
+  const std::int32_t vp_right =
+      x_offset +
+      (clip_w > 0 ? clip_w
+                  : static_cast<std::int32_t>(frame.width_pixels()) - x_offset);
+  const std::int32_t vp_bottom =
+      y_offset +
+      (clip_h > 0 ? clip_h
+                  : static_cast<std::int32_t>(frame.height_rows()) - y_offset);
+
   const std::size_t visible_tiles_x =
-      static_cast<std::size_t>(frame.width_pixels()) / kTileSizePixels;
+      static_cast<std::size_t>(vp_right - x_offset) / kTileSizePixels;
   const std::size_t start_tile_x =
       state.camera_x > 0 ? static_cast<std::size_t>(state.camera_x) /
                                static_cast<std::size_t>(kTileSizePixels)
@@ -478,24 +490,22 @@ bool draw_room_tilemap_from_level_tileset(EgaPlanarSurface &frame,
       std::min(static_cast<std::size_t>(state.room_grid.tile_w),
                start_tile_x + visible_tiles_x + 1U);
 
-  const std::int32_t vp_bottom = y_offset + kPlayfieldHeight;
-
   for (std::size_t tile_y = 0; tile_y < state.room_grid.tile_h; ++tile_y) {
     const std::int32_t py0 =
         static_cast<std::int32_t>(tile_y * kTileSizePixels) - state.camera_y +
         y_offset;
 
     if (py0 + kTileSizePixels <= y_offset) {
-      continue; // tile entirely above the playfield top edge
+      continue; // tile entirely above viewport top
     }
     if (py0 >= vp_bottom) {
-      break; // all remaining tiles are below the playfield bottom edge
+      break; // all remaining tiles are below viewport bottom
     }
     if (py0 < y_offset) {
-      continue; // tile partially above playfield top (no sub-tile clip yet)
+      continue; // tile partially above viewport top (no sub-tile clip yet)
     }
     if (py0 + kTileSizePixels > vp_bottom) {
-      break; // tile partially below playfield bottom (no sub-tile clip yet)
+      break; // tile partially below viewport bottom (no sub-tile clip yet)
     }
 
     for (std::size_t tile_x = start_tile_x; tile_x < end_tile_x; ++tile_x) {
@@ -507,8 +517,7 @@ bool draw_room_tilemap_from_level_tileset(EgaPlanarSurface &frame,
       const std::int32_t px0 =
           static_cast<std::int32_t>(tile_x * kTileSizePixels) - state.camera_x +
           x_offset;
-      if (px0 < x_offset ||
-          px0 + kTileSizePixels > x_offset + kPlayfieldWidth) {
+      if (px0 < x_offset || px0 + kTileSizePixels > vp_right) {
         continue;
       }
 
@@ -853,13 +862,17 @@ void render_bootstrap_frame(IFramePresenter &presenter, RuntimeState &state) {
   }
 
   // When a bezel is present, render game content inside the authentic playfield
-  // viewport (offset from the bezel border). Without a bezel, use offset 0.
+  // viewport. Pass the explicit clip size so the function does not bleed into
+  // the bezel border. Without a bezel, omit clip_w/clip_h (defaults to full
+  // frame) to preserve original full-frame behavior.
   const std::int32_t vp_x = used_bezel_background ? kPlayfieldX : 0;
   const std::int32_t vp_y = used_bezel_background ? kPlayfieldY : 0;
+  const std::int32_t vp_w = used_bezel_background ? kPlayfieldWidth : 0;
+  const std::int32_t vp_h = used_bezel_background ? kPlayfieldHeight : 0;
 
   if (has_valid_level_tileset(state) && has_room_grid) {
     used_level_tileset_background =
-        draw_room_tilemap_from_level_tileset(frame, state, vp_x, vp_y);
+        draw_room_tilemap_from_level_tileset(frame, state, vp_x, vp_y, vp_w, vp_h);
   }
 
   if (!used_level_tileset_background &&
