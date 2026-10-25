@@ -478,23 +478,24 @@ bool draw_room_tilemap_from_level_tileset(EgaPlanarSurface &frame,
       std::min(static_cast<std::size_t>(state.room_grid.tile_w),
                start_tile_x + visible_tiles_x + 1U);
 
+  const std::int32_t vp_bottom = y_offset + kPlayfieldHeight;
+
   for (std::size_t tile_y = 0; tile_y < state.room_grid.tile_h; ++tile_y) {
     const std::int32_t py0 =
         static_cast<std::int32_t>(tile_y * kTileSizePixels) - state.camera_y +
         y_offset;
 
-    if (py0 + kTileSizePixels <= 0) {
-      continue;
+    if (py0 + kTileSizePixels <= y_offset) {
+      continue; // tile entirely above the playfield top edge
     }
-    if (py0 >= static_cast<std::int32_t>(frame.height_rows())) {
-      break;
+    if (py0 >= vp_bottom) {
+      break; // all remaining tiles are below the playfield bottom edge
     }
-    if (py0 < 0) {
-      continue;
+    if (py0 < y_offset) {
+      continue; // tile partially above playfield top (no sub-tile clip yet)
     }
-    if (py0 + kTileSizePixels >
-        static_cast<std::int32_t>(frame.height_rows())) {
-      break;
+    if (py0 + kTileSizePixels > vp_bottom) {
+      break; // tile partially below playfield bottom (no sub-tile clip yet)
     }
 
     for (std::size_t tile_x = start_tile_x; tile_x < end_tile_x; ++tile_x) {

@@ -712,21 +712,34 @@ make_gate11_bezel_with_sentinel(std::uint8_t border_color,
 }
 
 void test_gate_11e_bezel_border_not_overwritten_by_tiles() {
-  // Arrange: state with a bezel that has a known sentinel color in the
-  // top-left 8x8 border area and a populated tileset + room grid.
+  // Arrange: state with a bezel that has known sentinel pixels in both the
+  // top border (y < kPlayfieldY = 8) and bottom border (y >= 184), plus a
+  // populated tileset + room grid large enough to exercise the clipping path.
   auto state = comic2::make_default_runtime_state();
 
   constexpr std::uint8_t kBorderColor = 0x05U; // magenta
   constexpr std::uint8_t kFillColor = 0x02U;   // green
-  state.bezel_frame = make_gate11_bezel_with_sentinel(kBorderColor, kFillColor);
+  auto bezel = make_gate11_bezel_with_sentinel(kBorderColor, kFillColor);
 
-  // Give it a simple 1-tile room so tileset rendering can run.
+  // Also mark the bottom bezel strip (y = 184..199) with the sentinel.
+  for (std::size_t y = 184U; y < 200U; ++y) {
+    for (std::size_t x = 0U; x < 8U; ++x) {
+      set_gate11_bezel_pixel(bezel, x, y, kBorderColor);
+    }
+  }
+  state.bezel_frame = bezel;
+
+  // Room tall enough that camera_y=0 would expose the vertical clipping path:
+  // 11 tiles * 16 px = 176 px, filling y=8..184 exactly.
   state.room_grid.tile_w = 1;
-  state.room_grid.tile_h = 1;
-  state.room_grid.row_pointers = {0};
-  state.room_grid.tile_data = {0};
+  state.room_grid.tile_h = 11;
+  state.room_grid.row_pointers.resize(11);
+  for (std::size_t i = 0; i < 11U; ++i) {
+    state.room_grid.row_pointers[i] = static_cast<std::uint16_t>(i);
+  }
+  state.room_grid.tile_data.assign(11U, 0U);
 
-  // Build a minimal tileset: one 16x16 tile, all-white (color 0x0F).
+  // One all-white tile so any stray blit is visible.
   comic2::Ega4PlaneImage tile;
   tile.width_bytes = 2U;
   tile.height_rows = 16U;
@@ -742,11 +755,15 @@ void test_gate_11e_bezel_border_not_overwritten_by_tiles() {
   expect(presenter.has_frame(), "Gate 11-E: frame must be presented");
   const auto &frame = presenter.last_frame();
 
-  // The top-left bezel border pixel (3, 3) should still be the sentinel color —
-  // tile rendering offsets by kPlayfieldX/Y so it cannot overwrite x<8, y<8.
-  const auto border_pixel = read_gate11_color(frame, 3U, 3U);
-  expect(border_pixel == kBorderColor,
-         "Gate 11-E: bezel border pixel must not be overwritten by tile draw");
+  // Top border pixel at (3, 3) must keep sentinel color (y < kPlayfieldY=8).
+  const auto top_pixel = read_gate11_color(frame, 3U, 3U);
+  expect(top_pixel == kBorderColor,
+         "Gate 11-E: top bezel border must not be overwritten by tile draw");
+
+  // Bottom border pixel at (3, 190) must keep sentinel color (y >= 184).
+  const auto bottom_pixel = read_gate11_color(frame, 3U, 190U);
+  expect(bottom_pixel == kBorderColor,
+         "Gate 11-E: bottom bezel border must not be overwritten by tile draw");
 }
 
 void test_gate_11e_hud_counters_appear_in_bezel_panel_region() {
