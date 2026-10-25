@@ -499,7 +499,7 @@ bool is_sprite_in_viewport(std::int32_t x, std::int32_t y, std::int32_t width,
          (y + height > viewport_y) && (y < viewport_bottom);
 }
 
-// Standard IBM CP437 8x8 font glyph table (partial — digits and common HUD
+// Standard IBM CP437 8x8 font glyph table (partial - digits and common HUD
 // characters). Each entry is 8 bytes, one byte per row, bit 7 = leftmost pixel.
 std::array<std::uint8_t, 8> get_font_glyph_8x8(char c) {
   // clang-format off
