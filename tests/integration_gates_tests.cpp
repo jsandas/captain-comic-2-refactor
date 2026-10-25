@@ -648,7 +648,7 @@ void test_gate_phase_92_audio_events_trigger_from_gameplay() {
 
 } // namespace
 
-// Gate 11-E: Frame Compositing — bezel, viewport clipping, and HUD counters.
+// Gate 11-E: Frame Compositing - bezel, viewport clipping, and HUD counters.
 
 namespace {
 
