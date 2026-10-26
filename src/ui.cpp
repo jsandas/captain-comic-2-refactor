@@ -1,9 +1,11 @@
 #include "comic2/ui.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <utility>
 
@@ -72,6 +74,40 @@ void draw_rect(EgaPlanarSurface &surface, std::size_t x, std::size_t y,
   }
 }
 
+void draw_rect_unaligned(EgaPlanarSurface &surface, std::size_t x,
+                         std::size_t y, std::size_t w, std::size_t h,
+                         std::uint8_t color) {
+  if (w == 0 || h == 0) {
+    return;
+  }
+
+  for (std::size_t py = 0; py < h; ++py) {
+    const std::size_t y_row = y + py;
+    if (y_row >= surface.height_rows()) {
+      break;
+    }
+    for (std::size_t px = 0; px < w; ++px) {
+      const std::size_t x_pixel = x + px;
+      if (x_pixel >= surface.width_pixels()) {
+        break;
+      }
+      const std::size_t x_byte = x_pixel / 8U;
+      const std::uint8_t bit_mask =
+          static_cast<std::uint8_t>(1U << (7U - (x_pixel % 8U)));
+      for (std::size_t plane = 0; plane < EgaPlanarSurface::kPlaneCount;
+           ++plane) {
+        auto value = surface.get_plane_byte(plane, x_byte, y_row);
+        if (((color >> plane) & 0x1U) != 0U) {
+          value = static_cast<std::uint8_t>(value | bit_mask);
+        } else {
+          value = static_cast<std::uint8_t>(value & ~bit_mask);
+        }
+        surface.set_plane_byte(plane, x_byte, y_row, value);
+      }
+    }
+  }
+}
+
 bool should_draw_hud_overlay(const RuntimeState &state) {
   return state.ui.menu_state != MenuState::None || state.ui.modal_active ||
          state.player.score != 0 || state.player.gems != 0 ||
@@ -133,6 +169,68 @@ void hud_render_overlay(EgaPlanarSurface &surface, const RuntimeState &state) {
     return;
   }
 
+  if (state.bezel_frame.has_value()) {
+    // Authentic bezel HUD: render digit counters on the right panel.
+    // Original layout: x=258..272 (two-digit field), y=0x5E/0x77/0x90/0xA9.
+    constexpr std::int32_t kHudX = 258;
+    constexpr std::uint8_t kHudColor = 0x0F; // bright white
+
+    // Shield energy bar (8 pips at y=0x5E=94)
+    {
+      const auto pips = std::min<std::uint8_t>(8U, state.player.shield_power);
+      for (std::uint8_t i = 0; i < 8U; ++i) {
+        const std::uint8_t color = (i < pips) ? 0x0AU : 0x08U;
+        draw_rect_unaligned(surface, static_cast<std::size_t>(kHudX + i * 4),
+                            0x5EU, 3U, 6U, color);
+      }
+    }
+
+    // Firepower counter at y=0x77=119
+    {
+      char buf[3] = {'0', '0', '\0'};
+      buf[0] = static_cast<char>('0' + (state.player.firepower / 10U) % 10U);
+      buf[1] = static_cast<char>('0' + state.player.firepower % 10U);
+      blit_string(surface, kHudX, 0x77, buf, kHudColor);
+    }
+
+    // Gems counter at y=0x90=144
+    {
+      char buf[3] = {'0', '0', '\0'};
+      buf[0] = static_cast<char>('0' + (state.player.gems / 10U) % 10U);
+      buf[1] = static_cast<char>('0' + state.player.gems % 10U);
+      blit_string(surface, kHudX, 0x90, buf, kHudColor);
+    }
+
+    // Lives counter at y=0xA9=169
+    {
+      char buf[3] = {'0', '0', '\0'};
+      buf[0] = static_cast<char>('0' + (state.player.lives / 10U) % 10U);
+      buf[1] = static_cast<char>('0' + state.player.lives % 10U);
+      blit_string(surface, kHudX, 0xA9, buf, kHudColor);
+    }
+
+    // Score (6 digits) at y=8 (top of right panel)
+    {
+      const std::uint32_t full_score =
+          (static_cast<std::uint32_t>(state.player.score_high) << 16U) |
+          state.player.score;
+      char buf[7];
+      std::snprintf(buf, sizeof(buf), "%06u",
+                    static_cast<unsigned>(full_score % 1000000U));
+      blit_string(surface, kHudX - 8, 8, buf, kHudColor);
+    }
+
+    // Keys at y=0x43=67
+    {
+      char buf[2] = {'0', '\0'};
+      buf[0] = static_cast<char>('0' + state.player.key_count % 10U);
+      blit_string(surface, kHudX + 8, 0x43, buf, kHudColor);
+    }
+
+    return;
+  }
+
+  // Fallback HUD strip at bottom of frame (no bezel present).
   draw_rect(surface, 0, 184, 320, 16, 0x03);
   write_two_digit_counter(surface, 8, 188, state.player.score & 0xFF);
   write_two_digit_counter(surface, 56, 188, state.player.gems);

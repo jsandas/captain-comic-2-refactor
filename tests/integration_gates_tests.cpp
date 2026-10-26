@@ -648,6 +648,271 @@ void test_gate_phase_92_audio_events_trigger_from_gameplay() {
 
 } // namespace
 
+// Gate 11-E: Frame Compositing - bezel, viewport clipping, and HUD counters.
+
+namespace {
+
+// Read a single EGA pixel color index from a rendered frame surface.
+std::uint8_t read_gate11_color(const comic2::EgaPlanarSurface &frame,
+                               std::size_t x, std::size_t y) {
+  const std::size_t x_byte = x / 8U;
+  const std::uint8_t bit = static_cast<std::uint8_t>(7U - (x % 8U));
+  std::uint8_t index = 0;
+  for (std::size_t plane = 0; plane < comic2::EgaPlanarSurface::kPlaneCount;
+       ++plane) {
+    const auto value = frame.get_plane_byte(plane, x_byte, y);
+    if (value & static_cast<std::uint8_t>(1U << bit)) {
+      index = static_cast<std::uint8_t>(index |
+                                        static_cast<std::uint8_t>(1U << plane));
+    }
+  }
+  return index;
+}
+
+// Set a pixel on a 320x200 Ega4PlaneImage (row_stride = 40 bytes).
+void set_gate11_bezel_pixel(comic2::Ega4PlaneImage &image, std::size_t x,
+                            std::size_t y, std::uint8_t color_index) {
+  const std::size_t x_byte = x / 8U;
+  const std::uint8_t bit = static_cast<std::uint8_t>(7U - (x % 8U));
+  const std::uint8_t mask = static_cast<std::uint8_t>(1U << bit);
+  const std::size_t row_offset = y * 40U;
+  for (std::size_t plane = 0; plane < image.planes.size(); ++plane) {
+    auto &pd = image.planes[plane];
+    if ((color_index >> plane) & 0x1U) {
+      pd[row_offset + x_byte] |= mask;
+    } else {
+      pd[row_offset + x_byte] &= static_cast<std::uint8_t>(~mask);
+    }
+  }
+}
+
+comic2::Ega4PlaneImage
+make_gate11_bezel_with_sentinel(std::uint8_t border_color,
+                                std::uint8_t fill_color) {
+  comic2::Ega4PlaneImage image;
+  image.width_bytes = 40U;
+  image.height_rows = 200U;
+  image.row_span_bytes = static_cast<std::uint16_t>(40U * 200U);
+  for (auto &plane : image.planes) {
+    plane.assign(8000U, 0x00U);
+  }
+  // Fill entire surface with fill_color
+  for (std::size_t y = 0; y < 200U; ++y) {
+    for (std::size_t x = 0; x < 320U; ++x) {
+      set_gate11_bezel_pixel(image, x, y, fill_color);
+    }
+  }
+  // Paint a known sentinel in the 8-pixel bezel border (top-left corner)
+  for (std::size_t y = 0; y < 8U; ++y) {
+    for (std::size_t x = 0; x < 8U; ++x) {
+      set_gate11_bezel_pixel(image, x, y, border_color);
+    }
+  }
+  return image;
+}
+
+void test_gate_11e_bezel_border_not_overwritten_by_tiles() {
+  // Arrange: state with a bezel that has known sentinel pixels in both the
+  // top border (y < kPlayfieldY = 8) and bottom border (y >= 184), plus a
+  // populated tileset + room grid large enough to exercise the clipping path.
+  auto state = comic2::make_default_runtime_state();
+
+  constexpr std::uint8_t kBorderColor = 0x05U; // magenta
+  constexpr std::uint8_t kFillColor = 0x02U;   // green
+  auto bezel = make_gate11_bezel_with_sentinel(kBorderColor, kFillColor);
+
+  // Also mark the bottom bezel strip (y = 184..199) with the sentinel.
+  for (std::size_t y = 184U; y < 200U; ++y) {
+    for (std::size_t x = 0U; x < 8U; ++x) {
+      set_gate11_bezel_pixel(bezel, x, y, kBorderColor);
+    }
+  }
+  state.bezel_frame = bezel;
+
+  // Room tall enough that camera_y=0 would expose the vertical clipping path:
+  // 11 tiles * 16 px = 176 px, filling y=8..184 exactly.
+  state.room_grid.tile_w = 1;
+  state.room_grid.tile_h = 11;
+  state.room_grid.row_pointers.resize(11);
+  for (std::size_t i = 0; i < 11U; ++i) {
+    state.room_grid.row_pointers[i] = static_cast<std::uint16_t>(i);
+  }
+  state.room_grid.tile_data.assign(11U, 0U);
+
+  // One all-white tile so any stray blit is visible.
+  comic2::Ega4PlaneImage tile;
+  tile.width_bytes = 2U;
+  tile.height_rows = 16U;
+  tile.row_span_bytes = 32U;
+  for (auto &plane : tile.planes) {
+    plane.assign(32U, 0xFFU);
+  }
+  state.level_tileset = {tile};
+
+  comic2::MemoryFramePresenter presenter;
+  comic2::render_bootstrap_frame(presenter, state);
+
+  expect(presenter.has_frame(), "Gate 11-E: frame must be presented");
+  const auto &frame = presenter.last_frame();
+
+  // Top border pixel at (3, 3) must keep sentinel color (y < kPlayfieldY=8).
+  const auto top_pixel = read_gate11_color(frame, 3U, 3U);
+  expect(top_pixel == kBorderColor,
+         "Gate 11-E: top bezel border must not be overwritten by tile draw");
+
+  // Bottom border pixel at (3, 190) must keep sentinel color (y >= 184).
+  const auto bottom_pixel = read_gate11_color(frame, 3U, 190U);
+  expect(bottom_pixel == kBorderColor,
+         "Gate 11-E: bottom bezel border must not be overwritten by tile draw");
+}
+
+void test_gate_11e_no_bezel_tiles_reach_full_frame_width() {
+  // Without a bezel the tileset renderer must draw across the full 320-px
+  // frame (not stop at kPlayfieldWidth = 240). Use a 20-tile-wide room and
+  // an all-white tile; pixels at x >= 240 (e.g. column 300) must be written.
+  auto state = comic2::make_default_runtime_state();
+  // No bezel - state.bezel_frame stays std::nullopt.
+
+  state.room_grid.tile_w = 20; // 20 * 16 = 320 px wide
+  state.room_grid.tile_h = 1;
+  state.room_grid.row_pointers = {0};
+  state.room_grid.tile_data.assign(20U, 0U);
+
+  comic2::Ega4PlaneImage tile;
+  tile.width_bytes = 2U;
+  tile.height_rows = 16U;
+  tile.row_span_bytes = 32U;
+  for (auto &plane : tile.planes) {
+    plane.assign(32U, 0xFFU); // all-white (color 0x0F)
+  }
+  state.level_tileset = {tile};
+
+  comic2::MemoryFramePresenter presenter;
+  comic2::render_bootstrap_frame(presenter, state);
+
+  expect(presenter.has_frame(), "Gate 11-E no-bezel: frame must be presented");
+  const auto &frame = presenter.last_frame();
+
+  // Column 300 (tile 18, right portion) must be the tile color 0x0F.
+  const auto right_pixel = read_gate11_color(frame, 300U, 0U);
+  expect(right_pixel == 0x0FU,
+         "Gate 11-E no-bezel: tiles must reach full frame width (x=300) when "
+         "no bezel is active");
+}
+
+void test_gate_11e_no_bezel_tiles_reach_full_frame_height() {
+  // Without a bezel the tileset renderer must not stop at kPlayfieldHeight=176.
+  // Use a 12-tile-tall room (192 px); tile 11 covers y=176..191. With the
+  // old broken code (vp_bottom = y_offset + kPlayfieldHeight = 176) that tile
+  // would have been skipped; with the fix (vp_bottom = frame height = 200) it
+  // is drawn. Check row 184, which sits inside tile 11.
+  auto state = comic2::make_default_runtime_state();
+
+  state.room_grid.tile_w = 1;
+  state.room_grid.tile_h = 12; // 12 * 16 = 192 px; tile 11 = rows 176..191
+  state.room_grid.row_pointers.resize(12);
+  for (std::size_t i = 0; i < 12U; ++i) {
+    state.room_grid.row_pointers[i] = static_cast<std::uint16_t>(i);
+  }
+  state.room_grid.tile_data.assign(12U, 0U);
+
+  comic2::Ega4PlaneImage tile;
+  tile.width_bytes = 2U;
+  tile.height_rows = 16U;
+  tile.row_span_bytes = 32U;
+  for (auto &plane : tile.planes) {
+    plane.assign(32U, 0xFFU); // all-white (color 0x0F)
+  }
+  state.level_tileset = {tile};
+
+  comic2::MemoryFramePresenter presenter;
+  comic2::render_bootstrap_frame(presenter, state);
+
+  expect(presenter.has_frame(),
+         "Gate 11-E no-bezel height: frame must be presented");
+  const auto &frame = presenter.last_frame();
+
+  // Row 184 is inside tile 11 (rows 176..191), which fits within the 200-row
+  // frame. The old broken path would have stopped at vp_bottom=176 and never
+  // drawn this tile.
+  const auto bottom_pixel = read_gate11_color(frame, 0U, 184U);
+  expect(bottom_pixel == 0x0FU,
+         "Gate 11-E no-bezel: tiles must reach full frame height (y=184) when "
+         "no bezel is active");
+}
+
+void test_gate_11e_hud_counters_appear_in_bezel_panel_region() {
+  // Arrange: state with a bezel and non-trivial player stats so
+  // hud_render_overlay actually paints something in the right-panel region
+  // (x=258..286, y=90..175).
+  auto state = comic2::make_default_runtime_state();
+  state.bezel_frame = make_gate11_bezel_with_sentinel(0x05U, 0x00U);
+  state.player.score = 1000U; // non-zero -> overlay guard passes
+  state.player.gems = 3U;
+  state.player.lives = 2U;
+  state.player.firepower = 2U;
+  state.player.shield_power = 4U;
+
+  comic2::MemoryFramePresenter presenter;
+  comic2::render_bootstrap_frame(presenter, state);
+
+  expect(presenter.has_frame(), "Gate 11-E HUD: frame must be presented");
+  const auto &frame = presenter.last_frame();
+
+  // Scan the HUD panel area (x=258..286, y=90..175) for at least one
+  // non-zero pixel written by the HUD renderer.
+  bool found_hud_pixel = false;
+  for (std::size_t y = 90U; y < 176U && !found_hud_pixel; ++y) {
+    for (std::size_t x = 258U; x < 288U && !found_hud_pixel; ++x) {
+      if (read_gate11_color(frame, x, y) != 0x00U) {
+        found_hud_pixel = true;
+      }
+    }
+  }
+  expect(found_hud_pixel,
+         "Gate 11-E HUD: at least one HUD pixel must appear in the bezel "
+         "right-panel region");
+}
+
+void test_gate_11e_font_glyph_digit_is_nonzero() {
+  // Verify that get_font_glyph_8x8 returns non-trivial data for digits 0-9.
+  for (char d = '0'; d <= '9'; ++d) {
+    const auto glyph = comic2::get_font_glyph_8x8(d);
+    const bool any_set = std::any_of(glyph.begin(), glyph.end(),
+                                     [](std::uint8_t b) { return b != 0U; });
+    expect(any_set,
+           "Gate 11-E font: digit glyph must have at least one set bit");
+  }
+}
+
+void test_gate_11e_blit_string_writes_pixels_on_surface() {
+  // blit_string of "01" should produce visible pixels on a blank surface.
+  comic2::EgaPlanarSurface surface(320, 200);
+  surface.clear(0x00);
+  comic2::blit_string(surface, 10, 20, "01", 0x0FU);
+
+  bool found = false;
+  for (std::int32_t y = 20; y < 28 && !found; ++y) {
+    for (std::int32_t x = 10; x < 26 && !found; ++x) {
+      const auto x_byte = static_cast<std::size_t>(x) / 8U;
+      const auto bit =
+          static_cast<std::uint8_t>(7U - (static_cast<std::size_t>(x) % 8U));
+      for (std::size_t plane = 0; plane < comic2::EgaPlanarSurface::kPlaneCount;
+           ++plane) {
+        if (surface.get_plane_byte(plane, x_byte, static_cast<std::size_t>(y)) &
+            static_cast<std::uint8_t>(1U << bit)) {
+          found = true;
+          break;
+        }
+      }
+    }
+  }
+  expect(found,
+         "Gate 11-E: blit_string must write visible pixels on the surface");
+}
+
+} // namespace
+
 void run_integration_gate_tests() {
   test_gate_b_scripted_trace_matches_oracle();
   test_gate_b_oracle_stage_sequence_rotation();
@@ -668,4 +933,12 @@ void run_integration_gate_tests() {
   test_gate_phase_93_transition_flow_freezes_player_and_tracks_camera();
   test_gate_phase_10d_event_trigger_flow();
   test_gate_phase_92_audio_events_trigger_from_gameplay();
+
+  // Gate 11-E: Viewport compositing and HUD counter rendering.
+  test_gate_11e_font_glyph_digit_is_nonzero();
+  test_gate_11e_blit_string_writes_pixels_on_surface();
+  test_gate_11e_bezel_border_not_overwritten_by_tiles();
+  test_gate_11e_hud_counters_appear_in_bezel_panel_region();
+  test_gate_11e_no_bezel_tiles_reach_full_frame_width();
+  test_gate_11e_no_bezel_tiles_reach_full_frame_height();
 }

@@ -318,7 +318,22 @@ std::uint8_t expand_color_bit(bool enabled, std::uint8_t mask) {
 }
 
 void draw_room_tile(EgaPlanarSurface &frame, std::int32_t px0, std::int32_t py0,
-                    std::uint8_t base_color, std::uint8_t accent_color) {
+                    std::uint8_t base_color, std::uint8_t accent_color,
+                    std::int32_t clip_left = 0, std::int32_t clip_top = 0,
+                    std::int32_t clip_right = 0, std::int32_t clip_bottom = 0) {
+  if (clip_right <= 0) {
+    clip_right = frame.width_pixels();
+  }
+  if (clip_bottom <= 0) {
+    clip_bottom = frame.height_rows();
+  }
+
+  // Only draw tiles fully inside the active viewport clip.
+  if (px0 < clip_left || py0 < clip_top || px0 + kTileSizePixels > clip_right ||
+      py0 + kTileSizePixels > clip_bottom) {
+    return;
+  }
+
   if (px0 < 0 || py0 < 0 || px0 + kTileSizePixels > frame.width_pixels() ||
       py0 + kTileSizePixels > frame.height_rows()) {
     return;
@@ -353,11 +368,22 @@ void draw_room_tile(EgaPlanarSurface &frame, std::int32_t px0, std::int32_t py0,
   }
 }
 
-void draw_room_tilemap(EgaPlanarSurface &frame, const RuntimeState &state) {
+void draw_room_tilemap(EgaPlanarSurface &frame, const RuntimeState &state,
+                       std::int32_t x_offset = 0, std::int32_t y_offset = 0,
+                       std::int32_t clip_w = 0, std::int32_t clip_h = 0) {
+  const std::int32_t vp_right =
+      x_offset +
+      (clip_w > 0 ? clip_w
+                  : static_cast<std::int32_t>(frame.width_pixels()) - x_offset);
+  const std::int32_t vp_bottom =
+      y_offset +
+      (clip_h > 0 ? clip_h
+                  : static_cast<std::int32_t>(frame.height_rows()) - y_offset);
+
   const std::size_t visible_tiles_x =
-      static_cast<std::size_t>(frame.width_pixels()) / kTileSizePixels;
+      static_cast<std::size_t>(vp_right - x_offset) / kTileSizePixels;
   const std::size_t visible_tiles_y =
-      static_cast<std::size_t>(frame.height_rows()) / kTileSizePixels;
+      static_cast<std::size_t>(vp_bottom - y_offset) / kTileSizePixels;
 
   const std::size_t start_tile_x =
       state.camera_x > 0 ? static_cast<std::size_t>(state.camera_x) /
@@ -380,19 +406,13 @@ void draw_room_tilemap(EgaPlanarSurface &frame, const RuntimeState &state) {
       const std::uint8_t base_color = static_cast<std::uint8_t>(tile_id & 0x0F);
       const std::uint8_t accent_color =
           static_cast<std::uint8_t>((base_color + 2U) & 0x0F);
-      const auto px0 =
-          static_cast<std::int32_t>(tile_x * kTileSizePixels) - state.camera_x;
-      const auto py0 =
-          static_cast<std::int32_t>(tile_y * kTileSizePixels) - state.camera_y;
+      const auto px0 = static_cast<std::int32_t>(tile_x * kTileSizePixels) -
+                       state.camera_x + x_offset;
+      const auto py0 = static_cast<std::int32_t>(tile_y * kTileSizePixels) -
+                       state.camera_y + y_offset;
 
-      if (px0 + kTileSizePixels <= 0 || px0 >= frame.width_pixels()) {
-        continue;
-      }
-      if (py0 + kTileSizePixels <= 0 || py0 >= frame.height_rows()) {
-        continue;
-      }
-
-      draw_room_tile(frame, px0, py0, base_color, accent_color);
+      draw_room_tile(frame, px0, py0, base_color, accent_color, x_offset,
+                     y_offset, vp_right, vp_bottom);
     }
   }
 }
@@ -461,13 +481,27 @@ bool extract_tile_from_asset(const Ega4PlaneImage &atlas,
 }
 
 bool draw_room_tilemap_from_level_tileset(EgaPlanarSurface &frame,
-                                          const RuntimeState &state) {
+                                          const RuntimeState &state,
+                                          std::int32_t x_offset = 0,
+                                          std::int32_t y_offset = 0,
+                                          std::int32_t clip_w = 0,
+                                          std::int32_t clip_h = 0) {
   if (!has_room_grid_data(state) || !has_valid_level_tileset(state)) {
     return false;
   }
 
+  // 0 means "fill from offset to frame edge" - avoids hardcoding bezel sizes.
+  const std::int32_t vp_right =
+      x_offset +
+      (clip_w > 0 ? clip_w
+                  : static_cast<std::int32_t>(frame.width_pixels()) - x_offset);
+  const std::int32_t vp_bottom =
+      y_offset +
+      (clip_h > 0 ? clip_h
+                  : static_cast<std::int32_t>(frame.height_rows()) - y_offset);
+
   const std::size_t visible_tiles_x =
-      static_cast<std::size_t>(frame.width_pixels()) / kTileSizePixels;
+      static_cast<std::size_t>(vp_right - x_offset) / kTileSizePixels;
   const std::size_t start_tile_x =
       state.camera_x > 0 ? static_cast<std::size_t>(state.camera_x) /
                                static_cast<std::size_t>(kTileSizePixels)
@@ -478,20 +512,20 @@ bool draw_room_tilemap_from_level_tileset(EgaPlanarSurface &frame,
 
   for (std::size_t tile_y = 0; tile_y < state.room_grid.tile_h; ++tile_y) {
     const std::int32_t py0 =
-        static_cast<std::int32_t>(tile_y * kTileSizePixels) - state.camera_y;
+        static_cast<std::int32_t>(tile_y * kTileSizePixels) - state.camera_y +
+        y_offset;
 
-    if (py0 + kTileSizePixels <= 0) {
-      continue;
+    if (py0 + kTileSizePixels <= y_offset) {
+      continue; // tile entirely above viewport top
     }
-    if (py0 >= static_cast<std::int32_t>(frame.height_rows())) {
-      break;
+    if (py0 >= vp_bottom) {
+      break; // all remaining tiles are below viewport bottom
     }
-    if (py0 < 0) {
-      continue;
+    if (py0 < y_offset) {
+      continue; // tile partially above viewport top (no sub-tile clip yet)
     }
-    if (py0 + kTileSizePixels >
-        static_cast<std::int32_t>(frame.height_rows())) {
-      break;
+    if (py0 + kTileSizePixels > vp_bottom) {
+      break; // tile partially below viewport bottom (no sub-tile clip yet)
     }
 
     for (std::size_t tile_x = start_tile_x; tile_x < end_tile_x; ++tile_x) {
@@ -501,8 +535,9 @@ bool draw_room_tilemap_from_level_tileset(EgaPlanarSurface &frame,
       }
 
       const std::int32_t px0 =
-          static_cast<std::int32_t>(tile_x * kTileSizePixels) - state.camera_x;
-      if (px0 < 0 || px0 + kTileSizePixels > frame.width_pixels()) {
+          static_cast<std::int32_t>(tile_x * kTileSizePixels) - state.camera_x +
+          x_offset;
+      if (px0 < x_offset || px0 + kTileSizePixels > vp_right) {
         continue;
       }
 
@@ -517,7 +552,11 @@ bool draw_room_tilemap_from_level_tileset(EgaPlanarSurface &frame,
 
 bool draw_room_tilemap_from_asset(EgaPlanarSurface &frame,
                                   const RuntimeState &state,
-                                  const Ega4PlaneImage &atlas) {
+                                  const Ega4PlaneImage &atlas,
+                                  std::int32_t x_offset = 0,
+                                  std::int32_t y_offset = 0,
+                                  std::int32_t clip_w = 0,
+                                  std::int32_t clip_h = 0) {
   if (!has_room_grid_data(state)) {
     return false;
   }
@@ -525,8 +564,17 @@ bool draw_room_tilemap_from_asset(EgaPlanarSurface &frame,
     return false;
   }
 
+  const std::int32_t vp_right =
+      x_offset +
+      (clip_w > 0 ? clip_w
+                  : static_cast<std::int32_t>(frame.width_pixels()) - x_offset);
+  const std::int32_t vp_bottom =
+      y_offset +
+      (clip_h > 0 ? clip_h
+                  : static_cast<std::int32_t>(frame.height_rows()) - y_offset);
+
   const std::size_t visible_tiles_x =
-      static_cast<std::size_t>(frame.width_pixels()) / kTileSizePixels;
+      static_cast<std::size_t>(vp_right - x_offset) / kTileSizePixels;
   const std::size_t start_tile_x =
       state.camera_x > 0 ? static_cast<std::size_t>(state.camera_x) /
                                static_cast<std::size_t>(kTileSizePixels)
@@ -538,22 +586,22 @@ bool draw_room_tilemap_from_asset(EgaPlanarSurface &frame,
   Ega4PlaneImage tile;
   for (std::size_t tile_y = 0; tile_y < state.room_grid.tile_h; ++tile_y) {
     const std::int32_t py0 =
-        static_cast<std::int32_t>(tile_y * kTileSizePixels) - state.camera_y;
+        static_cast<std::int32_t>(tile_y * kTileSizePixels) - state.camera_y +
+        y_offset;
 
-    // Skip tiles that are completely off-screen
-    if (py0 + kTileSizePixels <= 0) {
-      continue; // Tile is completely above viewport
+    if (py0 + kTileSizePixels <= y_offset) {
+      continue; // tile entirely above viewport top
     }
-    if (py0 >= static_cast<std::int32_t>(frame.height_rows())) {
-      break; // All remaining tiles are below viewport
+    if (py0 >= vp_bottom) {
+      break; // all remaining tiles below viewport bottom
     }
-    if (py0 < 0) {
-      continue; // Tile is partially above viewport (no clipping support yet)
+    if (py0 < y_offset) {
+      continue; // tile partially above viewport top (no sub-tile clip yet)
     }
-    if (py0 + kTileSizePixels >
-        static_cast<std::int32_t>(frame.height_rows())) {
-      break; // Tile is partially below viewport (no clipping support yet)
+    if (py0 + kTileSizePixels > vp_bottom) {
+      break; // tile partially below viewport bottom (no sub-tile clip yet)
     }
+
     for (std::size_t tile_x = start_tile_x; tile_x < end_tile_x; ++tile_x) {
       const std::uint8_t tile_id = read_room_tile(state, tile_x, tile_y);
       if (!extract_tile_from_asset(atlas, tile_id, tile)) {
@@ -561,9 +609,10 @@ bool draw_room_tilemap_from_asset(EgaPlanarSurface &frame,
       }
 
       const std::int32_t px0 =
-          static_cast<std::int32_t>(tile_x * kTileSizePixels) - state.camera_x;
-      if (px0 < 0 || px0 + kTileSizePixels > frame.width_pixels()) {
-        continue; // Partial horizontal tiles unsupported (no clipping yet)
+          static_cast<std::int32_t>(tile_x * kTileSizePixels) - state.camera_x +
+          x_offset;
+      if (px0 < x_offset || px0 + kTileSizePixels > vp_right) {
+        continue; // partial horizontal tiles unsupported (no sub-tile clip yet)
       }
       gfx_rle_blit_opaque_4plane(frame, static_cast<std::size_t>(px0),
                                  static_cast<std::size_t>(py0), tile);
@@ -575,7 +624,9 @@ bool draw_room_tilemap_from_asset(EgaPlanarSurface &frame,
 
 bool draw_player_sprite_from_asset(EgaPlanarSurface &frame,
                                    const RuntimeState &state,
-                                   const Ega4PlaneImage &atlas) {
+                                   const Ega4PlaneImage &atlas,
+                                   std::int32_t x_offset = 0,
+                                   std::int32_t y_offset = 0) {
   if (has_valid_player_sprite_sheet(state)) {
     const std::size_t sprite_index = select_player_sprite_frame(state);
     if (draw_level_sprite_record(frame, state, sprite_index)) {
@@ -589,8 +640,8 @@ bool draw_player_sprite_from_asset(EgaPlanarSurface &frame,
     return false;
   }
 
-  const std::int32_t px = state.player.x - state.camera_x;
-  const std::int32_t py = state.player.y - state.camera_y;
+  const std::int32_t px = state.player.x - state.camera_x + x_offset;
+  const std::int32_t py = state.player.y - state.camera_y + y_offset;
   if (!is_sprite_in_viewport(px, py, 16, 16)) {
     return true;
   }
@@ -606,7 +657,9 @@ bool draw_player_sprite_from_asset(EgaPlanarSurface &frame,
 }
 bool draw_timed_overlay_sprite_from_asset(EgaPlanarSurface &frame,
                                           const RuntimeState &state,
-                                          const Ega4PlaneImage &atlas) {
+                                          const Ega4PlaneImage &atlas,
+                                          std::int32_t x_offset = 0,
+                                          std::int32_t y_offset = 0) {
   if (!should_render_timed_overlay(state)) {
     return false;
   }
@@ -618,8 +671,8 @@ bool draw_timed_overlay_sprite_from_asset(EgaPlanarSurface &frame,
     return false;
   }
 
-  const std::int32_t px = state.player.x - state.camera_x;
-  const std::int32_t py = state.player.y - state.camera_y;
+  const std::int32_t px = state.player.x - state.camera_x + x_offset;
+  const std::int32_t py = state.player.y - state.camera_y + y_offset;
   if (!is_sprite_in_viewport(px, py, 16, 16)) {
     return true;
   }
@@ -651,9 +704,10 @@ std::optional<Ega4PlaneImage> try_decode_bootstrap_asset(RuntimeState &state) {
   return image;
 }
 
-void draw_player_marker(EgaPlanarSurface &frame, const RuntimeState &state) {
-  const std::int32_t px0 = state.player.x - state.camera_x;
-  const std::int32_t py0 = state.player.y - state.camera_y;
+void draw_player_marker(EgaPlanarSurface &frame, const RuntimeState &state,
+                        std::int32_t x_offset = 0, std::int32_t y_offset = 0) {
+  const std::int32_t px0 = state.player.x - state.camera_x + x_offset;
+  const std::int32_t py0 = state.player.y - state.camera_y + y_offset;
   const std::uint8_t body_color = state.player.is_airborne ? 0x0E : 0x0C;
 
   if (!is_sprite_in_viewport(px0, py0, 8, 16)) {
@@ -668,14 +722,16 @@ void draw_player_marker(EgaPlanarSurface &frame, const RuntimeState &state) {
 }
 
 void draw_room_event_anchor_sprite(EgaPlanarSurface &frame,
-                                   const RuntimeState &state) {
+                                   const RuntimeState &state,
+                                   std::int32_t x_offset = 0,
+                                   std::int32_t y_offset = 0) {
   const auto &anchor = state.room_event_anchor;
   if (!anchor.active) {
     return;
   }
 
-  const std::int32_t px0 = anchor.x - state.camera_x;
-  const std::int32_t py0 = anchor.y - state.camera_y;
+  const std::int32_t px0 = anchor.x - state.camera_x + x_offset;
+  const std::int32_t py0 = anchor.y - state.camera_y + y_offset;
   if (!is_sprite_in_viewport(px0, py0, 12, 12)) {
     return;
   }
@@ -839,53 +895,64 @@ void render_bootstrap_frame(IFramePresenter &presenter, RuntimeState &state) {
     used_bezel_background = true;
   }
 
+  // When a bezel is present, render game content inside the authentic playfield
+  // viewport. Pass the explicit clip size so the function does not bleed into
+  // the bezel border. Without a bezel, omit clip_w/clip_h (defaults to full
+  // frame) to preserve original full-frame behavior.
+  const std::int32_t vp_x = used_bezel_background ? kPlayfieldX : 0;
+  const std::int32_t vp_y = used_bezel_background ? kPlayfieldY : 0;
+  const std::int32_t vp_w = used_bezel_background ? kPlayfieldWidth : 0;
+  const std::int32_t vp_h = used_bezel_background ? kPlayfieldHeight : 0;
+
   if (has_valid_level_tileset(state) && has_room_grid) {
-    used_level_tileset_background =
-        draw_room_tilemap_from_level_tileset(frame, state);
+    used_level_tileset_background = draw_room_tilemap_from_level_tileset(
+        frame, state, vp_x, vp_y, vp_w, vp_h);
   }
 
   if (!used_level_tileset_background &&
       (asset = try_decode_bootstrap_asset(state)).has_value()) {
-    used_asset_background = draw_room_tilemap_from_asset(frame, state, *asset);
+    used_asset_background = draw_room_tilemap_from_asset(
+        frame, state, *asset, vp_x, vp_y, vp_w, vp_h);
   }
 
   if (!used_level_tileset_background && !used_asset_background &&
       has_room_grid) {
-    draw_room_tilemap(frame, state);
+    draw_room_tilemap(frame, state, vp_x, vp_y, vp_w, vp_h);
   } else if (!used_level_tileset_background && !used_asset_background &&
              !used_bezel_background) {
     draw_fallback_background(frame, state);
   }
 
   // Phase 10.1: draw background first.
-  draw_runtime_entity_sprites(frame, state);
+  draw_runtime_entity_sprites(frame, state, vp_x, vp_y);
 
   // Phase 10.1: draw projectiles above entities.
-  draw_runtime_projectile_sprites(frame, state);
+  draw_runtime_projectile_sprites(frame, state, vp_x, vp_y);
 
   // Phase 10.5: draw room-event anchors above projectiles.
-  draw_room_event_anchor_sprite(frame, state);
+  draw_room_event_anchor_sprite(frame, state, vp_x, vp_y);
 
   // Phase 10.1: draw the player above projectiles.
   if (used_asset_background && should_render_player_sprite(state)) {
-    if (!draw_player_sprite_from_asset(frame, state, *asset)) {
-      draw_player_marker(frame, state);
+    if (!draw_player_sprite_from_asset(frame, state, *asset, vp_x, vp_y)) {
+      draw_player_marker(frame, state, vp_x, vp_y);
     }
   }
 
   if (!used_asset_background && should_render_player_sprite(state)) {
-    draw_player_marker(frame, state);
+    draw_player_marker(frame, state, vp_x, vp_y);
   }
 
   // Phase 10.1: draw any timed overlay last before the HUD.
   if (used_asset_background && should_render_timed_overlay(state)) {
-    if (!draw_timed_overlay_sprite_from_asset(frame, state, *asset)) {
-      draw_player_marker(frame, state);
+    if (!draw_timed_overlay_sprite_from_asset(frame, state, *asset, vp_x,
+                                              vp_y)) {
+      draw_player_marker(frame, state, vp_x, vp_y);
     }
   }
 
   if (!used_asset_background && should_render_timed_overlay(state)) {
-    draw_player_marker(frame, state);
+    draw_player_marker(frame, state, vp_x, vp_y);
   }
 
   if (state.transition_state.active) {

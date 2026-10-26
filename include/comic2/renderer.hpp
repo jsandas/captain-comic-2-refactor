@@ -122,6 +122,13 @@ void gfx_rle_blit_masked_or_4plane(EgaPlanarSurface &dest, std::size_t x_pixels,
                                    std::size_t y_rows,
                                    const Ega4PlaneImage &image_data);
 
+// Authentic in-game playfield viewport within the 320x200 bezel frame.
+// The FRPAK.001 bezel has an 8-pixel border; the playfield sits within it.
+constexpr std::int32_t kPlayfieldX = 8;
+constexpr std::int32_t kPlayfieldY = 8;
+constexpr std::int32_t kPlayfieldWidth = 240;
+constexpr std::int32_t kPlayfieldHeight = 176;
+
 bool is_sprite_in_viewport(
     std::int32_t x, std::int32_t y, std::int32_t width, std::int32_t height,
     std::int32_t viewport_x = 0, std::int32_t viewport_y = 0,
@@ -129,10 +136,27 @@ bool is_sprite_in_viewport(
         static_cast<std::int32_t>(EgaPlanarSurface::kDefaultWidthPixels),
     std::int32_t viewport_height =
         static_cast<std::int32_t>(EgaPlanarSurface::kDefaultHeightRows));
+
+// Returns the 8-byte monochrome bitmap for a given ASCII character (8x8 font).
+// Each byte is one row; bit 7 is the leftmost pixel. Falls back to blank.
+std::array<std::uint8_t, 8> get_font_glyph_8x8(char c);
+
+// Blits an 8x8 character glyph onto the surface at pixel coords (x, y).
+void blit_font_glyph(EgaPlanarSurface &surface, std::int32_t x, std::int32_t y,
+                     char c, std::uint8_t color_index);
+
+// Blits a null-terminated string of 8x8 glyphs, advancing x by 8 per char.
+void blit_string(EgaPlanarSurface &surface, std::int32_t x, std::int32_t y,
+                 const char *text, std::uint8_t color_index);
+
 void draw_runtime_entity_sprites(EgaPlanarSurface &frame,
-                                 const RuntimeState &state);
+                                 const RuntimeState &state,
+                                 std::int32_t x_offset = 0,
+                                 std::int32_t y_offset = 0);
 void draw_runtime_projectile_sprites(EgaPlanarSurface &frame,
-                                     const RuntimeState &state);
+                                     const RuntimeState &state,
+                                     std::int32_t x_offset = 0,
+                                     std::int32_t y_offset = 0);
 
 void apply_transition_palette_tint(EgaPlanarSurface &surface,
                                    const RoomTransitionState &transition);

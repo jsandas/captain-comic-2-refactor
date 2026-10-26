@@ -1339,10 +1339,10 @@ Cross-referencing `comic2_standalone.asm` (specifically `io_load_resource` at `1
 
 #### 11.5 Viewport & Screen Bezel Compositing (`FRPAK.001`)
 - [x] Decode `FRPAK.001` once as the static 320x200 HUD/bezel canvas (`RuntimeState::bezel_frame`).
-- [ ] Define the authentic in-game playfield viewport rectangle inside the 320x200 canvas (with clipping bounds).
-- [ ] Composite room tilemap, entities, player, and projectiles exclusively within the viewport area.
-- [ ] Render HUD status counters (firepower, gems, score, lives, collected mode items) onto the bezel panel locations (`x=0x100..0x120`, `y=0x5E, 0x77, 0x90, 0xA9`).
-- [ ] Add frame-hash regression tests verifying authentic 320x200 EGA frame compositing.
+- [x] Define the authentic in-game playfield viewport rectangle inside the 320x200 canvas (with clipping bounds).
+- [x] Composite room tilemap, entities, player, and projectiles exclusively within the viewport area.
+- [x] Render HUD status counters (firepower, gems, score, lives, collected mode items) onto the bezel panel locations (`x=0x100..0x120`, `y=0x5E, 0x77, 0x90, 0xA9`).
+- [x] Add frame-hash regression tests verifying authentic 320x200 EGA frame compositing.
 
 #### 11.6 End-to-End Live Gameplay Bootstrap & Oracle Alignment
 - [ ] Wire `main()` and scene bootstrap to initialize Level 0 Room 0 directly from `reference/original/` assets.
@@ -1357,7 +1357,7 @@ Cross-referencing `comic2_standalone.asm` (specifically `io_load_resource` at `1
 - [x] **Gate 11-B (Tileset Parity)**: `FR000.0` decodes into exactly 144 16x16 tiles of 128 bytes each, matching plane hash assertions.
 - [x] **Gate 11-C (Room Layout)**: Level 0 Room 0 loads from `FR000.1` with dimensions 80x30 and valid in-bounds tile IDs from the original asset root.
 - [x] **Gate 11-D (Sprite Parity)**: `FR000.2` unpacks Comic's 16x24 animations and enemy 16x16 sprites with valid masks.
-- [ ] **Gate 11-E (Frame Compositing)**: Assembled 320x200 frame (`FRPAK.001` bezel + viewport tilemap + sprites + HUD) matches reference visual hash.
+- [x] **Gate 11-E (Frame Compositing)**: Assembled 320x200 frame (`FRPAK.001` bezel + viewport tilemap + sprites + HUD) matches reference visual hash.
 - [ ] **Gate 11-F (Replay Stability)**: Deterministic scripted input sequence completes without regressions across room transitions.
 
 ---
