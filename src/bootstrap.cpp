@@ -329,8 +329,7 @@ void draw_room_tile(EgaPlanarSurface &frame, std::int32_t px0, std::int32_t py0,
   }
 
   // Only draw tiles fully inside the active viewport clip.
-  if (px0 < clip_left || py0 < clip_top ||
-      px0 + kTileSizePixels > clip_right ||
+  if (px0 < clip_left || py0 < clip_top || px0 + kTileSizePixels > clip_right ||
       py0 + kTileSizePixels > clip_bottom) {
     return;
   }
