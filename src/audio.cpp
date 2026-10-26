@@ -100,7 +100,7 @@ public:
     }
 
     SDL_AudioSpec desired{};
-    desired.freq = 22050;
+    desired.freq = 44100;
     desired.format = AUDIO_S16SYS;
     desired.channels = 1;
     desired.samples = 1024;
@@ -123,10 +123,15 @@ public:
     }
 
     const SoundStream stream = make_event_stream_impl(event);
+    sound_driver_.play(stream, stream.priority);
+    const std::uint16_t divisor = sound_driver_.tick();
     const int sample_rate =
-        obtained_spec_.freq > 0 ? obtained_spec_.freq : 22050;
-    const int sample_count = std::max(1, sample_rate / 40);
-    auto pcm = synthesize_sound_samples(stream, sample_rate, sample_count);
+        obtained_spec_.freq > 0 ? obtained_spec_.freq : 44100;
+    const int sample_count = std::max(1, sample_rate / 20);
+    auto pcm = synthesize_pit_samples(divisor, 1U, sample_rate);
+    if (pcm.empty()) {
+      pcm = synthesize_sound_samples(stream, sample_rate, sample_count);
+    }
     if (pcm.empty()) {
       return;
     }
@@ -171,12 +176,154 @@ private:
   bool available_ = false;
   bool owns_sdl_audio_subsystem_ = false;
   std::size_t events_enqueued_ = 0;
+  SoundDriver sound_driver_;
   SDL_AudioDeviceID device_id_ = 0;
   SDL_AudioSpec obtained_spec_{};
 };
 #endif
 
 } // namespace
+
+AudioSynthesizer::AudioSynthesizer(int sample_rate)
+    : sample_rate_(sample_rate > 0 ? sample_rate : 44100) {}
+
+std::vector<std::int16_t> AudioSynthesizer::synthesize(
+    const SoundStream &stream, int sample_count) const {
+  if (sample_count <= 0 || stream.words.empty()) {
+    return {};
+  }
+
+  const std::uint16_t divisor = stream.words.front();
+  const std::uint16_t duration_ticks =
+      stream.words.size() > 1 ? stream.words[1] : 1U;
+  auto samples = synthesize_pit_samples(divisor, duration_ticks, sample_rate_);
+  if (samples.empty()) {
+    return {};
+  }
+
+  std::vector<std::int16_t> output(static_cast<std::size_t>(sample_count), 0);
+  const int copy_count =
+      std::min<int>(sample_count, static_cast<int>(samples.size()));
+  std::copy_n(samples.begin(), copy_count, output.begin());
+  return output;
+}
+
+std::vector<std::int16_t> AudioSynthesizer::synthesize(
+    std::uint16_t divisor, std::uint16_t duration_ticks) const {
+  return synthesize_pit_samples(divisor, duration_ticks, sample_rate_);
+}
+
+void SoundDriver::play(const SoundStream &stream, std::uint8_t priority) {
+  if (playing_ && priority < priority_) {
+    return;
+  }
+
+  stream_ = stream;
+  priority_ = std::max<std::uint8_t>(priority, stream.priority);
+
+  current_divisor_ = 0;
+  tick_remaining_ = 0;
+  stream_index_ = 0;
+  playing_ = !stream_.words.empty();
+  if (playing_) {
+    load_next_pair();
+  }
+}
+
+void SoundDriver::stop() {
+  stream_ = SoundStream{};
+  priority_ = 0;
+  current_divisor_ = 0;
+  tick_remaining_ = 0;
+  stream_index_ = 0;
+  playing_ = false;
+}
+
+std::uint16_t SoundDriver::tick() {
+  if (!playing_) {
+    current_divisor_ = 0;
+    return 0;
+  }
+
+  if (tick_remaining_ == 0) {
+    load_next_pair();
+  }
+
+  if (tick_remaining_ > 0) {
+    --tick_remaining_;
+  }
+
+  return current_divisor_;
+}
+
+bool SoundDriver::is_playing() const { return playing_; }
+
+std::uint8_t SoundDriver::current_priority() const { return priority_; }
+
+std::uint16_t SoundDriver::current_divisor() const { return current_divisor_; }
+
+void SoundDriver::load_next_pair() {
+  if (!playing_ || stream_.words.empty()) {
+    current_divisor_ = 0;
+    playing_ = false;
+    return;
+  }
+
+  if (stream_index_ >= stream_.words.size()) {
+    stop();
+    return;
+  }
+
+  const std::uint16_t divisor = stream_.words[stream_index_];
+  const std::size_t duration_index = stream_index_ + 1U;
+  const std::uint16_t duration_ticks =
+      duration_index < stream_.words.size() ? stream_.words[duration_index] : 0U;
+  stream_index_ = duration_index + 1U;
+
+  if (divisor == 0U) {
+    stop();
+    return;
+  }
+
+  current_divisor_ = divisor;
+  tick_remaining_ = duration_ticks == 0U ? 1U : duration_ticks;
+}
+
+std::vector<std::int16_t> synthesize_pit_samples(std::uint16_t divisor,
+                                                 std::uint16_t duration_ticks,
+                                                 int sample_rate) {
+  if (sample_rate <= 0 || divisor == 0U) {
+    return {};
+  }
+
+  const int frequency = static_cast<int>(1193180 / divisor);
+  if (frequency <= 0) {
+    return {};
+  }
+
+  const double cycle_samples = static_cast<double>(sample_rate) / frequency;
+  const int cycle_length =
+      std::max(1, static_cast<int>(std::lround(cycle_samples)));
+  const int half_cycle =
+      std::max(1, static_cast<int>(std::lround(cycle_samples / 2.0)));
+  const int total_sample_count =
+      std::max(1, static_cast<int>(std::lround(
+                     static_cast<double>(frequency) *
+                     std::max<std::uint16_t>(1U, duration_ticks) / 18.2)));
+
+  std::vector<std::int16_t> samples(static_cast<std::size_t>(total_sample_count));
+  constexpr int kAmplitude = 12000;
+
+  for (int i = 0; i < total_sample_count; ++i) {
+    const int phase = i % cycle_length;
+    const bool high = phase < half_cycle;
+    samples[static_cast<std::size_t>(i)] =
+        high ? static_cast<std::int16_t>(kAmplitude)
+             : static_cast<std::int16_t>(-kAmplitude);
+  }
+
+  return samples;
+}
 
 SoundPlaybackResult handle_sound_command(SoundPlaybackState &state,
                                          SoundCommand command,
@@ -233,26 +380,19 @@ std::vector<std::int16_t> synthesize_sound_samples(const SoundStream &stream,
     return {};
   }
 
-  std::vector<std::int16_t> samples(static_cast<std::size_t>(sample_count), 0);
-
   const std::uint16_t divisor = stream.words.front();
-  const std::uint16_t duration = stream.words.size() > 1 ? stream.words[1] : 1;
-  const int frequency =
-      divisor != 0 ? 1193182 / std::max<int>(1, divisor) : 440;
-  const int half_period = std::max(1, sample_rate / std::max(1, frequency * 2));
-  constexpr int kAmplitude = 10000;
-  const int note_length = std::max(1, duration * 16);
-
-  for (int i = 0; i < sample_count; ++i) {
-    const int phase = (i * 2) % (half_period * 2);
-    const bool high = (phase < half_period);
-    const int envelope = std::min(note_length, std::max(0, sample_count - i));
-    samples[static_cast<std::size_t>(i)] =
-        high ? static_cast<std::int16_t>(kAmplitude * envelope / note_length)
-             : static_cast<std::int16_t>(-kAmplitude * envelope / note_length);
+  const std::uint16_t duration_ticks =
+      stream.words.size() > 1 ? stream.words[1] : 1U;
+  const auto samples = synthesize_pit_samples(divisor, duration_ticks, sample_rate);
+  if (samples.empty()) {
+    return {};
   }
 
-  return samples;
+  std::vector<std::int16_t> output(static_cast<std::size_t>(sample_count), 0);
+  const int copy_count =
+      std::min<int>(sample_count, static_cast<int>(samples.size()));
+  std::copy_n(samples.begin(), copy_count, output.begin());
+  return output;
 }
 
 void advance_sound_stream(SoundPlaybackState &state, int sample_rate) {
