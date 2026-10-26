@@ -318,7 +318,23 @@ std::uint8_t expand_color_bit(bool enabled, std::uint8_t mask) {
 }
 
 void draw_room_tile(EgaPlanarSurface &frame, std::int32_t px0, std::int32_t py0,
-                    std::uint8_t base_color, std::uint8_t accent_color) {
+                    std::uint8_t base_color, std::uint8_t accent_color,
+                    std::int32_t clip_left = 0, std::int32_t clip_top = 0,
+                    std::int32_t clip_right = 0, std::int32_t clip_bottom = 0) {
+  if (clip_right <= 0) {
+    clip_right = frame.width_pixels();
+  }
+  if (clip_bottom <= 0) {
+    clip_bottom = frame.height_rows();
+  }
+
+  // Only draw tiles fully inside the active viewport clip.
+  if (px0 < clip_left || py0 < clip_top ||
+      px0 + kTileSizePixels > clip_right ||
+      py0 + kTileSizePixels > clip_bottom) {
+    return;
+  }
+
   if (px0 < 0 || py0 < 0 || px0 + kTileSizePixels > frame.width_pixels() ||
       py0 + kTileSizePixels > frame.height_rows()) {
     return;
@@ -396,14 +412,8 @@ void draw_room_tilemap(EgaPlanarSurface &frame, const RuntimeState &state,
       const auto py0 = static_cast<std::int32_t>(tile_y * kTileSizePixels) -
                        state.camera_y + y_offset;
 
-      if (px0 < x_offset || px0 + kTileSizePixels > vp_right) {
-        continue;
-      }
-      if (py0 < y_offset || py0 + kTileSizePixels > vp_bottom) {
-        continue;
-      }
-
-      draw_room_tile(frame, px0, py0, base_color, accent_color);
+      draw_room_tile(frame, px0, py0, base_color, accent_color, x_offset,
+                     y_offset, vp_right, vp_bottom);
     }
   }
 }
