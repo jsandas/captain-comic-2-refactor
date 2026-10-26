@@ -481,7 +481,7 @@ bool draw_room_tilemap_from_level_tileset(EgaPlanarSurface &frame,
     return false;
   }
 
-  // 0 means "fill from offset to frame edge" — avoids hardcoding bezel sizes.
+  // 0 means "fill from offset to frame edge" - avoids hardcoding bezel sizes.
   const std::int32_t vp_right =
       x_offset +
       (clip_w > 0 ? clip_w
