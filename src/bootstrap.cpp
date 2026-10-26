@@ -396,10 +396,10 @@ void draw_room_tilemap(EgaPlanarSurface &frame, const RuntimeState &state,
       const auto py0 = static_cast<std::int32_t>(tile_y * kTileSizePixels) -
                        state.camera_y + y_offset;
 
-      if (px0 + kTileSizePixels <= x_offset || px0 >= vp_right) {
+      if (px0 < x_offset || px0 + kTileSizePixels > vp_right) {
         continue;
       }
-      if (py0 + kTileSizePixels <= y_offset || py0 >= vp_bottom) {
+      if (py0 < y_offset || py0 + kTileSizePixels > vp_bottom) {
         continue;
       }
 
