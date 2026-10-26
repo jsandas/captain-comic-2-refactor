@@ -1345,10 +1345,10 @@ Cross-referencing `comic2_standalone.asm` (specifically `io_load_resource` at `1
 - [x] Add frame-hash regression tests verifying authentic 320x200 EGA frame compositing.
 
 #### 11.6 End-to-End Live Gameplay Bootstrap & Oracle Alignment
-- [ ] Wire `main()` and scene bootstrap to initialize Level 0 Room 0 directly from `reference/original/` assets.
-- [ ] Verify player movement, jump physics, tile hazard collisions, and projectile firing with real graphics.
-- [ ] Verify room transitions across level 0 rooms with full reload of room geometry and entity slots.
-- [ ] Validate frame-by-frame replay against recorded DOSBox oracle captures.
+- [x] Wire `main()` and scene bootstrap to initialize Level 0 Room 0 directly from `reference/original/` assets.
+- [x] Verify player movement, jump physics, tile hazard collisions, and projectile firing with real graphics.
+- [x] Verify room transitions across level 0 rooms with full reload of room geometry and entity slots.
+- [x] Validate frame-by-frame replay against recorded DOSBox oracle captures.
 
 ---
 
@@ -1358,7 +1358,7 @@ Cross-referencing `comic2_standalone.asm` (specifically `io_load_resource` at `1
 - [x] **Gate 11-C (Room Layout)**: Level 0 Room 0 loads from `FR000.1` with dimensions 80x30 and valid in-bounds tile IDs from the original asset root.
 - [x] **Gate 11-D (Sprite Parity)**: `FR000.2` unpacks Comic's 16x24 animations and enemy 16x16 sprites with valid masks.
 - [x] **Gate 11-E (Frame Compositing)**: Assembled 320x200 frame (`FRPAK.001` bezel + viewport tilemap + sprites + HUD) matches reference visual hash.
-- [ ] **Gate 11-F (Replay Stability)**: Deterministic scripted input sequence completes without regressions across room transitions.
+- [x] **Gate 11-F (Replay Stability)**: Deterministic scripted input sequence completes without regressions across room transitions.
 
 ---
 

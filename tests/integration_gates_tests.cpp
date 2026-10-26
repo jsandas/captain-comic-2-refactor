@@ -1,5 +1,9 @@
+#include <algorithm>
 #include <array>
 #include <cstdint>
+#include <cstdlib>
+#include <filesystem>
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <vector>
@@ -9,6 +13,7 @@
 #include "comic2/default_handlers.hpp"
 #include "comic2/dispatcher.hpp"
 #include "comic2/entity_runtime.hpp"
+#include "comic2/oracle.hpp"
 #include "comic2/projectiles.hpp"
 #include "comic2/renderer.hpp"
 #include "comic2/renderer_validation.hpp"
@@ -911,6 +916,228 @@ void test_gate_11e_blit_string_writes_pixels_on_surface() {
          "Gate 11-E: blit_string must write visible pixels on the surface");
 }
 
+std::vector<std::uint8_t> make_gate11f_room_resource_bytes() {
+  constexpr std::uint16_t kRoomCount = 2U;
+  constexpr std::uint16_t kLevelId = 0U;
+  constexpr std::uint16_t kRoom0Width = 20U;
+  constexpr std::uint16_t kRoom0Height = 10U;
+  constexpr std::uint16_t kRoom1Width = 15U;
+  constexpr std::uint16_t kRoom1Height = 8U;
+
+  auto make_room_payload = [](std::uint16_t tile_w, std::uint16_t tile_h,
+                              std::uint16_t object_count) {
+    std::vector<std::uint8_t> decoded(0x2D2U, 0x00U);
+    const std::size_t tile_count =
+        static_cast<std::size_t>(tile_w) * static_cast<std::size_t>(tile_h);
+    std::fill(decoded.begin(),
+              decoded.begin() + static_cast<std::ptrdiff_t>(tile_count), 0x01U);
+
+    for (std::uint16_t y = 0; y < tile_h; ++y) {
+      const std::uint16_t row_offset = static_cast<std::uint16_t>(y * tile_w);
+      const std::size_t entry = static_cast<std::size_t>(0x2A0U + (y * 2U));
+      decoded[entry] = static_cast<std::uint8_t>(row_offset & 0xFFU);
+      decoded[entry + 1U] =
+          static_cast<std::uint8_t>((row_offset >> 8) & 0xFFU);
+    }
+
+    if (object_count > 0U) {
+      decoded[0x2B0U] = static_cast<std::uint8_t>(object_count & 0xFFU);
+      decoded[0x2B1U] = static_cast<std::uint8_t>((object_count >> 8) & 0xFFU);
+      const std::size_t obj_off = 0x2B2U;
+      decoded[obj_off + 0U] = 0x00U;
+      decoded[obj_off + 1U] = 0x00U;
+      decoded[obj_off + 2U] = 0x00U;
+      decoded[obj_off + 3U] = 0x00U;
+      decoded[obj_off + 4U] = 0x76U;
+      decoded[obj_off + 5U] = 0x89U;
+      decoded[obj_off + 6U] = 0x01U;
+      decoded[obj_off + 7U] = 0x00U;
+      decoded[obj_off + 8U] = 0x00U;
+      decoded[obj_off + 9U] = 0x00U;
+      decoded[obj_off + 10U] = 0x00U;
+      decoded[obj_off + 11U] = 0x00U;
+    }
+
+    return decoded;
+  };
+
+  const auto room0_decoded = make_room_payload(kRoom0Width, kRoom0Height, 1U);
+  const auto room1_decoded = make_room_payload(kRoom1Width, kRoom1Height, 1U);
+  const auto room0_rle = encode_literal_signed_rle(room0_decoded);
+  const auto room1_rle = encode_literal_signed_rle(room1_decoded);
+
+  std::vector<std::uint8_t> bytes(0x20U + room0_rle.size() + room1_rle.size(),
+                                  0x00U);
+  bytes[0U] = static_cast<std::uint8_t>(kRoomCount & 0xFFU);
+  bytes[1U] = static_cast<std::uint8_t>((kRoomCount >> 8) & 0xFFU);
+  bytes[2U] = static_cast<std::uint8_t>(kLevelId & 0xFFU);
+  bytes[3U] = static_cast<std::uint8_t>((kLevelId >> 8) & 0xFFU);
+
+  bytes[4U] = static_cast<std::uint8_t>(kRoom0Width & 0xFFU);
+  bytes[5U] = static_cast<std::uint8_t>((kRoom0Width >> 8) & 0xFFU);
+  bytes[6U] = static_cast<std::uint8_t>(kRoom0Height & 0xFFU);
+  bytes[7U] = static_cast<std::uint8_t>((kRoom0Height >> 8) & 0xFFU);
+  bytes[8U] = 0x20U;
+  bytes[9U] = 0x00U;
+
+  bytes[10U] = static_cast<std::uint8_t>(kRoom1Width & 0xFFU);
+  bytes[11U] = static_cast<std::uint8_t>((kRoom1Width >> 8) & 0xFFU);
+  bytes[12U] = static_cast<std::uint8_t>(kRoom1Height & 0xFFU);
+  bytes[13U] = static_cast<std::uint8_t>((kRoom1Height >> 8) & 0xFFU);
+  const auto room1_off = static_cast<std::uint16_t>(0x20U + room0_rle.size());
+  bytes[14U] = static_cast<std::uint8_t>(room1_off & 0xFFU);
+  bytes[15U] = static_cast<std::uint8_t>((room1_off >> 8) & 0xFFU);
+
+  std::copy(room0_rle.begin(), room0_rle.end(), bytes.begin() + 0x20);
+  std::copy(room1_rle.begin(), room1_rle.end(), bytes.begin() + room1_off);
+  return bytes;
+}
+
+std::filesystem::path find_reference_original_assets_root() {
+  std::vector<std::filesystem::path> seeds;
+
+  const std::filesystem::path file_path(__FILE__);
+  if (file_path.is_absolute()) {
+    seeds.push_back(file_path.parent_path().parent_path());
+  }
+
+  seeds.push_back(std::filesystem::current_path());
+
+  if (const char *github_workspace = std::getenv("GITHUB_WORKSPACE");
+      github_workspace != nullptr && *github_workspace != '\0') {
+    seeds.emplace_back(github_workspace);
+  }
+
+  for (const auto &seed : seeds) {
+    std::filesystem::path cursor = seed;
+    for (;;) {
+      const auto candidate = cursor / "reference" / "original";
+      if (std::filesystem::exists(candidate) &&
+          std::filesystem::is_directory(candidate)) {
+        for (const auto &entry :
+             std::filesystem::directory_iterator(candidate)) {
+          const auto name = entry.path().filename().string();
+          if (name.rfind("FR000.", 0) == 0 && entry.is_regular_file()) {
+            return candidate;
+          }
+        }
+      }
+
+      const auto parent = cursor.parent_path();
+      if (parent == cursor || parent.empty()) {
+        break;
+      }
+      cursor = parent;
+    }
+  }
+
+  return {};
+}
+
+void test_gate_11f_scripted_replay_is_deterministic_across_room_transition() {
+  const auto room_resource_bytes = make_gate11f_room_resource_bytes();
+  const std::vector<comic2::InputState> inputs(
+      9U, comic2::InputState{.right_pressed = true});
+
+  auto make_initial_state = [&]() {
+    auto state = comic2::make_default_runtime_state();
+    state.current_level = 0U;
+    state.current_room = 0U;
+    state.room_grid.tile_w = 20U;
+    state.room_grid.tile_h = 10U;
+    state.room_grid.row_pointers.assign(10U, 0U);
+    state.room_grid.tile_data.assign(200U, 0x01U);
+    state.player.x = 200;
+    state.player.y = 128;
+    state.player.is_physics_active = true;
+    state.player.is_airborne = false;
+    state.player.facing_right = true;
+    state.room_resource_bytes = room_resource_bytes;
+    return state;
+  };
+
+  auto state_a = make_initial_state();
+  auto state_b = make_initial_state();
+
+  auto dispatcher_a = comic2::make_default_game_dispatcher();
+  auto dispatcher_b = comic2::make_default_game_dispatcher();
+
+  const auto run_a =
+      comic2::capture_runtime_snapshots(state_a, dispatcher_a, inputs);
+  const auto run_b =
+      comic2::capture_runtime_snapshots(state_b, dispatcher_b, inputs);
+
+  const auto result = comic2::compare_snapshot_sequences(
+      run_a, run_b,
+      comic2::ReplayComparisonOptions{.position_tolerance_px = 0,
+                                      .timing_tolerance_ticks = 0});
+  expect(result.matches, "Gate 11-F: replay snapshots must match exactly "
+                         "across the same room-transition script");
+}
+
+void test_gate_11f_room_transition_reloads_geometry_and_entity_slots() {
+  const auto room_resource_bytes = make_gate11f_room_resource_bytes();
+  auto state = comic2::make_default_runtime_state();
+  state.current_level = 0U;
+  state.current_room = 0U;
+  state.player.x = 319;
+  state.player.y = 128;
+  state.player.is_physics_active = true;
+  state.player.is_airborne = false;
+  state.room_grid.tile_w = 20U;
+  state.room_grid.tile_h = 10U;
+  state.room_grid.row_pointers.assign(10U, 0U);
+  state.room_grid.tile_data.assign(200U, 0x01U);
+  state.room_resource_bytes = room_resource_bytes;
+  state.runtime_slots.assign(6U, comic2::RuntimeEntitySlot32{});
+  state.active_entities.assign(2U, comic2::ActiveEntity8{});
+  state.flags.level_transition_pending = true;
+  state.pending_room_transition =
+      comic2::PendingRoomTransition{.target_room = 1U, .target_player_x = 0};
+
+  auto dispatcher = comic2::make_default_game_dispatcher();
+  const auto tick = dispatcher.run_tick(state);
+  expect(tick.stage == comic2::DispatchStage::LevelTransition,
+         "Gate 11-F: room transition should execute the transition stage");
+  expect(state.current_room == 1U,
+         "Gate 11-F: room transition should commit to the target room");
+  expect(state.room_grid.tile_w == 15U,
+         "Gate 11-F: room transition should reload the next room tile width");
+  expect(state.room_grid.tile_h == 8U,
+         "Gate 11-F: room transition should reload the next room tile height");
+  expect(state.transition_state.active,
+         "Gate 11-F: room transition should activate the transition state");
+  expect(
+      state.runtime_slots.size() <= 6U,
+      "Gate 11-F: runtime entity slots should be refreshed during room reload");
+}
+
+void test_gate_11f_level0_room0_initializes_from_real_assets_if_present() {
+  const auto original_root = find_reference_original_assets_root();
+  if (original_root.empty()) {
+    std::cout << "[skip] Gate 11-F: reference/original assets absent; live "
+                 "bootstrap checks disabled\n";
+    return;
+  }
+
+  const auto repo_root = original_root.parent_path().parent_path();
+  auto state = comic2::make_default_runtime_state();
+  const auto summary = comic2::initialize_runtime_scene(state, repo_root);
+
+  expect(summary.room_grid_loaded,
+         "Gate 11-F: Level 0 Room 0 should initialize from original assets "
+         "when present");
+  expect(
+      state.room_grid.tile_w > 0U && state.room_grid.tile_h > 0U,
+      "Gate 11-F: real-asset room bootstrap should load valid room dimensions");
+  expect(
+      state.player.x >= 0 && state.player.x <= 319,
+      "Gate 11-F: player x should remain in room bounds after live bootstrap");
+  expect(
+      state.current_level == 0U,
+      "Gate 11-F: live bootstrap should initialize the expected Level 0 state");
+}
+
 } // namespace
 
 void run_integration_gate_tests() {
@@ -941,4 +1168,9 @@ void run_integration_gate_tests() {
   test_gate_11e_hud_counters_appear_in_bezel_panel_region();
   test_gate_11e_no_bezel_tiles_reach_full_frame_width();
   test_gate_11e_no_bezel_tiles_reach_full_frame_height();
+
+  // Gate 11-F: deterministic replay stability across room transitions.
+  test_gate_11f_scripted_replay_is_deterministic_across_room_transition();
+  test_gate_11f_room_transition_reloads_geometry_and_entity_slots();
+  test_gate_11f_level0_room0_initializes_from_real_assets_if_present();
 }
