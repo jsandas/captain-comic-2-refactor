@@ -187,8 +187,9 @@ private:
 AudioSynthesizer::AudioSynthesizer(int sample_rate)
     : sample_rate_(sample_rate > 0 ? sample_rate : 44100) {}
 
-std::vector<std::int16_t> AudioSynthesizer::synthesize(
-    const SoundStream &stream, int sample_count) const {
+std::vector<std::int16_t>
+AudioSynthesizer::synthesize(const SoundStream &stream,
+                             int sample_count) const {
   if (sample_count <= 0 || stream.words.empty()) {
     return {};
   }
@@ -208,8 +209,9 @@ std::vector<std::int16_t> AudioSynthesizer::synthesize(
   return output;
 }
 
-std::vector<std::int16_t> AudioSynthesizer::synthesize(
-    std::uint16_t divisor, std::uint16_t duration_ticks) const {
+std::vector<std::int16_t>
+AudioSynthesizer::synthesize(std::uint16_t divisor,
+                             std::uint16_t duration_ticks) const {
   return synthesize_pit_samples(divisor, duration_ticks, sample_rate_);
 }
 
@@ -276,8 +278,9 @@ void SoundDriver::load_next_pair() {
 
   const std::uint16_t divisor = stream_.words[stream_index_];
   const std::size_t duration_index = stream_index_ + 1U;
-  const std::uint16_t duration_ticks =
-      duration_index < stream_.words.size() ? stream_.words[duration_index] : 0U;
+  const std::uint16_t duration_ticks = duration_index < stream_.words.size()
+                                           ? stream_.words[duration_index]
+                                           : 0U;
   stream_index_ = duration_index + 1U;
 
   if (divisor == 0U) {
@@ -308,10 +311,11 @@ std::vector<std::int16_t> synthesize_pit_samples(std::uint16_t divisor,
       std::max(1, static_cast<int>(std::lround(cycle_samples / 2.0)));
   const int total_sample_count =
       std::max(1, static_cast<int>(std::lround(
-                     static_cast<double>(frequency) *
-                     std::max<std::uint16_t>(1U, duration_ticks) / 18.2)));
+                      static_cast<double>(frequency) *
+                      std::max<std::uint16_t>(1U, duration_ticks) / 18.2)));
 
-  std::vector<std::int16_t> samples(static_cast<std::size_t>(total_sample_count));
+  std::vector<std::int16_t> samples(
+      static_cast<std::size_t>(total_sample_count));
   constexpr int kAmplitude = 12000;
 
   for (int i = 0; i < total_sample_count; ++i) {
@@ -383,7 +387,8 @@ std::vector<std::int16_t> synthesize_sound_samples(const SoundStream &stream,
   const std::uint16_t divisor = stream.words.front();
   const std::uint16_t duration_ticks =
       stream.words.size() > 1 ? stream.words[1] : 1U;
-  const auto samples = synthesize_pit_samples(divisor, duration_ticks, sample_rate);
+  const auto samples =
+      synthesize_pit_samples(divisor, duration_ticks, sample_rate);
   if (samples.empty()) {
     return {};
   }

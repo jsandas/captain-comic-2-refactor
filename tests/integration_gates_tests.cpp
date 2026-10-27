@@ -1158,23 +1158,21 @@ void test_gate_12a_frequency_parity_for_pit_1193_divisor() {
 void test_gate_12b_priority_preemption_in_sound_driver() {
   comic2::SoundDriver driver;
   comic2::SoundStream low_priority_stream{{0x0180u, 0x0002u, 0x0000u, 0x0000u},
-                                         2U};
+                                          2U};
   driver.play(low_priority_stream, 2U);
   expect(driver.is_playing(),
          "Gate 12-B: starting a sound should activate the sound driver");
   expect(driver.current_priority() == 2U,
          "Gate 12-B: current priority should match the active sound");
 
-  comic2::SoundStream rejected_stream{{0x0200u, 0x0003u, 0x0000u, 0x0000u},
-                                     1U};
+  comic2::SoundStream rejected_stream{{0x0200u, 0x0003u, 0x0000u, 0x0000u}, 1U};
   driver.play(rejected_stream, 1U);
   expect(driver.is_playing(),
          "Gate 12-B: lower-priority sounds should be rejected");
   expect(driver.current_priority() == 2U,
          "Gate 12-B: lower-priority sound should not override the active one");
 
-  comic2::SoundStream preempt_stream{{0x0400u, 0x0002u, 0x0000u, 0x0000u},
-                                    3U};
+  comic2::SoundStream preempt_stream{{0x0400u, 0x0002u, 0x0000u, 0x0000u}, 3U};
   driver.play(preempt_stream, 3U);
   expect(driver.is_playing(),
          "Gate 12-B: higher-priority sounds should preempt the active one");
@@ -1186,8 +1184,8 @@ void test_gate_12b_priority_preemption_in_sound_driver() {
 
 void test_gate_12c_null_audio_backend_stays_headless() {
   comic2::NullAudioBackend backend;
-  expect(backend.initialize(),
-         "Gate 12-C: null backend should initialize successfully in headless mode");
+  expect(backend.initialize(), "Gate 12-C: null backend should initialize "
+                               "successfully in headless mode");
   expect(!backend.is_available(),
          "Gate 12-C: null backend must remain unavailable by design");
 
@@ -1198,7 +1196,8 @@ void test_gate_12c_null_audio_backend_stays_headless() {
   backend.shutdown();
 
   expect(backend.events_enqueued() == 1000U,
-         "Gate 12-C: null backend should count each queued event across 1000 ticks");
+         "Gate 12-C: null backend should count each queued event across 1000 "
+         "ticks");
   expect(!backend.is_available(),
          "Gate 12-C: null backend should stay unavailable after shutdown");
 }
