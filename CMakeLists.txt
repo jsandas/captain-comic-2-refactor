@@ -43,6 +43,7 @@ add_library(comic2_core
     src/default_handlers.cpp
     src/dispatcher.cpp
     src/entity_physics.cpp
+    src/level_data.cpp
     src/entity_runtime.cpp
     src/game_state.cpp
     src/input_handler.cpp

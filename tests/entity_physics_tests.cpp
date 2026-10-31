@@ -113,10 +113,51 @@ void test_tile_trigger_range() {
 
 } // namespace
 
+#include "comic2/level_data.hpp"
+
+void test_extracted_level_data() {
+  const auto *lvl0 = comic2::get_level_runtime_data(0);
+  expect(lvl0 != nullptr, "lvl0 data exists");
+  expect(lvl0->room_count == 8, "lvl0 has 8 rooms");
+  expect(lvl0->touch_trigger.min_tile == 0x1A, "lvl0 touch trigger min");
+  expect(lvl0->touch_trigger.max_tile == 0x1C, "lvl0 touch trigger max");
+  expect(lvl0->touch_trigger.values.size() == 3, "lvl0 touch trigger values count");
+  expect(lvl0->touch_trigger.values[0] == 57, "lvl0 touch trigger val 0");
+  expect(lvl0->touch_trigger.values[1] == 80, "lvl0 touch trigger val 1");
+  expect(lvl0->touch_trigger.values[2] == 139, "lvl0 touch trigger val 2");
+
+  // Room 0 transition zones test
+  expect(lvl0->transition_zones.size() == 8, "lvl0 transition zones room count");
+  expect(lvl0->transition_zones[0].size() == 4, "room 0 has 4 transition zones");
+  expect(lvl0->transition_zones[0][0].x == 0, "zone 0 x coordinate");
+  expect(lvl0->transition_zones[0][0].y_min == 0, "zone 0 y_min");
+  expect(lvl0->transition_zones[0][0].y_max == 16, "zone 0 y_max");
+  expect(lvl0->transition_zones[0][0].target_room == 1, "zone 0 target room");
+
+  // Trigger evaluation
+  auto trig_res = comic2::evaluate_tile_trigger(lvl0->touch_trigger, 0x1B);
+  expect(trig_res.has_value() && *trig_res == 80, "eval touch trigger 0x1B");
+
+  // Check transition zone query
+  auto hit_zone = comic2::check_room_transition_zone(0, 0, 0, 10);
+  expect(hit_zone.has_value(), "transition zone hit at (0, 10)");
+  expect(hit_zone->target_room == 1 && hit_zone->spawn_index == 0, "transition zone target room and spawn index");
+
+  auto miss_zone = comic2::check_room_transition_zone(0, 0, 0, 30);
+  expect(!miss_zone.has_value(), "transition zone miss at (0, 30)");
+
+  // Level 14 check
+  const auto *lvl14 = comic2::get_level_runtime_data(14);
+  expect(lvl14 != nullptr, "lvl14 data exists");
+  expect(lvl14->room_count == 12, "lvl14 has 12 rooms");
+}
+
 void run_entity_physics_tests() {
   test_decode_level_script();
   test_tile_trigger_range();
+  test_extracted_level_data();
   test_gravity_lands_and_snaps();
   test_move_x_bounces_off_wall();
   test_move_y_bounce_reflects_velocity();
 }
+
