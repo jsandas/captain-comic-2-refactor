@@ -491,10 +491,11 @@ bool load_room_tilemap_from_asset_root(RuntimeState &state,
 
 std::vector<std::uint8_t>
 decode_level_script(std::span<const std::uint8_t> payload) {
-  std::vector<std::uint8_t> out(payload.begin(), payload.end());
-  for (auto &b : out) {
-    b ^= kLevelScriptXorKey;
-  }
+  std::vector<std::uint8_t> out(payload.size());
+  std::transform(payload.begin(), payload.end(), out.begin(),
+                 [](std::uint8_t b) {
+                   return static_cast<std::uint8_t>(b ^ kLevelScriptXorKey);
+                 });
   return out;
 }
 

@@ -1,5 +1,6 @@
 #include "comic2/level_data.hpp"
 
+#include <algorithm>
 #include <array>
 
 namespace comic2 {
@@ -1932,11 +1933,14 @@ check_room_transition_zone(std::uint16_t level_id, std::uint16_t room_id,
   if (!lvl || room_id >= lvl->transition_zones.size()) {
     return std::nullopt;
   }
-  for (const auto &zone : lvl->transition_zones[room_id]) {
-    if (player_x == zone.x && player_y >= zone.y_min &&
-        player_y <= zone.y_max) {
-      return zone;
-    }
+  const auto &zones = lvl->transition_zones[room_id];
+  const auto it = std::find_if(
+      zones.begin(), zones.end(), [&](const RoomTransitionZone &zone) {
+        return player_x == zone.x && player_y >= zone.y_min &&
+               player_y <= zone.y_max;
+      });
+  if (it != zones.end()) {
+    return *it;
   }
   return std::nullopt;
 }
