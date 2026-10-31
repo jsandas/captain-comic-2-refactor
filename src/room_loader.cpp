@@ -489,4 +489,57 @@ bool load_room_tilemap_from_asset_root(RuntimeState &state,
                      });
 }
 
+std::vector<std::uint8_t>
+decode_level_script(std::span<const std::uint8_t> payload) {
+  std::vector<std::uint8_t> out(payload.size());
+  std::transform(payload.begin(), payload.end(), out.begin(),
+                 [](std::uint8_t b) {
+                   return static_cast<std::uint8_t>(b ^ kLevelScriptXorKey);
+                 });
+  return out;
+}
+
+std::optional<std::uint16_t>
+level_script_offset(std::span<const std::uint8_t> decoded, std::size_t index) {
+  const std::size_t at = index * 2;
+  if (at + 2 > decoded.size()) {
+    return std::nullopt;
+  }
+  return static_cast<std::uint16_t>(decoded[at] | (decoded[at + 1] << 8));
+}
+
+std::optional<TileTriggerRange>
+parse_tile_trigger_range(std::span<const std::uint8_t> bytes,
+                         std::size_t offset) {
+  if (offset + 2 > bytes.size()) {
+    return std::nullopt;
+  }
+  TileTriggerRange r;
+  r.min_tile = bytes[offset];
+  r.max_tile = bytes[offset + 1];
+  if (r.max_tile < r.min_tile) {
+    return std::nullopt;
+  }
+  const std::size_t count =
+      static_cast<std::size_t>(r.max_tile - r.min_tile) + 1;
+  if (offset + 2 + count > bytes.size()) {
+    return std::nullopt;
+  }
+  r.values.assign(bytes.begin() + offset + 2,
+                  bytes.begin() + offset + 2 + count);
+  return r;
+}
+
+std::optional<std::uint8_t> evaluate_tile_trigger(const TileTriggerRange &range,
+                                                  std::uint8_t tile_id) {
+  if (tile_id < range.min_tile || tile_id > range.max_tile) {
+    return std::nullopt;
+  }
+  const std::size_t idx = tile_id - range.min_tile;
+  if (idx >= range.values.size()) {
+    return std::nullopt;
+  }
+  return range.values[idx];
+}
+
 } // namespace comic2
