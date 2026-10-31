@@ -1194,8 +1194,9 @@ void test_gate_12b2_sound_driver_tick_and_synthesizer() {
 
   comic2::AudioSynthesizer synthesizer(44100);
   const auto from_stream = synthesizer.synthesize(stream, 128);
-  expect(from_stream.size() == 128U,
-         "Gate 12-B2: stream synthesis should honor the requested sample count");
+  expect(
+      from_stream.size() == 128U,
+      "Gate 12-B2: stream synthesis should honor the requested sample count");
   const auto from_divisor = synthesizer.synthesize(1193U, 4U);
   expect(!from_divisor.empty(),
          "Gate 12-B2: divisor synthesis should produce samples");
