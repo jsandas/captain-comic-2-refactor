@@ -1466,13 +1466,13 @@ Replace provisional entity stubs with exact bytecode execution of `FR###.3` room
      - Type 16+: Item pickups (gems, keys, firepower disks, mode items).
 
 ### Phase 13 Implementation Roadmap
-- [ ] Implement `decode_level_script(span<uint8_t> payload)` applying `byte ^ 0x25` decoding.
+- [x] Implement `decode_level_script(span<uint8_t> payload)` applying `byte ^ 0x25` decoding (`room_loader.cpp`, plus `level_script_offset` u16 table accessor).
 - [ ] Implement room event zone trigger evaluator in `room_loader.cpp`.
 - [ ] Port authentic entity physics helpers from `comic2_standalone.asm`:
-  - `ent_move_x_and_bounce` (`1000:4a4e`)
-  - `ent_apply_gravity_and_move_y` (`1000:4a99`)
-  - `ent_move_y_and_bounce` (`1000:4b01`)
-  - `ent_probe_x_collision_strict` (`1000:4bf7`)
+  - [x] `ent_move_x_and_bounce` (`1000:4a4e`)
+  - [x] `ent_apply_gravity_and_move_y` (`1000:4a99`)
+  - [x] `ent_move_y_and_bounce` (`1000:4b01`)
+  - [x] `ent_probe_x_collision_strict` (`1000:4bf7`)
 - [ ] Wire entity damage reactions, projectile collision hitboxes, and item drop spawning.
 
 ### Phase 13 Validation Gates

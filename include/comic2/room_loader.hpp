@@ -55,6 +55,18 @@ build_room_row_pointer_table(std::span<const std::uint8_t> decoded_room_bytes,
 std::optional<std::vector<MappedObject12>>
 decode_room_mapped_objects(std::span<const std::uint8_t> decoded_room_bytes);
 
+// FR###.3 payload (0xC00 bytes) is XOR-0x25 encoded (io_read_xor25_block_9ec0).
+inline constexpr std::size_t kLevelScriptBlockSize = 0x0C00;
+inline constexpr std::uint8_t kLevelScriptXorKey = 0x25;
+
+std::vector<std::uint8_t>
+decode_level_script(std::span<const std::uint8_t> payload);
+
+// Script block starts with u16 offsets (relative to block start), indexed
+// by message id (see ent_process_interaction_script_and_queue_message).
+std::optional<std::uint16_t>
+level_script_offset(std::span<const std::uint8_t> decoded, std::size_t index);
+
 bool load_room_tilemap_from_resource_buffer(RuntimeState &state,
                                             std::span<const std::uint8_t> bytes,
                                             std::uint16_t level,

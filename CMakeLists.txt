@@ -42,6 +42,7 @@ add_library(comic2_core
     src/bootstrap.cpp
     src/default_handlers.cpp
     src/dispatcher.cpp
+    src/entity_physics.cpp
     src/entity_runtime.cpp
     src/game_state.cpp
     src/input_handler.cpp
@@ -87,6 +88,7 @@ add_executable(comic2_unit_tests
     tests/audio_backend_tests.cpp
     tests/bootstrap_wiring_tests.cpp
     tests/dispatcher_tests.cpp
+    tests/entity_physics_tests.cpp
     tests/entity_runtime_tests.cpp
     tests/integration_gates_tests.cpp
     tests/oracle_tests.cpp

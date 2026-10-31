@@ -489,4 +489,22 @@ bool load_room_tilemap_from_asset_root(RuntimeState &state,
                      });
 }
 
+std::vector<std::uint8_t>
+decode_level_script(std::span<const std::uint8_t> payload) {
+  std::vector<std::uint8_t> out(payload.begin(), payload.end());
+  for (auto &b : out) {
+    b ^= kLevelScriptXorKey;
+  }
+  return out;
+}
+
+std::optional<std::uint16_t>
+level_script_offset(std::span<const std::uint8_t> decoded, std::size_t index) {
+  const std::size_t at = index * 2;
+  if (at + 2 > decoded.size()) {
+    return std::nullopt;
+  }
+  return static_cast<std::uint16_t>(decoded[at] | (decoded[at + 1] << 8));
+}
+
 } // namespace comic2
