@@ -1182,6 +1182,25 @@ void test_gate_12b_priority_preemption_in_sound_driver() {
          "Gate 12-B: preempting sound should drive a non-zero PIT divisor");
 }
 
+void test_gate_12b2_sound_driver_tick_and_synthesizer() {
+  comic2::SoundDriver driver;
+  expect(driver.tick() == 0U,
+         "Gate 12-B2: idle sound driver tick should yield a zero divisor");
+
+  comic2::SoundStream stream{{0x0180u, 0x0002u, 0x0000u, 0x0000u}, 2U};
+  driver.play(stream, 2U);
+  expect(driver.tick() == 0x0180u,
+         "Gate 12-B2: tick should report the active PIT divisor");
+
+  comic2::AudioSynthesizer synthesizer(44100);
+  const auto from_stream = synthesizer.synthesize(stream, 128);
+  expect(from_stream.size() == 128U,
+         "Gate 12-B2: stream synthesis should honor the requested sample count");
+  const auto from_divisor = synthesizer.synthesize(1193U, 4U);
+  expect(!from_divisor.empty(),
+         "Gate 12-B2: divisor synthesis should produce samples");
+}
+
 void test_gate_12c_null_audio_backend_stays_headless() {
   comic2::NullAudioBackend backend;
   expect(backend.initialize(), "Gate 12-C: null backend should initialize "
@@ -1241,5 +1260,6 @@ void run_integration_gate_tests() {
   // Gate 12-A/B/C: PIT synthesis and headless audio behavior.
   test_gate_12a_frequency_parity_for_pit_1193_divisor();
   test_gate_12b_priority_preemption_in_sound_driver();
+  test_gate_12b2_sound_driver_tick_and_synthesizer();
   test_gate_12c_null_audio_backend_stays_headless();
 }
