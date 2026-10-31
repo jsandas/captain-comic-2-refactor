@@ -1138,6 +1138,90 @@ void test_gate_11f_level0_room0_initializes_from_real_assets_if_present() {
       "Gate 11-F: live bootstrap should initialize the expected Level 0 state");
 }
 
+void test_gate_12a_frequency_parity_for_pit_1193_divisor() {
+  const auto samples = comic2::synthesize_pit_samples(1193U, 4U, 44100);
+  expect(!samples.empty(),
+         "Gate 12-A: PIT divisor 1193 should synthesize a non-empty waveform");
+  expect(samples.size() >= 44U,
+         "Gate 12-A: waveform should contain enough samples for a full cycle");
+
+  for (int i = 0; i < 22; ++i) {
+    expect(samples[static_cast<std::size_t>(i)] > 0,
+           "Gate 12-A: first half-cycle for 1000 Hz tone should be positive");
+  }
+  for (int i = 22; i < 44; ++i) {
+    expect(samples[static_cast<std::size_t>(i)] < 0,
+           "Gate 12-A: second half-cycle for 1000 Hz tone should be negative");
+  }
+}
+
+void test_gate_12b_priority_preemption_in_sound_driver() {
+  comic2::SoundDriver driver;
+  comic2::SoundStream low_priority_stream{{0x0180u, 0x0002u, 0x0000u, 0x0000u},
+                                          2U};
+  driver.play(low_priority_stream, 2U);
+  expect(driver.is_playing(),
+         "Gate 12-B: starting a sound should activate the sound driver");
+  expect(driver.current_priority() == 2U,
+         "Gate 12-B: current priority should match the active sound");
+
+  comic2::SoundStream rejected_stream{{0x0200u, 0x0003u, 0x0000u, 0x0000u}, 1U};
+  driver.play(rejected_stream, 1U);
+  expect(driver.is_playing(),
+         "Gate 12-B: lower-priority sounds should be rejected");
+  expect(driver.current_priority() == 2U,
+         "Gate 12-B: lower-priority sound should not override the active one");
+
+  comic2::SoundStream preempt_stream{{0x0400u, 0x0002u, 0x0000u, 0x0000u}, 3U};
+  driver.play(preempt_stream, 3U);
+  expect(driver.is_playing(),
+         "Gate 12-B: higher-priority sounds should preempt the active one");
+  expect(driver.current_priority() == 3U,
+         "Gate 12-B: active priority should update when preempted");
+  expect(driver.current_divisor() != 0U,
+         "Gate 12-B: preempting sound should drive a non-zero PIT divisor");
+}
+
+void test_gate_12b2_sound_driver_tick_and_synthesizer() {
+  comic2::SoundDriver driver;
+  expect(driver.tick() == 0U,
+         "Gate 12-B2: idle sound driver tick should yield a zero divisor");
+
+  comic2::SoundStream stream{{0x0180u, 0x0002u, 0x0000u, 0x0000u}, 2U};
+  driver.play(stream, 2U);
+  expect(driver.tick() == 0x0180u,
+         "Gate 12-B2: tick should report the active PIT divisor");
+
+  comic2::AudioSynthesizer synthesizer(44100);
+  const auto from_stream = synthesizer.synthesize(stream, 128);
+  expect(
+      from_stream.size() == 128U,
+      "Gate 12-B2: stream synthesis should honor the requested sample count");
+  const auto from_divisor = synthesizer.synthesize(1193U, 4U);
+  expect(!from_divisor.empty(),
+         "Gate 12-B2: divisor synthesis should produce samples");
+}
+
+void test_gate_12c_null_audio_backend_stays_headless() {
+  comic2::NullAudioBackend backend;
+  expect(backend.initialize(), "Gate 12-C: null backend should initialize "
+                               "successfully in headless mode");
+  expect(!backend.is_available(),
+         "Gate 12-C: null backend must remain unavailable by design");
+
+  for (int i = 0; i < 1000; ++i) {
+    backend.enqueue_event(comic2::AudioEvent::Pickup);
+    backend.update();
+  }
+  backend.shutdown();
+
+  expect(backend.events_enqueued() == 1000U,
+         "Gate 12-C: null backend should count each queued event across 1000 "
+         "ticks");
+  expect(!backend.is_available(),
+         "Gate 12-C: null backend should stay unavailable after shutdown");
+}
+
 } // namespace
 
 void run_integration_gate_tests() {
@@ -1173,4 +1257,10 @@ void run_integration_gate_tests() {
   test_gate_11f_scripted_replay_is_deterministic_across_room_transition();
   test_gate_11f_room_transition_reloads_geometry_and_entity_slots();
   test_gate_11f_level0_room0_initializes_from_real_assets_if_present();
+
+  // Gate 12-A/B/C: PIT synthesis and headless audio behavior.
+  test_gate_12a_frequency_parity_for_pit_1193_divisor();
+  test_gate_12b_priority_preemption_in_sound_driver();
+  test_gate_12b2_sound_driver_tick_and_synthesizer();
+  test_gate_12c_null_audio_backend_stays_headless();
 }

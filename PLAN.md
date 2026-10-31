@@ -1434,16 +1434,16 @@ In `comic2_standalone.asm` and `comic2_data.asm`, sound is implemented via:
    - INT 3 Dispatch: Game triggers sound effects via `int 3` with `AX` = sound command ID, `BX` = priority/table index.
 
 ### Phase 12 Implementation Roadmap
-- [ ] Implement `AudioSynthesizer` generating mono 16-bit PCM samples at 44,100 Hz (`freq = 1193180 / divisor`).
-- [ ] Implement `SoundDriver` mirroring `isr_timer_sound_int08` step logic, duration ticks, and priority preemption.
-- [ ] Connect `SoundDriver` to SDL2 audio device via `SDL_AudioSpec` callback or audio queue.
-- [ ] Provide a deterministic headless `NullAudioSink` for unit tests and CI.
-- [ ] Wire sound effect triggers into player events: jump, shoot, enemy hit, gem pickup, damage hurt, death.
+- [x] Implement `AudioSynthesizer` generating mono 16-bit PCM samples at 44,100 Hz (`freq = 1193180 / divisor`).
+- [x] Implement `SoundDriver` mirroring `isr_timer_sound_int08` step logic, duration ticks, and priority preemption.
+- [x] Connect `SoundDriver` to SDL2 audio device via `SDL_AudioSpec` callback or audio queue.
+- [x] Provide a deterministic headless `NullAudioSink` for unit tests and CI.
+- [x] Wire sound effect triggers into player events: jump, shoot, enemy hit, gem pickup, damage hurt, death.
 
 ### Phase 12 Validation Gates
-- [ ] **Gate 12-A (Frequency Parity)**: PIT divisors deterministically map to exact audio frequencies and sample counts.
-- [ ] **Gate 12-B (SFX Priority)**: High-priority SFX (player hurt/death) preempts low-priority SFX (gem pickup, step).
-- [ ] **Gate 12-C (Headless Testability)**: Audio engine runs 1,000 game ticks in headless mode without touching SDL2 audio devices.
+- [x] **Gate 12-A (Frequency Parity)**: PIT divisors deterministically map to exact audio frequencies and sample counts.
+- [x] **Gate 12-B (SFX Priority)**: High-priority SFX (player hurt/death) preempts low-priority SFX (gem pickup, step).
+- [x] **Gate 12-C (Headless Testability)**: Audio engine runs 1,000 game ticks in headless mode without touching SDL2 audio devices.
 
 ---
 

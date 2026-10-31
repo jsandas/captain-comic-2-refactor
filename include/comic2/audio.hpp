@@ -57,6 +57,39 @@ struct AudioDispatchState {
   bool audio_enabled = true;
 };
 
+class AudioSynthesizer {
+public:
+  explicit AudioSynthesizer(int sample_rate = 44100);
+
+  std::vector<std::int16_t> synthesize(const SoundStream &stream,
+                                       int sample_count) const;
+  std::vector<std::int16_t> synthesize(std::uint16_t divisor,
+                                       std::uint16_t duration_ticks) const;
+
+private:
+  int sample_rate_;
+};
+
+class SoundDriver {
+public:
+  void play(const SoundStream &stream, std::uint8_t priority);
+  void stop();
+  std::uint16_t tick();
+  bool is_playing() const;
+  std::uint8_t current_priority() const;
+  std::uint16_t current_divisor() const;
+
+private:
+  void load_next_pair();
+
+  SoundStream stream_;
+  std::uint8_t priority_ = 0;
+  std::uint16_t current_divisor_ = 0;
+  std::uint16_t tick_remaining_ = 0;
+  std::size_t stream_index_ = 0;
+  bool playing_ = false;
+};
+
 class IAudioBackend {
 public:
   virtual ~IAudioBackend() = default;
@@ -90,6 +123,9 @@ SoundPlaybackResult handle_sound_command(SoundPlaybackState &state,
                                          std::uint16_t stream_segment,
                                          std::uint8_t priority);
 SoundStream make_stream_for_event(AudioEvent event);
+std::vector<std::int16_t> synthesize_pit_samples(std::uint16_t divisor,
+                                                 std::uint16_t duration_ticks,
+                                                 int sample_rate);
 std::vector<std::int16_t> synthesize_sound_samples(const SoundStream &stream,
                                                    int sample_rate,
                                                    int sample_count);
