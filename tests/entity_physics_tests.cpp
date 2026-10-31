@@ -121,14 +121,17 @@ void test_extracted_level_data() {
   expect(lvl0->room_count == 8, "lvl0 has 8 rooms");
   expect(lvl0->touch_trigger.min_tile == 0x1A, "lvl0 touch trigger min");
   expect(lvl0->touch_trigger.max_tile == 0x1C, "lvl0 touch trigger max");
-  expect(lvl0->touch_trigger.values.size() == 3, "lvl0 touch trigger values count");
+  expect(lvl0->touch_trigger.values.size() == 3,
+         "lvl0 touch trigger values count");
   expect(lvl0->touch_trigger.values[0] == 57, "lvl0 touch trigger val 0");
   expect(lvl0->touch_trigger.values[1] == 80, "lvl0 touch trigger val 1");
   expect(lvl0->touch_trigger.values[2] == 139, "lvl0 touch trigger val 2");
 
   // Room 0 transition zones test
-  expect(lvl0->transition_zones.size() == 8, "lvl0 transition zones room count");
-  expect(lvl0->transition_zones[0].size() == 4, "room 0 has 4 transition zones");
+  expect(lvl0->transition_zones.size() == 8,
+         "lvl0 transition zones room count");
+  expect(lvl0->transition_zones[0].size() == 4,
+         "room 0 has 4 transition zones");
   expect(lvl0->transition_zones[0][0].x == 0, "zone 0 x coordinate");
   expect(lvl0->transition_zones[0][0].y_min == 0, "zone 0 y_min");
   expect(lvl0->transition_zones[0][0].y_max == 16, "zone 0 y_max");
@@ -141,7 +144,8 @@ void test_extracted_level_data() {
   // Check transition zone query
   auto hit_zone = comic2::check_room_transition_zone(0, 0, 0, 10);
   expect(hit_zone.has_value(), "transition zone hit at (0, 10)");
-  expect(hit_zone->target_room == 1 && hit_zone->spawn_index == 0, "transition zone target room and spawn index");
+  expect(hit_zone->target_room == 1 && hit_zone->spawn_index == 0,
+         "transition zone target room and spawn index");
 
   auto miss_zone = comic2::check_room_transition_zone(0, 0, 0, 30);
   expect(!miss_zone.has_value(), "transition zone miss at (0, 30)");
@@ -160,4 +164,3 @@ void run_entity_physics_tests() {
   test_move_x_bounces_off_wall();
   test_move_y_bounce_reflects_velocity();
 }
-

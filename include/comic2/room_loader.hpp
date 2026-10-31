@@ -84,8 +84,8 @@ std::optional<TileTriggerRange>
 parse_tile_trigger_range(std::span<const std::uint8_t> bytes,
                          std::size_t offset = 0);
 
-std::optional<std::uint8_t>
-evaluate_tile_trigger(const TileTriggerRange &range, std::uint8_t tile_id);
+std::optional<std::uint8_t> evaluate_tile_trigger(const TileTriggerRange &range,
+                                                  std::uint8_t tile_id);
 
 bool load_room_tilemap_from_resource_buffer(RuntimeState &state,
                                             std::span<const std::uint8_t> bytes,

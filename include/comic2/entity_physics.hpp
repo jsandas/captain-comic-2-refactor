@@ -16,11 +16,11 @@ struct EntityPhysicsContext {
   const RoomTileGrid *grid = nullptr;
   // word_25272 / word_25274 / word_25276: tile-id thresholds. A probe reports
   // a hit when tile_id <= threshold (signed). -1 means "never blocks".
-  std::int16_t threshold_up = -1;     // word_25272
-  std::int16_t threshold_down = -1;   // word_25274
-  std::int16_t threshold_range = -1;  // word_25276 (-1 => use threshold_up)
-  std::int16_t camera_x = 0;          // word_256A2
-  std::int16_t camera_y = 0;          // word_256A4
+  std::int16_t threshold_up = -1;    // word_25272
+  std::int16_t threshold_down = -1;  // word_25274
+  std::int16_t threshold_range = -1; // word_25276 (-1 => use threshold_up)
+  std::int16_t camera_x = 0;         // word_256A2
+  std::int16_t camera_y = 0;         // word_256A4
 };
 
 inline constexpr std::int16_t kEntityOutOfRangeTile = 0x100;

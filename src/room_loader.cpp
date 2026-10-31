@@ -519,16 +519,18 @@ parse_tile_trigger_range(std::span<const std::uint8_t> bytes,
   if (r.max_tile < r.min_tile) {
     return std::nullopt;
   }
-  const std::size_t count = static_cast<std::size_t>(r.max_tile - r.min_tile) + 1;
+  const std::size_t count =
+      static_cast<std::size_t>(r.max_tile - r.min_tile) + 1;
   if (offset + 2 + count > bytes.size()) {
     return std::nullopt;
   }
-  r.values.assign(bytes.begin() + offset + 2, bytes.begin() + offset + 2 + count);
+  r.values.assign(bytes.begin() + offset + 2,
+                  bytes.begin() + offset + 2 + count);
   return r;
 }
 
-std::optional<std::uint8_t>
-evaluate_tile_trigger(const TileTriggerRange &range, std::uint8_t tile_id) {
+std::optional<std::uint8_t> evaluate_tile_trigger(const TileTriggerRange &range,
+                                                  std::uint8_t tile_id) {
   if (tile_id < range.min_tile || tile_id > range.max_tile) {
     return std::nullopt;
   }

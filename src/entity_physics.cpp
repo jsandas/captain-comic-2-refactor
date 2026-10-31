@@ -36,11 +36,12 @@ bool ent_probe_x_collision_strict(const EntityPhysicsContext &ctx,
                                   const RuntimeEntitySlot32 &slot,
                                   std::int16_t pixel_x) {
   if (pixel_x < ctx.camera_x ||
-      pixel_x >= static_cast<std::int16_t>(ctx.camera_x + kEntityViewportWidth)) {
+      pixel_x >=
+          static_cast<std::int16_t>(ctx.camera_x + kEntityViewportWidth)) {
     return true;
   }
-  const auto probe_y =
-      static_cast<std::int16_t>(slot.y + static_cast<std::int16_t>(slot.hitbox_h) - 8);
+  const auto probe_y = static_cast<std::int16_t>(
+      slot.y + static_cast<std::int16_t>(slot.hitbox_h) - 8);
   return tile_at(ctx, pixel_x, probe_y) <= ctx.threshold_up;
 }
 

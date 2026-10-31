@@ -38,15 +38,18 @@ struct LevelRuntimeData {
   TileTriggerRange touch_trigger;
   TileTriggerRange projectile_trigger;
   TileTriggerRange mode2_trigger;
-  std::vector<std::vector<RoomTransitionZone>> transition_zones; // indexed by room
-  std::vector<std::vector<RoomEntitySpawnDef>> active_enemies;    // indexed by room (List C)
-  std::vector<std::vector<RoomEntitySpawnDef>> special_entities;  // indexed by room (List A)
+  std::vector<std::vector<RoomTransitionZone>>
+      transition_zones; // indexed by room
+  std::vector<std::vector<RoomEntitySpawnDef>>
+      active_enemies; // indexed by room (List C)
+  std::vector<std::vector<RoomEntitySpawnDef>>
+      special_entities; // indexed by room (List A)
 };
 
 const LevelRuntimeData *get_level_runtime_data(std::uint16_t level_id);
 
-std::optional<RoomTransitionZone> check_room_transition_zone(
-    std::uint16_t level_id, std::uint16_t room_id,
-    std::int16_t player_x, std::int16_t player_y);
+std::optional<RoomTransitionZone>
+check_room_transition_zone(std::uint16_t level_id, std::uint16_t room_id,
+                           std::int16_t player_x, std::int16_t player_y);
 
 } // namespace comic2
