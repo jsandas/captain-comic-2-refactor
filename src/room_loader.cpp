@@ -507,4 +507,36 @@ level_script_offset(std::span<const std::uint8_t> decoded, std::size_t index) {
   return static_cast<std::uint16_t>(decoded[at] | (decoded[at + 1] << 8));
 }
 
+std::optional<TileTriggerRange>
+parse_tile_trigger_range(std::span<const std::uint8_t> bytes,
+                         std::size_t offset) {
+  if (offset + 2 > bytes.size()) {
+    return std::nullopt;
+  }
+  TileTriggerRange r;
+  r.min_tile = bytes[offset];
+  r.max_tile = bytes[offset + 1];
+  if (r.max_tile < r.min_tile) {
+    return std::nullopt;
+  }
+  const std::size_t count = static_cast<std::size_t>(r.max_tile - r.min_tile) + 1;
+  if (offset + 2 + count > bytes.size()) {
+    return std::nullopt;
+  }
+  r.values.assign(bytes.begin() + offset + 2, bytes.begin() + offset + 2 + count);
+  return r;
+}
+
+std::optional<std::uint8_t>
+evaluate_tile_trigger(const TileTriggerRange &range, std::uint8_t tile_id) {
+  if (tile_id < range.min_tile || tile_id > range.max_tile) {
+    return std::nullopt;
+  }
+  const std::size_t idx = tile_id - range.min_tile;
+  if (idx >= range.values.size()) {
+    return std::nullopt;
+  }
+  return range.values[idx];
+}
+
 } // namespace comic2

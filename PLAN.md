@@ -1467,7 +1467,8 @@ Replace provisional entity stubs with exact bytecode execution of `FR###.3` room
 
 ### Phase 13 Implementation Roadmap
 - [x] Implement `decode_level_script(span<uint8_t> payload)` applying `byte ^ 0x25` decoding (`room_loader.cpp`, plus `level_script_offset` u16 table accessor).
-- [ ] Implement room event zone trigger evaluator in `room_loader.cpp`.
+- [x] Implement tile-trigger range evaluator in `room_loader.cpp` (`parse_tile_trigger_range` / `evaluate_tile_trigger`). Asm tracing showed triggers are per-level tile-ID ranges (`load_room_effect_script_and_trigger_ranges`, `1000:1990`) feeding `ent_spawn_transient_slot`, not `(x1,y1,x2,y2)` zones; `FR###.3` is a u16 message-offset table (`ent_process_interaction_script_and_queue_message`). Gate 13-C should be reworded accordingly.
+- [ ] Locate/extract the per-level trigger tables (`unk_26688` descriptors, +2/+4/+6) from the executable data and load them into `RuntimeState`.
 - [ ] Port authentic entity physics helpers from `comic2_standalone.asm`:
   - [x] `ent_move_x_and_bounce` (`1000:4a4e`)
   - [x] `ent_apply_gravity_and_move_y` (`1000:4a99`)

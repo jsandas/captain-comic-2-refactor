@@ -67,6 +67,26 @@ decode_level_script(std::span<const std::uint8_t> payload);
 std::optional<std::uint16_t>
 level_script_offset(std::span<const std::uint8_t> decoded, std::size_t index);
 
+// Per-level tile-ID trigger range (load_room_effect_script_and_trigger_ranges,
+// 1000:1990). Layout: [min_tile][max_tile][max-min+1 spawn-type bytes].
+// Three tables exist per level: touch (byte_256AA), projectile impact
+// (byte_256B6) and mode-2 collision (byte_256C2). A tile in [min,max] spawns
+// transient slot type values[tile - min] (ent_spawn_transient_slot).
+struct TileTriggerRange {
+  std::uint8_t min_tile = 0;
+  std::uint8_t max_tile = 0;
+  std::vector<std::uint8_t> values;
+
+  bool operator==(const TileTriggerRange &) const = default;
+};
+
+std::optional<TileTriggerRange>
+parse_tile_trigger_range(std::span<const std::uint8_t> bytes,
+                         std::size_t offset = 0);
+
+std::optional<std::uint8_t>
+evaluate_tile_trigger(const TileTriggerRange &range, std::uint8_t tile_id);
+
 bool load_room_tilemap_from_resource_buffer(RuntimeState &state,
                                             std::span<const std::uint8_t> bytes,
                                             std::uint16_t level,

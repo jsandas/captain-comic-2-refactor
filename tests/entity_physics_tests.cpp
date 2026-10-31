@@ -100,10 +100,22 @@ void test_move_y_bounce_reflects_velocity() {
   expect(s.y == 56, "upward move applied");
 }
 
+void test_tile_trigger_range() {
+  const std::vector<std::uint8_t> b = {0x10, 0x12, 7, 8, 9, 0xAA};
+  const auto r = comic2::parse_tile_trigger_range(b);
+  expect(r && r->values.size() == 3, "range parse");
+  expect(comic2::evaluate_tile_trigger(*r, 0x11) == 8, "in-range lookup");
+  expect(!comic2::evaluate_tile_trigger(*r, 0x0F), "below range");
+  expect(!comic2::evaluate_tile_trigger(*r, 0x13), "above range");
+  const std::vector<std::uint8_t> bad = {0x10, 0x20, 1};
+  expect(!comic2::parse_tile_trigger_range(bad), "truncated range rejected");
+}
+
 } // namespace
 
 void run_entity_physics_tests() {
   test_decode_level_script();
+  test_tile_trigger_range();
   test_gravity_lands_and_snaps();
   test_move_x_bounces_off_wall();
   test_move_y_bounce_reflects_velocity();
