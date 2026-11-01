@@ -15,6 +15,8 @@
 
 namespace comic2 {
 
+struct LevelRuntimeData;
+
 enum class MenuState {
   None = 0,
   Pause = 1,
@@ -112,6 +114,8 @@ struct DispatcherFlags {
 struct PendingRoomTransition {
   std::uint16_t target_room = 0;
   std::int16_t target_player_x = 0;
+  std::optional<std::uint16_t> target_level;
+  std::optional<std::int16_t> target_player_y;
 
   bool operator==(const PendingRoomTransition &) const = default;
 };
@@ -200,6 +204,7 @@ struct UiState {
 struct RuntimeState {
   std::uint16_t current_level = 0;
   std::uint16_t current_room = 0;
+  const LevelRuntimeData *level_data = nullptr;
   FrdataRoomEntry room_entry{};
   std::filesystem::path assets_root;
   std::optional<PendingRoomTransition> pending_room_transition;

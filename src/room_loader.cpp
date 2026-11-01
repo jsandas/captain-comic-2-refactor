@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "comic2/entity_runtime.hpp"
+#include "comic2/level_data.hpp"
 #include "comic2/resource_loader.hpp"
 
 namespace comic2 {
@@ -381,6 +382,7 @@ bool load_room_tilemap_from_resource_buffer(RuntimeState &state,
 
   state.current_level = level;
   state.current_room = room;
+  state.level_data = get_level_runtime_data(level);
   state.room_entry = spec->room_entry;
   state.room_grid.tile_w = spec->room_entry.tile_w;
   state.room_grid.tile_h = spec->room_entry.tile_h;
@@ -431,6 +433,7 @@ bool load_room_tilemap_from_resource_file(
 
   state.current_level = level;
   state.current_room = room;
+  state.level_data = get_level_runtime_data(level);
   state.room_entry = spec->room_entry;
   state.room_grid.tile_w = spec->room_entry.tile_w;
   state.room_grid.tile_h = spec->room_entry.tile_h;

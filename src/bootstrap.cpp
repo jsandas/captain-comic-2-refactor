@@ -14,6 +14,7 @@
 #include "asset_root_candidates.hpp"
 #include "comic2/default_handlers.hpp"
 #include "comic2/input_handler.hpp"
+#include "comic2/level_data.hpp"
 #include "comic2/oracle.hpp"
 #include "comic2/resource_loader.hpp"
 #include "comic2/ui.hpp"
@@ -768,6 +769,8 @@ initialize_runtime_scene(RuntimeState &state,
       candidate_state.player.is_physics_active = true;
       clamp_player_to_room_bounds(candidate_state);
       candidate_state.assets_root = canonical_candidate;
+      candidate_state.level_data =
+          get_level_runtime_data(candidate_state.current_level);
       state = candidate_state;
       summary.room_grid_loaded = true;
       summary.using_placeholder = false;

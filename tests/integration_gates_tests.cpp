@@ -13,6 +13,7 @@
 #include "comic2/default_handlers.hpp"
 #include "comic2/dispatcher.hpp"
 #include "comic2/entity_runtime.hpp"
+#include "comic2/level_data.hpp"
 #include "comic2/oracle.hpp"
 #include "comic2/projectiles.hpp"
 #include "comic2/renderer.hpp"
@@ -1222,6 +1223,99 @@ void test_gate_12c_null_audio_backend_stays_headless() {
          "Gate 12-C: null backend should stay unavailable after shutdown");
 }
 
+void test_gate_13c_trigger_activation() {
+  // 1. Transition zone contact triggers room transition with exact target
+  // metadata
+  comic2::GameDispatcher dispatcher;
+  comic2::install_default_stage_hooks(dispatcher);
+
+  comic2::RuntimeState state;
+  state.current_level = 0;
+  state.current_room = 0;
+  state.level_data = comic2::get_level_runtime_data(0);
+  state.room_resource_bytes = make_gate11f_room_resource_bytes();
+  expect(state.level_data != nullptr,
+         "Gate 13-C: Level 0 data must be available");
+
+  // In Level 0 Room 0, transition zone 0 is at (x=0, y_min=0, y_max=16),
+  // leading to Room 1 at spawn zone 0 (x=1008, y_max=16).
+  state.player.x = 0;
+  state.player.y = 10;
+  state.player.is_physics_active = true;
+  state.player.is_airborne = false;
+  state.input.left_pressed = true;
+
+  // Run grounded physics tick (which updates room transitions from player
+  // bounds)
+  const auto tick = dispatcher.run_tick(state);
+  expect(tick.stage == comic2::DispatchStage::GroundedPhysics,
+         "Gate 13-C: initial tick should run grounded physics");
+  expect(state.flags.level_transition_pending,
+         "Gate 13-C: entering transition zone should stage pending level "
+         "transition");
+  expect(state.pending_room_transition.has_value(),
+         "Gate 13-C: pending room transition metadata must be staged");
+  expect(state.pending_room_transition->target_room == 1,
+         "Gate 13-C: transition zone must target room 1");
+  expect(state.pending_room_transition->target_level.has_value() &&
+             *state.pending_room_transition->target_level == 0,
+         "Gate 13-C: transition zone must target level 0");
+  expect(
+      state.pending_room_transition->target_player_x == 1008,
+      "Gate 13-C: arrival player x must match target room spawn zone (1008)");
+  expect(state.pending_room_transition->target_player_y.has_value() &&
+             *state.pending_room_transition->target_player_y == 16,
+         "Gate 13-C: arrival player y must match target room spawn zone (16)");
+
+  // Run transition tick: LevelTransition stage consumes pending transition
+  state.input.left_pressed = false;
+  const auto trans_tick = dispatcher.run_tick(state);
+  expect(trans_tick.stage == comic2::DispatchStage::LevelTransition,
+         "Gate 13-C: transition tick should route to LevelTransition stage");
+  expect(!state.flags.level_transition_pending,
+         "Gate 13-C: level transition hook should clear pending flag");
+  expect(state.current_room == 1,
+         "Gate 13-C: level transition should commit target room 1");
+  expect(state.player.x == 1008,
+         "Gate 13-C: player x should update to target spawn x (1008)");
+  expect(state.player.y == 16,
+         "Gate 13-C: player y should update to target spawn y (16)");
+  expect(state.transition_state.active,
+         "Gate 13-C: transition state must become active");
+
+  // 2. Tile trigger range evaluation parity
+  const auto *lvl0 = state.level_data;
+  // Level 0 touch triggers: range [26..28] -> [57, 80, 139]
+  const auto touch26 = comic2::evaluate_tile_trigger(lvl0->touch_trigger, 26);
+  expect(touch26.has_value() && *touch26 == 57,
+         "Gate 13-C: touch trigger for tile 26 must evaluate to 57");
+  const auto touch27 = comic2::evaluate_tile_trigger(lvl0->touch_trigger, 27);
+  expect(touch27.has_value() && *touch27 == 80,
+         "Gate 13-C: touch trigger for tile 27 must evaluate to 80");
+  const auto touch28 = comic2::evaluate_tile_trigger(lvl0->touch_trigger, 28);
+  expect(touch28.has_value() && *touch28 == 139,
+         "Gate 13-C: touch trigger for tile 28 must evaluate to 139");
+  const auto touch_out = comic2::evaluate_tile_trigger(lvl0->touch_trigger, 25);
+  expect(
+      !touch_out.has_value(),
+      "Gate 13-C: out-of-range tile 25 must return nullopt for touch trigger");
+
+  // Level 0 projectile triggers: range [25..25] -> [139]
+  const auto proj25 =
+      comic2::evaluate_tile_trigger(lvl0->projectile_trigger, 25);
+  expect(proj25.has_value() && *proj25 == 139,
+         "Gate 13-C: projectile trigger for tile 25 must evaluate to 139");
+  const auto proj_out =
+      comic2::evaluate_tile_trigger(lvl0->projectile_trigger, 26);
+  expect(!proj_out.has_value(), "Gate 13-C: out-of-range tile 26 must return "
+                                "nullopt for projectile trigger");
+
+  // Level 0 mode 2 triggers: range [140..140] -> [24]
+  const auto mode140 = comic2::evaluate_tile_trigger(lvl0->mode2_trigger, 140);
+  expect(mode140.has_value() && *mode140 == 24,
+         "Gate 13-C: mode 2 trigger for tile 140 must evaluate to 24");
+}
+
 } // namespace
 
 void run_integration_gate_tests() {
@@ -1263,4 +1357,7 @@ void run_integration_gate_tests() {
   test_gate_12b_priority_preemption_in_sound_driver();
   test_gate_12b2_sound_driver_tick_and_synthesizer();
   test_gate_12c_null_audio_backend_stays_headless();
+
+  // Gate 13-C: Trigger activation and room transition zones.
+  test_gate_13c_trigger_activation();
 }

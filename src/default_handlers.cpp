@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "comic2/audio.hpp"
+#include "comic2/level_data.hpp"
 #include "comic2/player_controller.hpp"
 #include "comic2/renderer.hpp"
 #include "comic2/resource_loader.hpp"
@@ -54,6 +55,60 @@ void clamp_player_vertical_bounds(RuntimeState &state) {
 }
 
 void update_room_transition_from_player_bounds(RuntimeState &state) {
+  if (state.level_data != nullptr) {
+    const std::int16_t room_width =
+        state.room_grid.tile_w > 0
+            ? static_cast<std::int16_t>(state.room_grid.tile_w * 16)
+            : static_cast<std::int16_t>(kViewportWidthPixels);
+
+    std::optional<RoomTransitionZone> matched_zone =
+        check_room_transition_zone(state.current_level, state.current_room,
+                                   state.player.x, state.player.y);
+
+    if (!matched_zone.has_value() && state.player.x <= 0) {
+      matched_zone = check_room_transition_zone(
+          state.current_level, state.current_room, 0, state.player.y);
+    }
+    if (!matched_zone.has_value() && state.player.x >= room_width - 16) {
+      matched_zone = check_room_transition_zone(
+          state.current_level, state.current_room,
+          static_cast<std::int16_t>(room_width - 16), state.player.y);
+      if (!matched_zone.has_value()) {
+        matched_zone =
+            check_room_transition_zone(state.current_level, state.current_room,
+                                       room_width, state.player.y);
+      }
+    }
+
+    if (matched_zone.has_value() && matched_zone->target_level != 0xFFFF) {
+      std::int16_t target_x = 0;
+      std::optional<std::int16_t> target_y;
+
+      const auto *target_lvl_data =
+          get_level_runtime_data(matched_zone->target_level);
+      if (target_lvl_data != nullptr &&
+          matched_zone->target_room <
+              target_lvl_data->transition_zones.size()) {
+        const auto &target_zones =
+            target_lvl_data->transition_zones[matched_zone->target_room];
+        if (matched_zone->spawn_index < target_zones.size()) {
+          const auto &spawn_zone = target_zones[matched_zone->spawn_index];
+          target_x = spawn_zone.x;
+          target_y = spawn_zone.y_max;
+        }
+      }
+
+      state.pending_room_transition = PendingRoomTransition{
+          .target_room = matched_zone->target_room,
+          .target_player_x = target_x,
+          .target_level = matched_zone->target_level,
+          .target_player_y = target_y,
+      };
+      state.flags.level_transition_pending = true;
+      return;
+    }
+  }
+
   if (state.player.x < 0) {
     if (state.current_room == 0) {
       state.player.x = 0;
@@ -265,6 +320,7 @@ void reset_runtime_for_new_game(RuntimeState &state) {
   state.player.invuln_ticks = 0;
   state.current_room = 0;
   state.current_level = 0;
+  state.level_data = get_level_runtime_data(0);
   state.level_complete = false;
   state.level_completion_gems_required = 0;
   state.pending_room_transition.reset();
@@ -382,8 +438,16 @@ void handle_level_transition(RuntimeState &state) {
   }
 
   RuntimeState candidate_state = state;
+  if (pending->target_level.has_value()) {
+    candidate_state.current_level = *pending->target_level;
+  }
   candidate_state.current_room = pending->target_room;
   candidate_state.player.x = pending->target_player_x;
+  if (pending->target_player_y.has_value()) {
+    candidate_state.player.y = *pending->target_player_y;
+  }
+  candidate_state.level_data =
+      get_level_runtime_data(candidate_state.current_level);
   candidate_state.transition_state.active = true;
   candidate_state.transition_state.player_frozen = true;
   candidate_state.transition_state.completed = false;
