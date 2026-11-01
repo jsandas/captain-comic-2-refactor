@@ -37,14 +37,30 @@ comic2::EntityPhysicsContext make_ctx(const comic2::RoomTileGrid &g) {
 }
 
 void test_decode_level_script() {
-  const std::vector<std::uint8_t> enc = {0x25, 0x24, 0x00, 0x25 ^ 0x7F};
+  const std::vector<std::uint8_t> short_payload(4, 0x25);
+  expect(!comic2::decode_level_script(short_payload).has_value(),
+         "short payload must return nullopt");
+
+  const std::vector<std::uint8_t> long_payload(
+      comic2::kLevelScriptBlockSize + 1, 0x25);
+  expect(!comic2::decode_level_script(long_payload).has_value(),
+         "overlong payload must return nullopt");
+
+  std::vector<std::uint8_t> enc(comic2::kLevelScriptBlockSize, 0x25);
+  enc[0] = 0x25;
+  enc[1] = 0x24;
+  enc[2] = 0x00;
+  enc[3] = 0x25 ^ 0x7F;
+
   const auto dec = comic2::decode_level_script(enc);
-  expect(dec.size() == 4 && dec[0] == 0 && dec[1] == 1 && dec[2] == 0x25 &&
-             dec[3] == 0x7F,
+  expect(dec.has_value(), "valid 0xC00 payload must decode");
+  expect(dec->size() == comic2::kLevelScriptBlockSize && (*dec)[0] == 0 &&
+             (*dec)[1] == 1 && (*dec)[2] == 0x25 && (*dec)[3] == 0x7F,
          "xor25 decode mismatch");
-  const auto off = comic2::level_script_offset(dec, 0);
+  const auto off = comic2::level_script_offset(*dec, 0);
   expect(off && *off == 0x0100, "script offset mismatch");
-  expect(!comic2::level_script_offset(dec, 2), "offset oob should be nullopt");
+  expect(!comic2::level_script_offset(*dec, comic2::kLevelScriptBlockSize / 2),
+         "offset oob should be nullopt");
 }
 
 void test_gravity_lands_and_snaps() {

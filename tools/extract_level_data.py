@@ -22,8 +22,11 @@ def main():
         vals = list(data[offset+2:offset+2+cnt])
         return {'min': min_t, 'max': max_t, 'values': vals}
 
-    # Level descriptor table at 0x16a8 (in original executable code segment)
-    level_ptrs = struct.unpack('<15H', seg000[0x16a8:0x16a8+30])
+    # Level descriptor table at 0x16a8 (in original executable code segment, ending at 0x16c6)
+    table_start = 0x16a8
+    table_end = 0x16c6
+    num_levels = int(sys.argv[2]) if len(sys.argv) > 2 else (table_end - table_start) // 2
+    level_ptrs = struct.unpack(f'<{num_levels}H', seg000[table_start:table_start + num_levels * 2])
 
     levels = []
 

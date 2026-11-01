@@ -489,8 +489,11 @@ bool load_room_tilemap_from_asset_root(RuntimeState &state,
                      });
 }
 
-std::vector<std::uint8_t>
+std::optional<std::vector<std::uint8_t>>
 decode_level_script(std::span<const std::uint8_t> payload) {
+  if (payload.size() != kLevelScriptBlockSize) {
+    return std::nullopt;
+  }
   std::vector<std::uint8_t> out(payload.size());
   std::transform(payload.begin(), payload.end(), out.begin(),
                  [](std::uint8_t b) {

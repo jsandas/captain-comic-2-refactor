@@ -59,7 +59,7 @@ decode_room_mapped_objects(std::span<const std::uint8_t> decoded_room_bytes);
 inline constexpr std::size_t kLevelScriptBlockSize = 0x0C00;
 inline constexpr std::uint8_t kLevelScriptXorKey = 0x25;
 
-std::vector<std::uint8_t>
+std::optional<std::vector<std::uint8_t>>
 decode_level_script(std::span<const std::uint8_t> payload);
 
 // Script block starts with u16 offsets (relative to block start), indexed
