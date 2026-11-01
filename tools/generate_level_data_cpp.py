@@ -24,9 +24,12 @@ cpp_lines = [
 
 for lvl_data in levels:
     lvl = lvl_data['level_id']
-    t_vals = ', '.join(str(v) for v in lvl_data['touch_trigger']['values']) or '0'
-    p_vals = ', '.join(str(v) for v in lvl_data['proj_trigger']['values']) or '0'
-    m_vals = ', '.join(str(v) for v in lvl_data['mode2_trigger']['values']) or '0'
+    assert lvl_data['touch_trigger']['values'], f"Level {lvl} touch trigger has empty values"
+    assert lvl_data['proj_trigger']['values'], f"Level {lvl} projectile trigger has empty values"
+    assert lvl_data['mode2_trigger']['values'], f"Level {lvl} mode2 trigger has empty values"
+    t_vals = ', '.join(str(v) for v in lvl_data['touch_trigger']['values'])
+    p_vals = ', '.join(str(v) for v in lvl_data['proj_trigger']['values'])
+    m_vals = ', '.join(str(v) for v in lvl_data['mode2_trigger']['values'])
 
     cpp_lines.append(f'    // Level {lvl}')
     cpp_lines.append('    LevelRuntimeData{')

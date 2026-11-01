@@ -1,25 +1,45 @@
-import struct
 import json
 import os
+from pathlib import Path
+import struct
 import sys
 
 def main():
-    exe_path = sys.argv[1] if len(sys.argv) > 1 else 'reference/original/unpacked.exe'
-    if not os.path.exists(exe_path):
+    script_dir = Path(__file__).resolve().parent
+    repo_root = script_dir.parent
+    default_exe = repo_root / 'reference' / 'original' / 'unpacked.exe'
+
+    exe_path = Path(sys.argv[1]) if len(sys.argv) > 1 else default_exe
+    if not exe_path.exists():
         print(f"Error: {exe_path} not found")
         sys.exit(1)
 
     with open(exe_path, 'rb') as f:
         exe = f.read()
 
-    # MZ header offset: 512 bytes (0x20 paragraphs)
-    seg000 = exe[512:]
+    # MZ DOS header offset:
+    # In standard DOS MZ headers, e_cparhdr (offset 0x08) specifies the header size in
+    # 16-byte paragraphs. For this pinned binary ('unpacked.exe'), e_cparhdr is exactly
+    # 0x0020 (32 paragraphs = 512 bytes). We validate this assumption explicitly.
+    header_paragraphs = struct.unpack_from('<H', exe, 0x08)[0]
+    assert header_paragraphs == 0x20, (
+        f"Pinned binary assumption violated: expected e_cparhdr = 0x20 (512 bytes), "
+        f"got {header_paragraphs:#x}"
+    )
+    seg000 = exe[header_paragraphs * 16:]
 
     def parse_range(data, offset):
         min_t = data[offset]
-        max_t = data[offset+1]
+        max_t = data[offset + 1]
+        assert max_t >= min_t, (
+            f"Invalid trigger range at offset {offset:#x}: max_tile ({max_t}) < min_tile ({min_t})"
+        )
         cnt = max_t - min_t + 1
-        vals = list(data[offset+2:offset+2+cnt])
+        assert offset + 2 + cnt <= len(data), (
+            f"Trigger range data exceeds buffer at offset {offset:#x} "
+            f"(needed {offset + 2 + cnt}, total {len(data)})"
+        )
+        vals = list(data[offset + 2:offset + 2 + cnt])
         return {'min': min_t, 'max': max_t, 'values': vals}
 
     # Level descriptor table at 0x16a8 (in original executable code segment, ending at 0x16c6)
@@ -37,9 +57,19 @@ def main():
         m_trig = parse_range(seg000, desc[3])
 
         # room count from list B
+        # Invariant / Layout Assumption:
+        # In the original binary data layout, the List B pointer table for a level
+        # begins at offset pB (array of uint16 offsets to each room's transition zone list).
+        # The first room's transition records (target of pointer 0) are placed in memory
+        # immediately following this pointer table: first_target_B == pB + room_count * 2.
+        # Therefore, the room count is derived from (first_target_B - pB) // 2.
         pB = desc[5]
         first_target_B = struct.unpack('<H', seg000[pB:pB+2])[0]
+        assert first_target_B > pB and (first_target_B - pB) % 2 == 0, (
+            f"Level {lvl} List B layout invariant failed: pB={pB:#x}, first_target_B={first_target_B:#x}"
+        )
         room_count = (first_target_B - pB) // 2
+        assert room_count > 0, f"Level {lvl} derived non-positive room_count: {room_count}"
 
         # List B: transition zones
         listB_ptrs = struct.unpack(f'<{room_count}H', seg000[pB:pB+room_count*2])
@@ -95,7 +125,7 @@ def main():
             'room_entities': rooms_listC
         })
 
-    out_json = 'tools/extracted_level_data.json'
+    out_json = script_dir / 'extracted_level_data.json'
     with open(out_json, 'w') as out:
         json.dump(levels, out, indent=2)
 
