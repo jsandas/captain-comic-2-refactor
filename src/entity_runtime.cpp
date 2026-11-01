@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <cstring>
 
 #include "comic2/audio.hpp"
+#include "comic2/entity_physics.hpp"
 #include "comic2/game_state.hpp"
 
 namespace comic2 {
@@ -21,51 +23,102 @@ constexpr std::int16_t kDamageKnockback = 6;
     kBehaviorGravity;
 [[maybe_unused]] constexpr std::uint16_t kBehaviorShootValue = kBehaviorShoot;
 
-using BehaviorFn = void (*)(RuntimeEntitySlot32 &, const RuntimeState &);
+using BehaviorFn = void (*)(RuntimeEntitySlot32 &, const RuntimeState &,
+                            const EntityPhysicsContext &);
 
-void apply_chase_behavior(RuntimeEntitySlot32 &slot,
-                          const RuntimeState &state) {
-  if (state.player.x < slot.x) {
-    slot.x -= 1;
-  } else if (state.player.x > slot.x) {
-    slot.x += 1;
+void apply_chase_behavior(RuntimeEntitySlot32 &slot, const RuntimeState &state,
+                          const EntityPhysicsContext &ctx) {
+  if (ctx.grid == nullptr || ctx.grid->tile_w == 0) {
+    if (state.player.x < slot.x) {
+      slot.x -= 1;
+    } else if (state.player.x > slot.x) {
+      slot.x += 1;
+    }
+    return;
   }
+
+  if (slot.dir_toggle == 0) {
+    slot.dir_toggle = (state.player.x < slot.x) ? 2 : 1;
+  }
+  const std::int16_t speed = slot.param_a != 0 ? std::abs(slot.param_a) : 2;
+  ent_move_x_and_bounce(ctx, slot, speed);
+  ent_apply_gravity_and_move_y(ctx, slot);
 }
 
-void apply_bounce_behavior(RuntimeEntitySlot32 &slot, const RuntimeState &) {
-  slot.param_a = static_cast<std::int16_t>((slot.param_a + 1) % 2);
-  if (slot.param_a == 0) {
-    slot.y -= 1;
-  } else {
+void apply_bounce_behavior(RuntimeEntitySlot32 &slot, const RuntimeState &,
+                           const EntityPhysicsContext &ctx) {
+  if (ctx.grid == nullptr || ctx.grid->tile_w == 0) {
+    slot.param_a = static_cast<std::int16_t>((slot.param_a + 1) % 2);
+    if (slot.param_a == 0) {
+      slot.y -= 1;
+    } else {
+      slot.y += 1;
+    }
+    return;
+  }
+
+  if (slot.param_b == 0) {
+    slot.param_b = 4;
+  }
+  ent_move_y_and_bounce(ctx, slot);
+}
+
+void apply_jump_behavior(RuntimeEntitySlot32 &slot, const RuntimeState &state,
+                         const EntityPhysicsContext &ctx) {
+  if (ctx.grid == nullptr || ctx.grid->tile_w == 0) {
+    if (slot.param_a == 0) {
+      slot.param_a = 1;
+      slot.y -= 3;
+    } else {
+      slot.y -= 1;
+    }
+    return;
+  }
+
+  const bool collided = ent_apply_gravity_and_move_y(ctx, slot);
+  if (collided && slot.param_b == 0) {
+    slot.param_b = -6;
+    if (slot.dir_toggle == 0) {
+      slot.dir_toggle = (state.player.x < slot.x) ? 2 : 1;
+    }
+  }
+  const std::int16_t speed = slot.param_a != 0 ? std::abs(slot.param_a) : 2;
+  ent_move_x_and_bounce(ctx, slot, speed);
+}
+
+void apply_gravity_behavior(RuntimeEntitySlot32 &slot, const RuntimeState &,
+                            const EntityPhysicsContext &ctx) {
+  if (ctx.grid == nullptr || ctx.grid->tile_w == 0) {
     slot.y += 1;
+    return;
   }
+  ent_apply_gravity_and_move_y(ctx, slot);
 }
 
-void apply_jump_behavior(RuntimeEntitySlot32 &slot, const RuntimeState &) {
-  if (slot.param_a == 0) {
-    slot.param_a = 1;
-    slot.y -= 3;
-  } else {
-    slot.y -= 1;
+void apply_shoot_behavior(RuntimeEntitySlot32 &slot, const RuntimeState &state,
+                          const EntityPhysicsContext &ctx) {
+  if (ctx.grid == nullptr || ctx.grid->tile_w == 0) {
+    if (state.player.x < slot.x) {
+      slot.x -= 1;
+    } else if (state.player.x > slot.x) {
+      slot.x += 1;
+    }
+    if (state.player.y < slot.y) {
+      slot.y -= 1;
+    } else if (state.player.y > slot.y) {
+      slot.y += 1;
+    }
+    return;
   }
-}
 
-void apply_gravity_behavior(RuntimeEntitySlot32 &slot, const RuntimeState &) {
-  slot.y += 1;
-}
-
-void apply_shoot_behavior(RuntimeEntitySlot32 &slot,
-                          const RuntimeState &state) {
-  if (state.player.x < slot.x) {
-    slot.x -= 1;
-  } else if (state.player.x > slot.x) {
-    slot.x += 1;
+  if (slot.dir_toggle == 0) {
+    slot.dir_toggle = (state.player.x < slot.x) ? 2 : 1;
   }
-  if (state.player.y < slot.y) {
-    slot.y -= 1;
-  } else if (state.player.y > slot.y) {
-    slot.y += 1;
+  ent_move_x_and_bounce(ctx, slot, 1);
+  if (slot.param_b == 0) {
+    slot.param_b = (state.player.y < slot.y) ? -2 : 2;
   }
+  ent_move_y_and_bounce(ctx, slot);
 }
 
 const std::array<BehaviorFn, 8> kBehaviorTable = {
@@ -213,16 +266,38 @@ void ent_copy_descriptor_to_runtime_slot(const MappedObject12 &descriptor,
 }
 
 void update_entity_behaviors(RuntimeState &state) {
+  EntityPhysicsContext ctx;
+  ctx.grid = &state.room_grid;
+  ctx.threshold_up =
+      state.tile_hazard_bounds[0] != 0
+          ? static_cast<std::int16_t>(state.tile_hazard_bounds[0])
+          : 1;
+  ctx.threshold_down =
+      state.tile_hazard_bounds[1] != 0
+          ? static_cast<std::int16_t>(state.tile_hazard_bounds[1])
+          : 1;
+  ctx.threshold_range = -1;
+  ctx.camera_x = state.camera_x;
+  ctx.camera_y = state.camera_y;
+
   for (auto &slot : state.runtime_slots) {
     if (!is_runtime_slot_active(slot)) {
       continue;
     }
 
-    const auto behavior = slot.behavior_state & 0x000F;
+    auto behavior = slot.behavior_state & 0x000F;
+    if (behavior == 0 && slot.type_flags != 0) {
+      if (slot.type_flags <= 3) {
+        behavior = kBehaviorJump;
+      } else if (slot.type_flags <= 7) {
+        behavior = kBehaviorBounce;
+      }
+    }
+
     if (behavior < static_cast<std::uint16_t>(kBehaviorTable.size())) {
       const auto fn = kBehaviorTable[behavior];
       if (fn != nullptr) {
-        fn(slot, state);
+        fn(slot, state, ctx);
       }
     }
   }
