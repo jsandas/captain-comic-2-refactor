@@ -2,6 +2,7 @@
 #include <vector>
 
 #include "comic2/entity_physics.hpp"
+#include "comic2/level_data.hpp"
 #include "comic2/room_loader.hpp"
 
 namespace {
@@ -116,6 +117,83 @@ void test_move_y_bounce_reflects_velocity() {
   expect(s.y == 56, "upward move applied");
 }
 
+void test_move_y_threshold_range_fallback() {
+  const auto g = make_grid();
+  auto ctx = make_ctx(g);
+  // Grid row 5 is tile 0x01.
+  // With hitbox_h = 16, y = 60 + 4 puts foot at 64 + 16 = 80 (start of row 5).
+  comic2::RuntimeEntitySlot32 s{};
+  s.hitbox_w = 16;
+  s.hitbox_h = 16;
+  s.x = 32;
+
+  // Case 1: explicit threshold_range (0) overrides threshold_up (5).
+  // Foot tile is 1. Since 1 <= 0 is false, no bounce occurs.
+  ctx.threshold_up = 5;
+  ctx.threshold_range = 0;
+  s.y = 60;
+  s.param_b = 4;
+  expect(!comic2::ent_move_y_and_bounce(ctx, s),
+         "explicit threshold_range 0 should not bounce on tile 1");
+  expect(s.y == 64 && s.param_b == 4, "movement applied without bounce");
+
+  // Case 2: threshold_range == -1 falls back to threshold_up (5).
+  // Foot tile is 1. Since 1 <= 5 is true, floor bounce occurs.
+  ctx.threshold_range = -1;
+  s.y = 60;
+  s.param_b = 4;
+  expect(comic2::ent_move_y_and_bounce(ctx, s),
+         "threshold_range == -1 fallback to threshold_up 5 must bounce");
+  expect(s.y == 64 && s.param_b == -4, "bounced with reflected velocity");
+}
+
+void test_ent_probe_x_viewport_edges() {
+  const auto g = make_grid();
+  auto ctx = make_ctx(g);
+  comic2::RuntimeEntitySlot32 s{};
+  s.hitbox_w = 16;
+  s.hitbox_h = 16;
+  s.y = 16; // probe_y = 16 + 16 - 8 = 24 (row 1, open tile 0xFF)
+  ctx.threshold_up = 1;
+  ctx.camera_x = 0;
+
+  // Off-screen left: pixel_x < camera_x
+  expect(comic2::ent_probe_x_collision_strict(ctx, s, -1),
+         "left of camera_x must report blocked");
+  expect(comic2::ent_probe_x_collision_strict(ctx, s, -10),
+         "far left of camera_x must report blocked");
+
+  // In-viewport left boundary: pixel_x == camera_x
+  expect(!comic2::ent_probe_x_collision_strict(ctx, s, 0),
+         "left viewport edge inside open tile must not be blocked");
+
+  // In-viewport right boundary: camera_x + kEntityViewportWidth - 1
+  const auto right_edge =
+      static_cast<std::int16_t>(comic2::kEntityViewportWidth - 1);
+  expect(!comic2::ent_probe_x_collision_strict(ctx, s, right_edge),
+         "right viewport edge inside open tile must not be blocked");
+
+  // Off-screen right: pixel_x >= camera_x + kEntityViewportWidth
+  expect(comic2::ent_probe_x_collision_strict(ctx, s,
+                                              comic2::kEntityViewportWidth),
+         "right of viewport must report blocked");
+  expect(
+      comic2::ent_probe_x_collision_strict(
+          ctx, s, static_cast<std::int16_t>(comic2::kEntityViewportWidth + 10)),
+      "far right of viewport must report blocked");
+
+  // Shifted camera test
+  ctx.camera_x = 100;
+  expect(comic2::ent_probe_x_collision_strict(ctx, s, 99),
+         "left of shifted camera must report blocked");
+  expect(!comic2::ent_probe_x_collision_strict(ctx, s, 100),
+         "left edge of shifted camera must not be blocked");
+  expect(comic2::ent_probe_x_collision_strict(
+             ctx, s,
+             static_cast<std::int16_t>(100 + comic2::kEntityViewportWidth)),
+         "right of shifted camera viewport must report blocked");
+}
+
 void test_tile_trigger_range() {
   const std::vector<std::uint8_t> b = {0x10, 0x12, 7, 8, 9, 0xAA};
   const auto r = comic2::parse_tile_trigger_range(b);
@@ -126,10 +204,6 @@ void test_tile_trigger_range() {
   const std::vector<std::uint8_t> bad = {0x10, 0x20, 1};
   expect(!comic2::parse_tile_trigger_range(bad), "truncated range rejected");
 }
-
-} // namespace
-
-#include "comic2/level_data.hpp"
 
 void test_extracted_level_data() {
   const auto *lvl0 = comic2::get_level_runtime_data(0);
@@ -157,7 +231,7 @@ void test_extracted_level_data() {
   auto trig_res = comic2::evaluate_tile_trigger(lvl0->touch_trigger, 0x1B);
   expect(trig_res.has_value() && *trig_res == 80, "eval touch trigger 0x1B");
 
-  // Check transition zone query
+  // Check transition zone query - interior hit & exterior miss
   auto hit_zone = comic2::check_room_transition_zone(0, 0, 0, 10);
   expect(hit_zone.has_value(), "transition zone hit at (0, 10)");
   expect(hit_zone->target_room == 1 && hit_zone->spawn_index == 0,
@@ -166,11 +240,45 @@ void test_extracted_level_data() {
   auto miss_zone = comic2::check_room_transition_zone(0, 0, 0, 30);
   expect(!miss_zone.has_value(), "transition zone miss at (0, 30)");
 
+  // Transition zone inclusive y_min / y_max boundary checks
+  auto hit_ymin = comic2::check_room_transition_zone(0, 0, 0, 0);
+  expect(hit_ymin.has_value() && hit_ymin->target_room == 1,
+         "transition zone hit at y_min (0, 0)");
+
+  auto hit_ymax = comic2::check_room_transition_zone(0, 0, 0, 16);
+  expect(hit_ymax.has_value() && hit_ymax->target_room == 1,
+         "transition zone hit at y_max (0, 16)");
+
+  auto miss_below_ymin = comic2::check_room_transition_zone(0, 0, 0, -1);
+  expect(!miss_below_ymin.has_value(),
+         "transition zone miss below y_min (0, -1)");
+
+  auto miss_above_ymax = comic2::check_room_transition_zone(0, 0, 0, 17);
+  expect(!miss_above_ymax.has_value(),
+         "transition zone miss above y_max (0, 17)");
+
+  auto miss_wrong_x = comic2::check_room_transition_zone(0, 0, 1, 10);
+  expect(!miss_wrong_x.has_value(), "transition zone miss wrong x (1, 10)");
+
   // Level 14 check
   const auto *lvl14 = comic2::get_level_runtime_data(14);
   expect(lvl14 != nullptr, "lvl14 data exists");
   expect(lvl14->room_count == 12, "lvl14 has 12 rooms");
+
+  // Out-of-range level checks
+  expect(comic2::get_level_runtime_data(15) == nullptr,
+         "get_level_runtime_data(15) must return nullptr");
+  expect(comic2::get_level_runtime_data(999) == nullptr,
+         "get_level_runtime_data(999) must return nullptr");
+
+  // Out-of-range level / room queries in check_room_transition_zone
+  expect(!comic2::check_room_transition_zone(15, 0, 0, 10).has_value(),
+         "transition zone query for out-of-range level 15 returns nullopt");
+  expect(!comic2::check_room_transition_zone(0, 8, 0, 10).has_value(),
+         "transition zone query for out-of-range room 8 returns nullopt");
 }
+
+} // namespace
 
 void run_entity_physics_tests() {
   test_decode_level_script();
@@ -178,5 +286,7 @@ void run_entity_physics_tests() {
   test_extracted_level_data();
   test_gravity_lands_and_snaps();
   test_move_x_bounces_off_wall();
+  test_ent_probe_x_viewport_edges();
   test_move_y_bounce_reflects_velocity();
+  test_move_y_threshold_range_fallback();
 }
