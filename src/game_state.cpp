@@ -1,10 +1,13 @@
 #include "comic2/game_state.hpp"
 
+#include "comic2/level_data.hpp"
+
 namespace comic2 {
 
 RuntimeState make_default_runtime_state() {
   RuntimeState state{};
 
+  state.level_data = get_level_runtime_data(0);
   state.player.x = 64;
   state.player.y = 96;
   state.player.is_physics_active = true;

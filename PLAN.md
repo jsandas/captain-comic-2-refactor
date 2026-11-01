@@ -1470,8 +1470,8 @@ Replace provisional entity stubs with exact bytecode execution of `FR###.3` room
 - [x] Implement tile-trigger range evaluator in `room_loader.cpp` (`parse_tile_trigger_range` / `evaluate_tile_trigger`). Asm tracing showed triggers are per-level tile-ID ranges (`load_room_effect_script_and_trigger_ranges`, `1000:1990`) feeding `ent_spawn_transient_slot`, not `(x1,y1,x2,y2)` zones; `FR###.3` is a u16 message-offset table (`ent_process_interaction_script_and_queue_message`). Gate 13-C should be reworded accordingly.
 
 - [x] Locate and extract per-level trigger, transition zone, and entity spawn tables (`unk_26688` descriptors, +2/+4/+6) from executable data into queryable static tables (`tools/extract_level_data.py`, `tools/generate_level_data_cpp.py`, `level_data.hpp`, `level_data.cpp`).
-- [ ] Wire extracted level data (triggers, transition zones, entity spawns) into `RuntimeState` and room transition/loading flow.
-- [ ] Port authentic entity physics helpers from `comic2_standalone.asm`:
+- [x] Wire extracted level data (triggers, transition zones, entity spawns) into `RuntimeState` and room transition/loading flow.
+- [x] Port authentic entity physics helpers from `comic2_standalone.asm`:
   - [x] `ent_move_x_and_bounce` (`1000:4a4e`)
   - [x] `ent_apply_gravity_and_move_y` (`1000:4a99`)
   - [x] `ent_move_y_and_bounce` (`1000:4b01`)
@@ -1482,7 +1482,7 @@ Replace provisional entity stubs with exact bytecode execution of `FR###.3` room
 ### Phase 13 Validation Gates
 - [ ] **Gate 13-A (Script Decode Parity)**: `FR004.3` XOR-0x25 decrypts to expected event trigger table matching reference bytes.
 - [ ] **Gate 13-B (Entity Movement Parity)**: Slimes and flying entities trace deterministic movement curves matching DOSBox recordings.
-- [ ] **Gate 13-C (Trigger Activation)**: Comic entering an event coordinate zone fires the associated script event.
+- [x] **Gate 13-C (Trigger Activation)**: Transition zone contact triggers room transition with exact target metadata, and tile trigger contact activates level script trigger events.
 
 ---
 

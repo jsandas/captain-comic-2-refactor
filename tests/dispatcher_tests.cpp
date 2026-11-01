@@ -1208,7 +1208,10 @@ void test_level_transition_loads_room_tilemap() {
   state.current_room = 0;
   state.flags.level_transition_pending = true;
   state.pending_room_transition =
-      comic2::PendingRoomTransition{.target_room = 0, .target_player_x = 0};
+      comic2::PendingRoomTransition{.target_room = 0,
+                                    .target_player_x = 0,
+                                    .target_level = std::nullopt,
+                                    .target_player_y = std::nullopt};
 
   std::vector<std::uint8_t> decoded_room_bytes(0x2C4, 0x00);
   decoded_room_bytes[0x2A0] = 0x00;
@@ -1356,7 +1359,10 @@ void test_level_transition_failure_preserves_prior_runtime_state() {
 
   state.flags.level_transition_pending = true;
   state.pending_room_transition =
-      comic2::PendingRoomTransition{.target_room = 3, .target_player_x = 0};
+      comic2::PendingRoomTransition{.target_room = 3,
+                                    .target_player_x = 0,
+                                    .target_level = std::nullopt,
+                                    .target_player_y = std::nullopt};
 
   const auto tick = dispatcher.run_tick(state);
   expect(tick.stage == comic2::DispatchStage::LevelTransition,
