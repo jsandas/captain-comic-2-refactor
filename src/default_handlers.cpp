@@ -117,7 +117,10 @@ void update_room_transition_from_player_bounds(RuntimeState &state) {
 
     state.pending_room_transition = PendingRoomTransition{
         .target_room = static_cast<std::uint16_t>(state.current_room - 1),
-        .target_player_x = static_cast<std::int16_t>(kViewportWidthPixels - 1)};
+        .target_player_x = static_cast<std::int16_t>(kViewportWidthPixels - 1),
+        .target_level = std::nullopt,
+        .target_player_y = std::nullopt,
+    };
     state.flags.level_transition_pending = true;
     return;
   }
@@ -125,7 +128,10 @@ void update_room_transition_from_player_bounds(RuntimeState &state) {
   if (state.player.x >= kViewportWidthPixels) {
     state.pending_room_transition = PendingRoomTransition{
         .target_room = static_cast<std::uint16_t>(state.current_room + 1),
-        .target_player_x = 0};
+        .target_player_x = 0,
+        .target_level = std::nullopt,
+        .target_player_y = std::nullopt,
+    };
     state.flags.level_transition_pending = true;
   }
 }

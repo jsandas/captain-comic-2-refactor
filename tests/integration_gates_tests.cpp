@@ -551,6 +551,8 @@ void test_gate_phase_93_transition_flow_freezes_player_and_tracks_camera() {
   state.pending_room_transition = comic2::PendingRoomTransition{
       .target_room = 1,
       .target_player_x = 0,
+      .target_level = std::nullopt,
+      .target_player_y = std::nullopt,
   };
   state.flags.level_transition_pending = true;
   state.player.x = 64;
@@ -1094,7 +1096,10 @@ void test_gate_11f_room_transition_reloads_geometry_and_entity_slots() {
   state.active_entities.assign(2U, comic2::ActiveEntity8{});
   state.flags.level_transition_pending = true;
   state.pending_room_transition =
-      comic2::PendingRoomTransition{.target_room = 1U, .target_player_x = 0};
+      comic2::PendingRoomTransition{.target_room = 1U,
+                                    .target_player_x = 0,
+                                    .target_level = std::nullopt,
+                                    .target_player_y = std::nullopt};
 
   auto dispatcher = comic2::make_default_game_dispatcher();
   const auto tick = dispatcher.run_tick(state);
