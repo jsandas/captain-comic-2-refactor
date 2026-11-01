@@ -1228,6 +1228,171 @@ void test_gate_12c_null_audio_backend_stays_headless() {
          "Gate 12-C: null backend should stay unavailable after shutdown");
 }
 
+void test_gate_13b_entity_movement_parity() {
+  comic2::RoomTileGrid grid;
+  grid.tile_w = 16;
+  grid.tile_h = 8;
+  for (int r = 0; r < 8; ++r) {
+    grid.row_pointers.push_back(static_cast<std::uint16_t>(r * 16));
+  }
+  grid.tile_data.assign(16 * 8, 0xFF);
+  for (int x = 0; x < 16; ++x) {
+    grid.tile_data[5 * 16 + x] = 0x01; // solid floor on row 5 (y = 80..95)
+  }
+  grid.tile_data[3 * 16 + 8] =
+      0x01; // solid wall block at col 8, row 3 (x = 128..143, y = 48..63)
+
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  state.room_grid = grid;
+  state.tile_hazard_bounds = {1, 1};
+  state.camera_x = 0;
+  state.camera_y = 0;
+  state.player.x = 200;
+  state.player.y = 48;
+  state.player.is_airborne = false;
+  state.player.is_physics_active = true;
+
+  // 1. Slime Hopper Parabolic Arc & Floor Landing Snap:
+  // Entity resting on floor (row 5 starts at y = 80, so foot = 64 + 16 = 80).
+  state.runtime_slots.resize(1);
+  state.runtime_slots[0] = comic2::RuntimeEntitySlot32{
+      .hitbox_w = 16,
+      .hitbox_h = 16,
+      .type_flags = 2,
+      .behavior_state = comic2::kBehaviorJump,
+      .anim_span = 0,
+      .anim_period = 0,
+      .unknown_0c = 0,
+      .unknown_0e = 0,
+      .x = 32,
+      .y = 64,
+      .param_a = 2,
+      .param_b = 0,
+      .dir_toggle = 1,
+      .anim_tick = 0,
+      .unknown_1c = 0,
+      .mapped_object_ptr = 1,
+  };
+
+  // Initial contact on ground triggers jump impulse.
+  comic2::update_entity_behaviors(state);
+  expect(state.runtime_slots[0].y == 64 && state.runtime_slots[0].param_b == -6,
+         "Gate 13-B: Slime ground collision triggers jump impulse");
+
+  const struct ExpectedStep {
+    std::int16_t x;
+    std::int16_t y;
+    std::int16_t param_b;
+  } expected_trajectory[] = {
+      {36, 59, -5}, {38, 55, -4}, {40, 52, -3}, {42, 50, -2},
+      {44, 49, -1}, {46, 49, 0},  {48, 50, 1},  {50, 52, 2},
+      {52, 55, 3},  {54, 59, 4},  {56, 64, -6},
+  };
+
+  for (std::size_t i = 0; i < 11; ++i) {
+    comic2::update_entity_behaviors(state);
+    const auto &slot = state.runtime_slots[0];
+    expect(slot.x == expected_trajectory[i].x,
+           "Gate 13-B: Slime hop x coordinate mismatch");
+    expect(slot.y == expected_trajectory[i].y,
+           "Gate 13-B: Slime hop y coordinate mismatch");
+    expect(slot.param_b == expected_trajectory[i].param_b,
+           "Gate 13-B: Slime hop vertical velocity mismatch");
+  }
+
+  // 2. Wall Collision and Direction Reflection:
+  // Entity approaching wall block at x = 128..143 (row 3, col 8).
+  state.runtime_slots[0] = comic2::RuntimeEntitySlot32{
+      .hitbox_w = 16,
+      .hitbox_h = 16,
+      .type_flags = 1,
+      .behavior_state = comic2::kBehaviorChase,
+      .anim_span = 0,
+      .anim_period = 0,
+      .unknown_0c = 0,
+      .unknown_0e = 0,
+      .x = 108,
+      .y = 48,
+      .param_a = 4,
+      .param_b = 0,
+      .dir_toggle = 1, // moving right toward wall
+      .anim_tick = 0,
+      .unknown_1c = 0,
+      .mapped_object_ptr = 1,
+  };
+
+  bool wall_bounced = false;
+  for (int step = 0; step < 10; ++step) {
+    comic2::update_entity_behaviors(state);
+    if (state.runtime_slots[0].dir_toggle == 2) {
+      wall_bounced = true;
+      break;
+    }
+  }
+  expect(wall_bounced, "Gate 13-B: entity should bounce on wall collision");
+  expect(state.runtime_slots[0].dir_toggle == 2,
+         "Gate 13-B: wall bounce should invert dir_toggle to left");
+  expect(state.runtime_slots[0].param_a < 0,
+         "Gate 13-B: wall bounce should negate horizontal velocity");
+
+  const auto x_before_retreat = state.runtime_slots[0].x;
+  comic2::update_entity_behaviors(state);
+  expect(state.runtime_slots[0].x < x_before_retreat,
+         "Gate 13-B: entity should retreat leftward away from wall");
+
+  // 3. Flyer / Bat Vertical Oscillation & Viewport/Tile Boundary Reflection:
+  state.runtime_slots[0] = comic2::RuntimeEntitySlot32{
+      .hitbox_w = 16,
+      .hitbox_h = 16,
+      .type_flags = 4,
+      .behavior_state = comic2::kBehaviorBounce,
+      .anim_span = 0,
+      .anim_period = 0,
+      .unknown_0c = 0,
+      .unknown_0e = 0,
+      .x = 60,
+      .y = 48,
+      .param_a = 0,
+      .param_b = 4, // descending
+      .dir_toggle = 1,
+      .anim_tick = 0,
+      .unknown_1c = 0,
+      .mapped_object_ptr = 1,
+  };
+
+  comic2::update_entity_behaviors(state);
+  expect(state.runtime_slots[0].x == 60 && state.runtime_slots[0].y == 52,
+         "Gate 13-B: flyer descends at step 1");
+  comic2::update_entity_behaviors(state);
+  expect(state.runtime_slots[0].x == 60 && state.runtime_slots[0].y == 56,
+         "Gate 13-B: flyer descends at step 2");
+  comic2::update_entity_behaviors(state);
+  expect(state.runtime_slots[0].x == 60 && state.runtime_slots[0].y == 60,
+         "Gate 13-B: flyer descends at step 3");
+  comic2::update_entity_behaviors(state);
+  expect(state.runtime_slots[0].x == 60 && state.runtime_slots[0].y == 64 &&
+             state.runtime_slots[0].param_b == -4,
+         "Gate 13-B: flyer reflects on floor collision and negates vy to -4");
+  comic2::update_entity_behaviors(state);
+  expect(state.runtime_slots[0].x == 60 && state.runtime_slots[0].y == 60 &&
+             state.runtime_slots[0].param_b == -4,
+         "Gate 13-B: flyer ascends upward after floor reflection");
+
+  // 4. Dispatcher Pipeline Stage Integration:
+  comic2::GameDispatcher dispatcher;
+  comic2::install_default_stage_hooks(dispatcher);
+  state.player.x = 200;
+  state.player.y = 48;
+  state.player.is_physics_active = true;
+  state.player.is_airborne = false;
+  const auto tick = dispatcher.run_tick(state);
+  expect(tick.stage == comic2::DispatchStage::GroundedPhysics,
+         "Gate 13-B: dispatcher should run grounded physics stage");
+  expect(state.runtime_slots[0].y == 56,
+         "Gate 13-B: dispatcher grounded physics stage should tick entity "
+         "behaviors");
+}
+
 void test_gate_13c_trigger_activation() {
   // 1. Transition zone contact triggers room transition with exact target
   // metadata
@@ -1363,6 +1528,7 @@ void run_integration_gate_tests() {
   test_gate_12b2_sound_driver_tick_and_synthesizer();
   test_gate_12c_null_audio_backend_stays_headless();
 
-  // Gate 13-C: Trigger activation and room transition zones.
+  // Gate 13-B/C: Entity movement parity and trigger activation.
+  test_gate_13b_entity_movement_parity();
   test_gate_13c_trigger_activation();
 }

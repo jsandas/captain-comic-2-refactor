@@ -1476,12 +1476,12 @@ Replace provisional entity stubs with exact bytecode execution of `FR###.3` room
   - [x] `ent_apply_gravity_and_move_y` (`1000:4a99`)
   - [x] `ent_move_y_and_bounce` (`1000:4b01`)
   - [x] `ent_probe_x_collision_strict` (`1000:4bf7`)
-- [ ] Wire entity physics helpers (`ent_move_x_and_bounce`, `ent_apply_gravity_and_move_y`, `ent_move_y_and_bounce`, `ent_probe_x_collision_strict`) into active entity behavior dispatch (`ent_update_object_behaviors` in `src/entity_runtime.cpp`) for Slimes (types 0-3), Flyers/hoverers (types 4-7), and transient entity slots.
+- [x] Wire entity physics helpers (`ent_move_x_and_bounce`, `ent_apply_gravity_and_move_y`, `ent_move_y_and_bounce`, `ent_probe_x_collision_strict`) into active entity behavior dispatch (`ent_update_object_behaviors` in `src/entity_runtime.cpp`) for Slimes (types 0-3), Flyers/hoverers (types 4-7), and transient entity slots.
 - [ ] Wire entity damage reactions, projectile collision hitboxes, and item drop spawning.
 
 ### Phase 13 Validation Gates
 - [ ] **Gate 13-A (Script Decode Parity)**: `FR004.3` XOR-0x25 decrypts to expected event trigger table matching reference bytes.
-- [ ] **Gate 13-B (Entity Movement Parity)**: Slimes and flying entities trace deterministic movement curves matching DOSBox recordings.
+- [x] **Gate 13-B (Entity Movement Parity)**: Slimes and flying entities trace deterministic movement curves matching DOSBox recordings.
 - [x] **Gate 13-C (Trigger Activation)**: Transition zone contact triggers room transition with exact target metadata, and tile trigger contact activates level script trigger events.
 
 ---
