@@ -18,6 +18,7 @@ extern void run_bootstrap_wiring_tests();
 extern void run_audio_backend_tests();
 extern void run_dispatcher_tests();
 extern void run_entity_runtime_tests();
+extern void run_entity_physics_tests();
 extern void run_integration_gate_tests();
 extern void run_oracle_test_suite();
 extern void run_end_to_end_test_suite();
@@ -245,6 +246,7 @@ int main() {
     run_bootstrap_wiring_tests();
     run_dispatcher_tests();
     run_entity_runtime_tests();
+    run_entity_physics_tests();
     run_integration_gate_tests();
     run_oracle_test_suite();
     run_end_to_end_test_suite();
