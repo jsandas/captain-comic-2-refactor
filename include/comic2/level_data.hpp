@@ -2,11 +2,9 @@
 
 #include <cstdint>
 #include <optional>
-#include <span>
 #include <vector>
 
 #include "comic2/room_loader.hpp"
-#include "comic2/types.hpp"
 
 namespace comic2 {
 

@@ -1476,6 +1476,7 @@ Replace provisional entity stubs with exact bytecode execution of `FR###.3` room
   - [x] `ent_apply_gravity_and_move_y` (`1000:4a99`)
   - [x] `ent_move_y_and_bounce` (`1000:4b01`)
   - [x] `ent_probe_x_collision_strict` (`1000:4bf7`)
+- [ ] Wire entity physics helpers (`ent_move_x_and_bounce`, `ent_apply_gravity_and_move_y`, `ent_move_y_and_bounce`, `ent_probe_x_collision_strict`) into active entity behavior dispatch (`ent_update_object_behaviors` in `src/entity_runtime.cpp`) for Slimes (types 0-3), Flyers/hoverers (types 4-7), and transient entity slots.
 - [ ] Wire entity damage reactions, projectile collision hitboxes, and item drop spawning.
 
 ### Phase 13 Validation Gates

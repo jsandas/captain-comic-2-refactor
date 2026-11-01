@@ -43,20 +43,20 @@ add_library(comic2_core
     src/default_handlers.cpp
     src/dispatcher.cpp
     src/entity_physics.cpp
-    src/level_data.cpp
     src/entity_runtime.cpp
     src/game_state.cpp
     src/input_handler.cpp
+    src/level_data.cpp
+    src/oracle.cpp
+    src/persistence.cpp
     src/player_controller.cpp
     src/projectiles.cpp
-    src/persistence.cpp
     src/renderer.cpp
-    src/ui.cpp
-    src/oracle.cpp
     src/renderer_validation.cpp
-    src/room_loader.cpp
     src/resource_loader.cpp
+    src/room_loader.cpp
     src/tile_collision.cpp
+    src/ui.cpp
 )
 
 target_include_directories(comic2_core
@@ -89,18 +89,18 @@ add_executable(comic2_unit_tests
     tests/audio_backend_tests.cpp
     tests/bootstrap_wiring_tests.cpp
     tests/dispatcher_tests.cpp
+    tests/end_to_end_tests.cpp
     tests/entity_physics_tests.cpp
     tests/entity_runtime_tests.cpp
     tests/integration_gates_tests.cpp
     tests/oracle_tests.cpp
-    tests/end_to_end_tests.cpp
+    tests/persistence_tests.cpp
     tests/player_controller_tests.cpp
     tests/renderer_tests.cpp
-    tests/persistence_tests.cpp
     tests/renderer_validation_tests.cpp
     tests/subsystem_scaffold_tests.cpp
-    tests/ui_tests.cpp
     tests/tile_collision_tests.cpp
+    tests/ui_tests.cpp
     tests/unit_tests_main.cpp
 )
 
