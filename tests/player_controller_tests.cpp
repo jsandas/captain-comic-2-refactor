@@ -1,6 +1,7 @@
 #include <stdexcept>
 
 #include "comic2/player_controller.hpp"
+#include "comic2/projectiles.hpp"
 
 namespace {
 
@@ -538,6 +539,77 @@ void test_max_air_drift_enforcement_and_accumulation() {
   }
 }
 
+void test_firepower_cooldown_and_projectile_spawning() {
+  comic2::RuntimeState state;
+  state.player.x = 100;
+  state.player.y = 80;
+  state.player.facing_right = true;
+  state.player.firepower = 1;
+  state.player.weapon_cooldown = 0;
+
+  // 1. Initial fire when cooldown is 0
+  const bool fired1 = comic2::try_player_fire_projectile(state);
+  expect(fired1,
+         "player should successfully fire with cooldown=0 and firepower=1");
+  expect(state.projectiles.size() == 1, "projectile should be spawned");
+  expect(state.projectiles[0].active, "spawned projectile should be active");
+  expect(state.player.weapon_cooldown == comic2::kDefaultWeaponCooldownTicks,
+         "firing should set weapon cooldown to 20 ticks");
+  expect(state.player.is_attack_active, "firing should activate attack flag");
+
+  // 2. Immediate second fire is blocked by weapon cooldown
+  const bool fired_blocked = comic2::try_player_fire_projectile(state);
+  expect(!fired_blocked, "firing should be rejected while cooldown is active");
+  expect(state.projectiles.size() == 1,
+         "no additional projectile should be spawned");
+
+  // 3. Elapse cooldown: advance projectiles ticks cooldown
+  const comic2::ProjectileBounds bounds{
+      .min_x = 0, .max_x = 1000, .min_y = -1000, .max_y = 1000};
+  for (int i = 0; i < comic2::kDefaultWeaponCooldownTicks; ++i) {
+    expect(state.player.weapon_cooldown ==
+               comic2::kDefaultWeaponCooldownTicks - i,
+           "cooldown should decrement each tick");
+    comic2::advance_runtime_projectiles(state, bounds, 0, -1000, 1000, 2000);
+  }
+  expect(state.player.weapon_cooldown == 0, "cooldown should reach 0");
+
+  // 4. Cooldown expired, but active projectile count (1) equals firepower (1)
+  // -> blocked
+  const bool fired_concurrency_blocked =
+      comic2::try_player_fire_projectile(state);
+  expect(!fired_concurrency_blocked,
+         "firing should be blocked when active projectile count equals "
+         "firepower level");
+
+  // 5. Upgrade to firepower level 2: allows a second concurrent projectile
+  state.player.firepower = 2;
+  const bool fired2 = comic2::try_player_fire_projectile(state);
+  expect(fired2,
+         "upgrading firepower to 2 should permit second concurrent shot");
+  expect(state.projectiles.size() == 2, "second projectile should be spawned");
+
+  // 6. Upgrading to max firepower (5) allows up to 5 concurrent projectiles
+  state.player.firepower = 5;
+  for (int shot = 3; shot <= 5; ++shot) {
+    state.player.weapon_cooldown = 0;
+    const bool fired = comic2::try_player_fire_projectile(state);
+    expect(fired, "firing should succeed up to firepower limit 5");
+  }
+  expect(state.projectiles.size() == 5, "should have 5 active projectiles");
+
+  state.player.weapon_cooldown = 0;
+  const bool fired_at_cap = comic2::try_player_fire_projectile(state);
+  expect(!fired_at_cap,
+         "firing should be blocked when at max firepower concurrency (5)");
+
+  // 7. Firepower = 0 cannot shoot
+  state.player.firepower = 0;
+  state.player.weapon_cooldown = 0;
+  expect(!comic2::try_player_fire_projectile(state),
+         "player with firepower 0 cannot shoot");
+}
+
 } // namespace
 
 void run_player_controller_tests() {
@@ -558,4 +630,5 @@ void run_player_controller_tests() {
   test_verified_dos_feet_probe_tile_collision();
   test_confirmed_inventory_fields_and_boots_effect();
   test_max_air_drift_enforcement_and_accumulation();
+  test_firepower_cooldown_and_projectile_spawning();
 }

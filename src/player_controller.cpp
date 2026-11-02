@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "comic2/audio.hpp"
+#include "comic2/projectiles.hpp"
 
 namespace comic2 {
 
@@ -121,6 +122,10 @@ void apply_input_tick(RuntimeState &state, const PlayerMotionConfig &motion) {
     if (!was_airborne) {
       queue_audio_event(state, AudioEvent::Jump);
     }
+  }
+
+  if (state.input.fire_pressed) {
+    try_player_fire_projectile(state);
   }
 }
 

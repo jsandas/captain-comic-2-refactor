@@ -1,10 +1,43 @@
 #include "comic2/projectiles.hpp"
 
+#include <algorithm>
+
 #include "comic2/audio.hpp"
 #include "comic2/game_state.hpp"
 #include "comic2/tile_collision.hpp"
 
 namespace comic2 {
+
+bool try_player_fire_projectile(RuntimeState &state) {
+  if (state.player.weapon_cooldown > 0 || state.player.firepower == 0) {
+    return false;
+  }
+
+  const std::size_t active_count = static_cast<std::size_t>(
+      std::count_if(state.projectiles.begin(), state.projectiles.end(),
+                    [](const ProjectileState &p) { return p.active; }));
+
+  if (active_count >=
+      std::min<std::uint8_t>(state.player.firepower, kMaxFirepowerLevel)) {
+    return false;
+  }
+
+  const ProjectileSpawnParams params{
+      .x = state.player.x,
+      .y = state.player.y,
+      .x_vel = 0,
+      .y_vel = 0,
+      .firepower = state.player.firepower,
+      .facing_right = state.player.facing_right,
+      .is_airborne = state.player.is_airborne,
+  };
+
+  spawn_player_projectile(state.projectiles, params, &state);
+  state.player.weapon_cooldown = kDefaultWeaponCooldownTicks;
+  state.player.is_attack_active = true;
+  state.player.attack_overlay_ticks = 2;
+  return true;
+}
 
 void spawn_projectile(std::vector<ProjectileState> &projectiles, std::int16_t x,
                       std::int16_t y, std::int16_t x_vel, std::int16_t y_vel) {
@@ -99,6 +132,12 @@ void advance_runtime_projectiles(RuntimeState &state,
                                  std::int16_t viewport_min_y,
                                  std::int16_t viewport_width_pixels,
                                  std::int16_t viewport_height_pixels) {
+  if (state.player.weapon_cooldown > 0) {
+    --state.player.weapon_cooldown;
+  }
+  if (state.input.fire_pressed) {
+    try_player_fire_projectile(state);
+  }
   update_projectiles(state.projectiles, bounds, state.room_grid, viewport_min_x,
                      viewport_min_y, viewport_width_pixels,
                      viewport_height_pixels);

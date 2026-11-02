@@ -7,6 +7,7 @@
 #include "comic2/audio.hpp"
 #include "comic2/level_data.hpp"
 #include "comic2/player_controller.hpp"
+#include "comic2/projectiles.hpp"
 #include "comic2/renderer.hpp"
 #include "comic2/resource_loader.hpp"
 #include "comic2/room_loader.hpp"

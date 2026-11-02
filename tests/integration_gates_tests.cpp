@@ -17,6 +17,7 @@
 #include "comic2/entity_runtime.hpp"
 #include "comic2/level_data.hpp"
 #include "comic2/oracle.hpp"
+#include "comic2/player_controller.hpp"
 #include "comic2/projectiles.hpp"
 #include "comic2/renderer.hpp"
 #include "comic2/renderer_validation.hpp"
@@ -1601,6 +1602,218 @@ void test_gate_13a_script_decode_parity() {
   }
 }
 
+void test_gate_14a_boots_trajectory_and_firepower() {
+  // Gate 14-A: High-jump gravity boots trajectory parity and firepower
+  // progression (comic2_data.asm DS:0x08ae, DS:0x08ac, DS:0x08a8).
+
+  // 1. Jump Trajectory Verification (Unequipped vs High-Jump Gravity Boots)
+  // Base DOS motion: 5 jump ticks capacity, jump impulse -7, gravity +5.
+  // Equipped boots: boosts jump capacity to 6 ticks, jump impulse -7.
+  const comic2::PlayerMotionConfig dos_motion =
+      comic2::make_original_dos_motion_config();
+  const comic2::TileCollisionConfig collision{.solid_tile_threshold = 2};
+
+  // Construct a room grid with solid floor at row 10 (y=160)
+  comic2::RoomTileGrid arena_grid;
+  arena_grid.tile_w = 20;
+  arena_grid.tile_h = 12;
+  arena_grid.row_pointers.resize(12);
+  arena_grid.tile_data.assign(240, 0x00);
+  for (std::size_t r = 0; r < 12; ++r) {
+    arena_grid.row_pointers[r] = static_cast<std::uint16_t>(r * 20);
+  }
+  for (std::size_t c = 0; c < 20; ++c) {
+    arena_grid.tile_data[10 * 20 + c] = 0x02; // solid floor tile
+  }
+
+  // 1A. Baseline jump (boots unequipped):
+  comic2::RuntimeState baseline_state = comic2::make_default_runtime_state();
+  baseline_state.room_grid = arena_grid;
+  baseline_state.player.x = 64;
+  baseline_state.player.y = 128; // resting on floor row 10 (128 + 32 = 160)
+  baseline_state.player.boots_equipped = false;
+  baseline_state.player.is_airborne = false;
+  baseline_state.input.jump_pressed = false;
+
+  // Replenish on ground: jump_counter_max is 5
+  comic2::apply_grounded_physics_tick(baseline_state, dos_motion, collision);
+  expect(baseline_state.player.jump_counter == 5,
+         "Gate 14-A: unequipped jump counter must replenish to 5 ticks");
+  expect(baseline_state.player.jump_counter_max == 5,
+         "Gate 14-A: unequipped jump_counter_max must equal 5");
+
+  // Initiate jump with jump_pressed held
+  baseline_state.input.jump_pressed = true;
+  comic2::apply_grounded_physics_tick(baseline_state, dos_motion, collision);
+  expect(baseline_state.player.jump_counter == 4,
+         "Gate 14-A: baseline jump tick 1 consumes 1 tick (4 remaining)");
+
+  // Advance airborne ticks while jump is held until peak height is reached
+  std::int16_t baseline_peak_y = baseline_state.player.y;
+  int baseline_rise_ticks = 1;
+  while (baseline_state.player.y_vel < 0) {
+    comic2::apply_airborne_physics_tick(baseline_state, dos_motion, collision);
+    if (baseline_state.player.y < baseline_peak_y) {
+      baseline_peak_y = baseline_state.player.y;
+      ++baseline_rise_ticks;
+    }
+  }
+
+  // 1B. Boots equipped jump:
+  comic2::RuntimeState boots_state = comic2::make_default_runtime_state();
+  boots_state.room_grid = arena_grid;
+  boots_state.player.x = 64;
+  boots_state.player.y = 128; // resting on floor row 10
+  boots_state.player.boots_equipped = true;
+  boots_state.player.is_airborne = false;
+  boots_state.input.jump_pressed = false;
+
+  // Replenish on ground with boots: jump_counter_max boosts to 6
+  comic2::apply_grounded_physics_tick(boots_state, dos_motion, collision);
+  expect(boots_state.player.jump_counter == 6,
+         "Gate 14-A: boots equipped jump counter must replenish to 6 ticks");
+  expect(boots_state.player.jump_counter_max == 6,
+         "Gate 14-A: boots equipped jump_counter_max must equal 6");
+
+  // Initiate jump with jump_pressed held
+  boots_state.input.jump_pressed = true;
+  comic2::apply_grounded_physics_tick(boots_state, dos_motion, collision);
+  expect(boots_state.player.jump_counter == 5,
+         "Gate 14-A: boots jump tick 1 consumes 1 tick (5 remaining)");
+
+  std::int16_t boots_peak_y = boots_state.player.y;
+  int boots_rise_ticks = 1;
+  while (boots_state.player.y_vel < 0) {
+    comic2::apply_airborne_physics_tick(boots_state, dos_motion, collision);
+    if (boots_state.player.y < boots_peak_y) {
+      boots_peak_y = boots_state.player.y;
+      ++boots_rise_ticks;
+    }
+  }
+
+  // Continue falling until landing on ground
+  boots_state.input.jump_pressed = false;
+  while (boots_state.player.is_airborne) {
+    comic2::apply_airborne_physics_tick(boots_state, dos_motion, collision);
+  }
+  expect(!boots_state.player.is_airborne,
+         "Gate 14-A: boots jump must land on ground");
+  expect(boots_state.player.jump_counter == 6,
+         "Gate 14-A: landing on ground with boots must replenish jump counter "
+         "to 6");
+
+  // Verify boots trajectory superiority:
+  // Boots jump must achieve higher apex (smaller y coordinate in screen space)
+  expect(boots_peak_y < baseline_peak_y,
+         "Gate 14-A: boots jump must achieve strictly higher peak height than "
+         "baseline jump");
+  // Boots rise duration must exceed baseline rise duration by exactly 1 tick
+  expect(boots_rise_ticks == baseline_rise_ticks + 1,
+         "Gate 14-A: boots jump rise duration must exceed baseline rise "
+         "duration by 1 tick");
+
+  // 1C. Variable jump height (short hop) with boots equipped:
+  comic2::RuntimeState shorthop_state = comic2::make_default_runtime_state();
+  shorthop_state.room_grid = arena_grid;
+  shorthop_state.player.x = 64;
+  shorthop_state.player.y = 128;
+  shorthop_state.player.boots_equipped = true;
+  shorthop_state.input.jump_pressed = false;
+  comic2::apply_grounded_physics_tick(shorthop_state, dos_motion, collision);
+
+  // Jump for 2 ticks then release
+  shorthop_state.input.jump_pressed = true;
+  comic2::apply_grounded_physics_tick(shorthop_state, dos_motion, collision);
+  comic2::apply_airborne_physics_tick(shorthop_state, dos_motion, collision);
+  expect(shorthop_state.player.jump_counter == 4,
+         "Gate 14-A: shorthop should consume 2 ticks with 4 remaining");
+
+  // Release jump button early
+  shorthop_state.input.jump_pressed = false;
+  comic2::apply_airborne_physics_tick(shorthop_state, dos_motion, collision);
+  expect(shorthop_state.player.jump_counter == 0,
+         "Gate 14-A: releasing jump early must immediately truncate jump "
+         "counter to 0");
+
+  std::int16_t shorthop_peak_y = shorthop_state.player.y;
+  while (shorthop_state.player.y_vel < 0) {
+    comic2::apply_airborne_physics_tick(shorthop_state, dos_motion, collision);
+    if (shorthop_state.player.y < shorthop_peak_y) {
+      shorthop_peak_y = shorthop_state.player.y;
+    }
+  }
+  expect(shorthop_peak_y > boots_peak_y,
+         "Gate 14-A: shorthop must reach lower peak height than full boots "
+         "jump");
+
+  // 2. Firepower Progression (Levels 1-5) and Rate Limiter Cooldown (DS:0x08a8,
+  // DS:0x08ac)
+  comic2::RuntimeState fire_state = comic2::make_default_runtime_state();
+  fire_state.player.x = 50;
+  fire_state.player.y = 50;
+  fire_state.player.firepower = 1;
+  fire_state.player.weapon_cooldown = 0;
+  const comic2::ProjectileBounds wide_bounds{
+      .min_x = 0, .max_x = 1000, .min_y = -1000, .max_y = 1000};
+
+  // 2A. Level 1: single projectile limit
+  fire_state.input.fire_pressed = true;
+  const bool p1_fired = comic2::try_player_fire_projectile(fire_state);
+  expect(p1_fired, "Gate 14-A: Level 1 initial projectile fire must succeed");
+  expect(fire_state.player.weapon_cooldown ==
+             comic2::kDefaultWeaponCooldownTicks,
+         "Gate 14-A: firing must engage 20-tick weapon cooldown");
+  expect(fire_state.projectiles.size() == 1,
+         "Gate 14-A: exactly 1 projectile should be spawned");
+  expect(fire_state.projectiles[0].active,
+         "Gate 14-A: spawned projectile must be active");
+
+  // 2B. Cooldown blocking: immediate shot is rejected
+  expect(!comic2::try_player_fire_projectile(fire_state),
+         "Gate 14-A: shot during active cooldown must be rejected");
+
+  // Release fire button and elapse cooldown
+  fire_state.input.fire_pressed = false;
+  for (std::uint8_t cd = comic2::kDefaultWeaponCooldownTicks; cd > 0; --cd) {
+    expect(fire_state.player.weapon_cooldown == cd,
+           "Gate 14-A: cooldown must decrement each advance");
+    comic2::advance_runtime_projectiles(fire_state, wide_bounds, 0, -1000, 1000,
+                                        2000);
+  }
+  expect(fire_state.player.weapon_cooldown == 0,
+         "Gate 14-A: cooldown must expire to 0");
+
+  // Level 1 active projectile concurrency limit: projectile 0 is still active
+  expect(!comic2::try_player_fire_projectile(fire_state),
+         "Gate 14-A: second shot blocked when active projectiles equal Level 1 "
+         "firepower");
+
+  // 2C. Level 2 upgrade allows 2 concurrent projectiles
+  fire_state.player.firepower = 2;
+  const bool p2_fired = comic2::try_player_fire_projectile(fire_state);
+  expect(p2_fired,
+         "Gate 14-A: upgrading to Level 2 firepower allows second concurrent "
+         "shot");
+  expect(fire_state.projectiles.size() == 2,
+         "Gate 14-A: 2 projectiles now active in flight");
+
+  // 2D. Level 5 upgrade allows up to 5 concurrent projectiles
+  fire_state.player.firepower = 5;
+  for (int p = 3; p <= 5; ++p) {
+    fire_state.player.weapon_cooldown = 0;
+    const bool p_fired = comic2::try_player_fire_projectile(fire_state);
+    expect(p_fired,
+           "Gate 14-A: Level 5 firepower allows concurrent shots up to 5");
+  }
+  expect(fire_state.projectiles.size() == 5,
+         "Gate 14-A: 5 projectiles simultaneously active in flight");
+
+  // Sixth shot blocked at concurrency cap
+  fire_state.player.weapon_cooldown = 0;
+  expect(!comic2::try_player_fire_projectile(fire_state),
+         "Gate 14-A: sixth shot blocked at Level 5 firepower concurrency cap");
+}
+
 } // namespace
 
 void run_integration_gate_tests() {
@@ -1648,4 +1861,7 @@ void run_integration_gate_tests() {
   test_gate_13a_script_decode_parity();
   test_gate_13b_entity_movement_parity();
   test_gate_13c_trigger_activation();
+
+  // Gate 14-A: High-jump boots trajectory parity and firepower progression.
+  test_gate_14a_boots_trajectory_and_firepower();
 }
