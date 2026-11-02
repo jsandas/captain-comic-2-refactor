@@ -30,6 +30,7 @@ struct InputState {
   bool left_pressed = false;
   bool right_pressed = false;
   bool down_pressed = false;
+  bool fire_pressed = false;
   bool mode_activate_pressed = false;
   bool pause_pressed = false;
 

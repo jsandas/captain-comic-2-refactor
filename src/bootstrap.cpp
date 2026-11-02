@@ -838,6 +838,7 @@ bool poll_bootstrap_input(RuntimeState &state) {
     state.input.left_pressed = read_bootstrap_bool_env("COMIC2_INPUT_LEFT");
     state.input.right_pressed = read_bootstrap_bool_env("COMIC2_INPUT_RIGHT");
     state.input.down_pressed = read_bootstrap_bool_env("COMIC2_INPUT_DOWN");
+    state.input.fire_pressed = read_bootstrap_bool_env("COMIC2_INPUT_FIRE");
     return !read_bootstrap_bool_env("COMIC2_INPUT_QUIT");
   }
 }

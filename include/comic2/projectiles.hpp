@@ -37,6 +37,17 @@ struct ProjectileSpawnParams {
   bool is_airborne = false;
 };
 
+// Default weapon cooldown in ticks between shots (matching DOS 0x14 / 20 ticks)
+inline constexpr std::uint8_t kDefaultWeaponCooldownTicks = 20;
+
+// Maximum firepower progression level (Levels 1-5, DS:0x08ac)
+inline constexpr std::uint8_t kMaxFirepowerLevel = 5;
+
+// Attempts to fire a player projectile if cooldown is 0, firepower > 0,
+// and current active projectiles < firepower. Returns true if projectile
+// spawned.
+bool try_player_fire_projectile(RuntimeState &state);
+
 void spawn_projectile(std::vector<ProjectileState> &projectiles, std::int16_t x,
                       std::int16_t y, std::int16_t x_vel, std::int16_t y_vel);
 
