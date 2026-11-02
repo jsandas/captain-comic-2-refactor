@@ -505,6 +505,19 @@ decode_level_script(std::span<const std::uint8_t> payload) {
   return out;
 }
 
+std::optional<std::vector<std::uint8_t>>
+decode_level_script_payload(std::span<const std::uint8_t> payload) {
+  if (payload.empty() || payload.size() > kLevelScriptBlockSize) {
+    return std::nullopt;
+  }
+  if (payload.size() == kLevelScriptBlockSize) {
+    return decode_level_script(payload);
+  }
+  std::vector<std::uint8_t> block(kLevelScriptBlockSize, kLevelScriptXorKey);
+  std::copy(payload.begin(), payload.end(), block.begin());
+  return decode_level_script(block);
+}
+
 std::optional<std::uint16_t>
 level_script_offset(std::span<const std::uint8_t> decoded, std::size_t index) {
   const std::size_t at = index * 2;

@@ -62,6 +62,13 @@ inline constexpr std::uint8_t kLevelScriptXorKey = 0x25;
 std::optional<std::vector<std::uint8_t>>
 decode_level_script(std::span<const std::uint8_t> payload);
 
+// Prepares a 0x0C00 (3072 byte) block from script file bytes (matching DOS
+// io_read_xor25_block_9ec0), padding unread bytes with 0x25 (so decrypted tail
+// is zeroed), and applies XOR-0x25 decoding. Returns std::nullopt if payload is
+// empty or exceeds kLevelScriptBlockSize.
+std::optional<std::vector<std::uint8_t>>
+decode_level_script_payload(std::span<const std::uint8_t> payload);
+
 // Script block starts with u16 offsets (relative to block start), indexed
 // by message id (see ent_process_interaction_script_and_queue_message).
 std::optional<std::uint16_t>

@@ -303,7 +303,140 @@ void update_entity_behaviors(RuntimeState &state) {
   }
 }
 
+bool collides_with_projectile(const RuntimeEntitySlot32 &slot,
+                              const ProjectileState &projectile) {
+  if (!projectile.active || !is_runtime_slot_active(slot)) {
+    return false;
+  }
+  const std::int16_t proj_left = projectile.x - 4;
+  const std::int16_t proj_right = projectile.x + 12;
+  const std::int16_t proj_top = projectile.y;
+  const std::int16_t proj_bottom = projectile.y + 8;
+
+  const std::int16_t ent_w = slot.hitbox_w > 0 ? slot.hitbox_w : 16;
+  const std::int16_t ent_h = slot.hitbox_h > 0 ? slot.hitbox_h : 16;
+  const std::int16_t ent_left = slot.x;
+  const std::int16_t ent_top = slot.y;
+  const std::int16_t ent_right = ent_left + ent_w;
+  const std::int16_t ent_bottom = ent_top + ent_h;
+
+  return (proj_right > ent_left) && (proj_left < ent_right) &&
+         (proj_bottom > ent_top) && (proj_top < ent_bottom);
+}
+
+ProjectileCombatResult apply_projectile_entity_collisions(RuntimeState &state) {
+  ProjectileCombatResult result;
+
+  for (auto &projectile : state.projectiles) {
+    if (!projectile.active) {
+      continue;
+    }
+
+    for (auto &slot : state.runtime_slots) {
+      if (!is_runtime_slot_active(slot)) {
+        continue;
+      }
+
+      const auto behavior = slot.behavior_state & 0x000F;
+      if (behavior == kBehaviorGem || behavior == kBehaviorPowerup) {
+        continue;
+      }
+
+      if (!collides_with_projectile(slot, projectile)) {
+        continue;
+      }
+
+      // Hit detected: projectile is consumed
+      projectile.active = false;
+      ++result.projectiles_hit;
+
+      if ((slot.type_flags & kEntityInvulnerable) != 0) {
+        break;
+      }
+
+      // Multi-hit durability if param_b > 1
+      if (slot.param_b > 1) {
+        --slot.param_b;
+        if (projectile.x_vel > 0) {
+          slot.x += 4;
+        } else if (projectile.x_vel < 0) {
+          slot.x -= 4;
+        }
+        slot.anim_tick = 1;
+        queue_audio_event(state, AudioEvent::Hit);
+        ++result.entities_damaged;
+      } else {
+        // Lethal hit
+        ++result.entities_damaged;
+        ++result.entities_defeated;
+        state.player.score =
+            static_cast<std::uint16_t>(state.player.score + 100U);
+        queue_audio_event(state, AudioEvent::Hit);
+
+        if (slot.mapped_object_ptr < state.mapped_objects.size()) {
+          state.mapped_objects[slot.mapped_object_ptr].state_flags = 2;
+        }
+
+        if ((slot.type_flags & kEntityDropPowerup) != 0) {
+          slot.behavior_state = kBehaviorPowerup;
+          slot.hitbox_w = 8;
+          slot.hitbox_h = 8;
+          slot.mapped_object_ptr = 0xFFFF;
+          slot.type_flags = 0;
+          slot.param_a = 0;
+          slot.param_b = 0;
+          ++result.items_dropped;
+        } else if ((slot.type_flags & kEntityDropGem) != 0) {
+          slot.behavior_state = kBehaviorGem;
+          slot.hitbox_w = 8;
+          slot.hitbox_h = 8;
+          slot.mapped_object_ptr = 0xFFFF;
+          slot.type_flags = 0;
+          slot.param_a = 0;
+          slot.param_b = 0;
+          ++result.items_dropped;
+        } else {
+          deactivate_runtime_slot(slot);
+        }
+      }
+      break;
+    }
+  }
+
+  return result;
+}
+
+bool spawn_item_drop(RuntimeState &state, std::int16_t x, std::int16_t y,
+                     std::uint16_t item_behavior) {
+  for (auto &slot : state.runtime_slots) {
+    if (!is_runtime_slot_active(slot)) {
+      slot = RuntimeEntitySlot32{};
+      slot.hitbox_w = 8;
+      slot.hitbox_h = 8;
+      slot.behavior_state = item_behavior;
+      slot.x = x;
+      slot.y = y;
+      slot.mapped_object_ptr = 0xFFFF;
+      return true;
+    }
+  }
+  if (state.runtime_slots.size() < 6) {
+    RuntimeEntitySlot32 slot{};
+    slot.hitbox_w = 8;
+    slot.hitbox_h = 8;
+    slot.behavior_state = item_behavior;
+    slot.x = x;
+    slot.y = y;
+    slot.mapped_object_ptr = 0xFFFF;
+    state.runtime_slots.push_back(slot);
+    return true;
+  }
+  return false;
+}
+
 void apply_entity_combat(RuntimeState &state) {
+  apply_projectile_entity_collisions(state);
+
   const bool mode_invulnerability_active =
       state.player.active_mode_effect == 0x02U &&
       state.player.mode_effect_ticks > 0U;

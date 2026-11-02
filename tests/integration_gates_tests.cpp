@@ -3,9 +3,11 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <string_view>
 #include <vector>
 
 #include "comic2/audio.hpp"
@@ -1486,6 +1488,119 @@ void test_gate_13c_trigger_activation() {
          "Gate 13-C: mode 2 trigger for tile 140 must evaluate to 24");
 }
 
+void test_gate_13a_script_decode_parity() {
+  // 1. Fixture test: 64-byte encoded header prefix of FR004.3
+  const std::uint8_t kFr004_3HeaderFixture[64] = {
+      0x35, 0x25, 0x43, 0x24, 0x9d, 0x27, 0xd7, 0x26, 0xe9, 0x21, 0x5b,
+      0x23, 0x15, 0x2d, 0xd7, 0x2d, 0x33, 0x36, 0x61, 0x60, 0x64, 0x77,
+      0x05, 0x66, 0x64, 0x75, 0x71, 0x64, 0x6c, 0x6b, 0x09, 0x05, 0x05,
+      0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
+      0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
+      0x05, 0x05, 0x05, 0x71, 0x6d, 0x60, 0x05, 0x67, 0x64};
+
+  const auto fixture_decoded =
+      comic2::decode_level_script_payload(kFr004_3HeaderFixture);
+  expect(
+      fixture_decoded.has_value(),
+      "Gate 13-A: decode_level_script_payload must succeed on header fixture");
+  expect(fixture_decoded->size() == comic2::kLevelScriptBlockSize,
+         "Gate 13-A: decoded fixture must pad to 0x0C00 bytes");
+
+  // Validate all 8 message offsets from decoded fixture table
+  const std::uint16_t expected_offsets[8] = {0x0010, 0x0166, 0x02b8, 0x03f2,
+                                             0x04cc, 0x067e, 0x0830, 0x08f2};
+  for (std::size_t i = 0; i < 8; ++i) {
+    const auto off = comic2::level_script_offset(*fixture_decoded, i);
+    expect(off.has_value() && *off == expected_offsets[i],
+           "Gate 13-A: message offset table mismatch");
+  }
+
+  // Offset 0x0010 contains Message 0 header: width=22 (0x16), height=19 (0x13)
+  expect((*fixture_decoded)[0x0010] == 22,
+         "Gate 13-A: Message 0 width must be 22");
+  expect((*fixture_decoded)[0x0011] == 19,
+         "Gate 13-A: Message 0 height must be 19");
+
+  // Followed by "DEAR CAPTAIN,"
+  const std::string_view msg0_prefix(
+      reinterpret_cast<const char *>(fixture_decoded->data() + 0x0012), 13);
+  expect(msg0_prefix == "DEAR CAPTAIN,",
+         "Gate 13-A: Message 0 text start must be 'DEAR CAPTAIN,'");
+
+  // 2. Real asset verification when reference/original is present
+  const auto original_root = find_reference_original_assets_root();
+  if (original_root.empty()) {
+    return;
+  }
+
+  const auto script_path = original_root / "FR004.3";
+  if (!std::filesystem::exists(script_path)) {
+    return;
+  }
+
+  std::ifstream file(script_path, std::ios::binary);
+  expect(file.is_open(), "Gate 13-A: failed to open FR004.3");
+  std::vector<std::uint8_t> file_bytes((std::istreambuf_iterator<char>(file)),
+                                       std::istreambuf_iterator<char>());
+  expect(file_bytes.size() == 2437U,
+         "Gate 13-A: FR004.3 reference file size must be 2437 bytes");
+
+  const auto full_decoded = comic2::decode_level_script_payload(file_bytes);
+  expect(full_decoded.has_value(),
+         "Gate 13-A: full FR004.3 payload decode must succeed");
+  expect(full_decoded->size() == comic2::kLevelScriptBlockSize,
+         "Gate 13-A: full decoded script must equal 0x0C00 block size");
+
+  // Verify byte-level XOR-0x25 inversion for all file bytes
+  for (std::size_t i = 0; i < file_bytes.size(); ++i) {
+    expect(((*full_decoded)[i] ^ comic2::kLevelScriptXorKey) == file_bytes[i],
+           "Gate 13-A: byte-by-byte XOR-0x25 inversion mismatch");
+  }
+
+  // Verify unread padded bytes are decoded to zero
+  for (std::size_t i = file_bytes.size(); i < full_decoded->size(); ++i) {
+    expect((*full_decoded)[i] == 0,
+           "Gate 13-A: trailing padded bytes must decode to 0");
+  }
+
+  // Verify all 8 decoded message texts from full FR004.3
+  const struct ExpectedMessage {
+    std::size_t index;
+    std::uint16_t offset;
+    std::uint8_t width;
+    std::uint8_t height;
+    std::string_view prefix;
+  } expected_messages[] = {
+      {0, 0x0010, 22, 19, "DEAR CAPTAIN,"},
+      {1, 0x0166, 26, 16,
+       "GREETINGS CAPTAIN, I AM GLAD YOU MADE IT OUT OF THE TEMPLE"},
+      {2, 0x02b8, 26, 15,
+       "CAPTAIN, I AM DEEPLY    SORRY, BUT I BELIEVE THESKREJGIB H"},
+      {3, 0x03f2, 26, 11, "WE WILL USE THIS BASE   TO DO OUR OWN RESEARCH."},
+      {4, 0x04cc, 26, 20, "DEAR CAPTAIN,"},
+      {5, 0x067e, 26, 20,
+       "THANKS AS WELL FOR YOUR SPACE CRUISER, ITS SALE WILL HELP"},
+      {6, 0x0830, 26, 10, "WE'VE INSTALLED THIS OLDTIME DEVICE"},
+      {7, 0x08f2, 26, 8,
+       "WHO CAN SAY WHAT KIND OFTECHNICAL ADVANCES OUR  RACE WILL"},
+  };
+
+  for (const auto &em : expected_messages) {
+    const auto off = comic2::level_script_offset(*full_decoded, em.index);
+    expect(off.has_value() && *off == em.offset,
+           "Gate 13-A: live message offset mismatch");
+    expect((*full_decoded)[em.offset] == em.width,
+           "Gate 13-A: live message width mismatch");
+    expect((*full_decoded)[em.offset + 1] == em.height,
+           "Gate 13-A: live message height mismatch");
+    const std::string_view actual_prefix(
+        reinterpret_cast<const char *>(full_decoded->data() + em.offset + 2),
+        em.prefix.size());
+    expect(actual_prefix == em.prefix,
+           "Gate 13-A: live message prefix mismatch");
+  }
+}
+
 } // namespace
 
 void run_integration_gate_tests() {
@@ -1528,7 +1643,9 @@ void run_integration_gate_tests() {
   test_gate_12b2_sound_driver_tick_and_synthesizer();
   test_gate_12c_null_audio_backend_stays_headless();
 
-  // Gate 13-B/C: Entity movement parity and trigger activation.
+  // Gate 13-A/B/C: Level script decode parity, entity movement parity, and
+  // trigger activation.
+  test_gate_13a_script_decode_parity();
   test_gate_13b_entity_movement_parity();
   test_gate_13c_trigger_activation();
 }
