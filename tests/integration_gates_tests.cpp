@@ -1565,11 +1565,11 @@ void test_gate_13a_script_decode_parity() {
 
   // Verify all 8 decoded message texts from full FR004.3
   const struct ExpectedMessage {
-    std::size_t index;
-    std::uint16_t offset;
-    std::uint8_t width;
-    std::uint8_t height;
-    std::string_view prefix;
+    std::size_t index = 0;
+    std::uint16_t offset = 0;
+    std::uint8_t width = 0;
+    std::uint8_t height = 0;
+    std::string_view prefix = {};
   } expected_messages[] = {
       {0, 0x0010, 22, 19, "DEAR CAPTAIN,"},
       {1, 0x0166, 26, 16,

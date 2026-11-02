@@ -408,25 +408,47 @@ ProjectileCombatResult apply_projectile_entity_collisions(RuntimeState &state) {
 
 bool spawn_item_drop(RuntimeState &state, std::int16_t x, std::int16_t y,
                      std::uint16_t item_behavior) {
-  for (auto &slot : state.runtime_slots) {
-    if (!is_runtime_slot_active(slot)) {
-      slot = RuntimeEntitySlot32{};
-      slot.hitbox_w = 8;
-      slot.hitbox_h = 8;
-      slot.behavior_state = item_behavior;
-      slot.x = x;
-      slot.y = y;
-      slot.mapped_object_ptr = 0xFFFF;
-      return true;
-    }
+  const auto it =
+      std::find_if(state.runtime_slots.begin(), state.runtime_slots.end(),
+                   [](const RuntimeEntitySlot32 &slot) {
+                     return !is_runtime_slot_active(slot);
+                   });
+  if (it != state.runtime_slots.end()) {
+    it->hitbox_w = 8;
+    it->hitbox_h = 8;
+    it->type_flags = 0;
+    it->behavior_state = item_behavior;
+    it->anim_span = 0;
+    it->anim_period = 0;
+    it->unknown_0c = 0;
+    it->unknown_0e = 0;
+    it->x = x;
+    it->y = y;
+    it->param_a = 0;
+    it->param_b = 0;
+    it->dir_toggle = 0;
+    it->anim_tick = 0;
+    it->unknown_1c = 0;
+    it->mapped_object_ptr = 0xFFFF;
+    return true;
   }
   if (state.runtime_slots.size() < 6) {
     RuntimeEntitySlot32 slot{};
     slot.hitbox_w = 8;
     slot.hitbox_h = 8;
+    slot.type_flags = 0;
     slot.behavior_state = item_behavior;
+    slot.anim_span = 0;
+    slot.anim_period = 0;
+    slot.unknown_0c = 0;
+    slot.unknown_0e = 0;
     slot.x = x;
     slot.y = y;
+    slot.param_a = 0;
+    slot.param_b = 0;
+    slot.dir_toggle = 0;
+    slot.anim_tick = 0;
+    slot.unknown_1c = 0;
     slot.mapped_object_ptr = 0xFFFF;
     state.runtime_slots.push_back(slot);
     return true;
