@@ -17,7 +17,8 @@ bool try_player_fire_projectile(RuntimeState &state) {
       std::count_if(state.projectiles.begin(), state.projectiles.end(),
                     [](const ProjectileState &p) { return p.active; }));
 
-  if (active_count >= state.player.firepower) {
+  if (active_count >=
+      std::min<std::uint8_t>(state.player.firepower, kMaxFirepowerLevel)) {
     return false;
   }
 
