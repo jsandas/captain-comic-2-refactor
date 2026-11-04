@@ -50,4 +50,8 @@ std::optional<RoomTransitionZone>
 check_room_transition_zone(std::uint16_t level_id, std::uint16_t room_id,
                            std::int16_t player_x, std::int16_t player_y);
 
+// Returns true if the specified level/room is an unlit cavern requiring the
+// lantern to illuminate.
+bool is_cavern_room_dark(std::uint16_t level_id, std::uint16_t room_id);
+
 } // namespace comic2

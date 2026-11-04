@@ -226,6 +226,8 @@ struct RuntimeState {
   DispatcherFlags flags;
   ProgressionState progression;
   UiState ui;
+  bool is_dark_room =
+      false; // Cavern darkness flag; requires lantern_equipped to illuminate
   bool level_complete = false;
   std::uint8_t level_completion_gems_required = 0;
   std::int32_t camera_x = 0;
