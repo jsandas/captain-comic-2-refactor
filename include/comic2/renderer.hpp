@@ -72,6 +72,8 @@ public:
   ~Sdl2FramePresenter() override;
 
   void present(const EgaPlanarSurface &frame) override;
+  void
+  set_palette(const std::array<std::array<std::uint8_t, 4>, 16> &palette_table);
 
   // Disable copying
   Sdl2FramePresenter(const Sdl2FramePresenter &) = delete;
@@ -163,6 +165,42 @@ void apply_transition_palette_tint(EgaPlanarSurface &surface,
 void load_ega_palette_table(
     RuntimeState &state,
     const std::array<std::array<std::uint8_t, 4>, 16> &palette_table);
+
+// Standard 16-color EGA palette table (RGBA values).
+std::array<std::array<std::uint8_t, 4>, 16> make_default_ega_palette();
+
+// All-black 16-color EGA palette mask table (RGBA values).
+std::array<std::array<std::uint8_t, 4>, 16> make_black_palette_mask();
+
+// Checks if the given palette represents a black mask (all RGB channels are 0).
+bool is_black_palette_mask(const EgaPaletteState &palette);
+
+// Synchronizes state.palette with room darkness and lantern equipped status:
+// If is_dark_room and !player.lantern_equipped, applies black palette mask.
+// Otherwise, restores default visible EGA palette.
+void update_room_lighting_palette(RuntimeState &state);
+
+// Applies cavern darkness mask to playfield viewport on planar surface frame.
+// When is_dark_room is active and lantern is not equipped, masks the playfield
+// viewport pixels to black (color index 0).
+void apply_cavern_darkness_mask(EgaPlanarSurface &surface,
+                                const RuntimeState &state,
+                                std::int32_t vp_x = kPlayfieldX,
+                                std::int32_t vp_y = kPlayfieldY,
+                                std::int32_t vp_w = kPlayfieldWidth,
+                                std::int32_t vp_h = kPlayfieldHeight);
+
+// Applies a radial lantern illumination mask around a center point (e.g.
+// Comic). Pixels outside the radius in the playfield viewport are masked to
+// black.
+void apply_radial_darkness_mask(EgaPlanarSurface &surface,
+                                std::int32_t center_x, std::int32_t center_y,
+                                std::int32_t radius_pixels,
+                                std::int32_t vp_x = kPlayfieldX,
+                                std::int32_t vp_y = kPlayfieldY,
+                                std::int32_t vp_w = kPlayfieldWidth,
+                                std::int32_t vp_h = kPlayfieldHeight);
+
 void room_transition_palette_wave(EgaPlanarSurface &surface,
                                   const RoomTransitionState &transition);
 void room_transition_reveal_sequence_a(EgaPlanarSurface &surface,
