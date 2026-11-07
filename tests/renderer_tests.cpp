@@ -522,6 +522,19 @@ void test_apply_cavern_darkness_mask() {
   comic2::apply_cavern_darkness_mask(surface, state, 8, 8, 240, 176);
   expect(read_surface_color(surface, 100, 100) == 0x0F,
          "playfield pixel must remain visible when lantern is equipped");
+
+  // Fallback path: unaligned rectangle (not multiples of 8)
+  surface.clear(0xFF);
+  state.player.lantern_equipped = false;
+  comic2::apply_cavern_darkness_mask(surface, state, 5, 10, 23, 15);
+  expect(read_surface_color(surface, 5, 10) == 0x00,
+         "unaligned rect corner must be masked to black");
+  expect(read_surface_color(surface, 27, 24) == 0x00,
+         "unaligned rect interior must be masked to black");
+  expect(read_surface_color(surface, 4, 10) == 0x0F,
+         "pixel outside unaligned rect left edge must remain unmasked");
+  expect(read_surface_color(surface, 28, 24) == 0x0F,
+         "pixel outside unaligned rect right edge must remain unmasked");
 }
 
 void test_apply_radial_darkness_mask() {

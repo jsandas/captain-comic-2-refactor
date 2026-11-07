@@ -777,6 +777,30 @@ void apply_cavern_darkness_mask(EgaPlanarSurface &surface,
       vp_h > 0 ? vp_y + vp_h
                : static_cast<std::int32_t>(surface.height_rows()));
 
+  if (x0 >= x1 || y0 >= y1) {
+    return;
+  }
+
+  // Fast path: byte-aligned spans (multiples of 8 pixels)
+  if ((x0 % 8) == 0 && (x1 % 8) == 0) {
+    const std::size_t start_byte = static_cast<std::size_t>(x0 / 8);
+    const std::size_t byte_count = static_cast<std::size_t>((x1 - x0) / 8);
+    const std::size_t stride = surface.row_stride_bytes();
+
+    for (std::size_t p = 0; p < EgaPlanarSurface::kPlaneCount; ++p) {
+      auto plane_span = surface.plane(p);
+      for (std::int32_t y = y0; y < y1; ++y) {
+        const std::size_t row_start =
+            static_cast<std::size_t>(y) * stride + start_byte;
+        std::fill(plane_span.begin() + row_start,
+                  plane_span.begin() + row_start + byte_count,
+                  static_cast<std::uint8_t>(0));
+      }
+    }
+    return;
+  }
+
+  // Fallback for unaligned rectangles
   for (std::int32_t y = y0; y < y1; ++y) {
     for (std::int32_t x = x0; x < x1; ++x) {
       set_surface_pixel(surface, x, y, 0);
