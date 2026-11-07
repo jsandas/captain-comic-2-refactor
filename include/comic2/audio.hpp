@@ -18,6 +18,8 @@ enum class AudioEvent {
   Pickup,
   Death,
   LevelStart,
+  DoorOpen,
+  Teleport,
 };
 
 enum class SoundCommand {

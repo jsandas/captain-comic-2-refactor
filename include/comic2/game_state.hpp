@@ -32,6 +32,7 @@ struct InputState {
   bool down_pressed = false;
   bool fire_pressed = false;
   bool mode_activate_pressed = false;
+  bool teleport_pressed = false;
   bool pause_pressed = false;
 
   bool operator==(const InputState &) const = default;
@@ -95,6 +96,8 @@ struct PlayerState {
   bool corkscrew_equipped = false; // [DS:0x08b2] Grate corkscrew unlock flag
   bool wand_equipped = false;      // [DS:0x08b4] Teleportation wand flag
   std::uint8_t key_count = 0;      // [DS:0x08b6] Door keys collected count
+  std::uint8_t wand_charges =
+      0; // Teleportation wand charges (0 = infinite / uncharged)
 
   bool operator==(const PlayerState &) const = default;
 };
@@ -228,6 +231,9 @@ struct RuntimeState {
   UiState ui;
   bool is_dark_room =
       false; // Cavern darkness flag; requires lantern_equipped to illuminate
+  std::int16_t room_entrance_x = 64;
+  std::int16_t room_entrance_y = 96;
+  std::optional<std::pair<std::int16_t, std::int16_t>> warp_beacon;
   bool level_complete = false;
   std::uint8_t level_completion_gems_required = 0;
   std::int32_t camera_x = 0;

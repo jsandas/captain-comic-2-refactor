@@ -77,6 +77,13 @@ bool read_env_bool(const char *name) {
   case AudioEvent::LevelStart:
     return SoundStream{{0x0250u, 0x0004u, 0x01F0u, 0x0003u, 0x0000u, 0x0000u},
                        1};
+  case AudioEvent::DoorOpen:
+    return SoundStream{{0x02C0u, 0x0003u, 0x0380u, 0x0004u, 0x0000u, 0x0000u},
+                       1};
+  case AudioEvent::Teleport:
+    return SoundStream{{0x0480u, 0x0002u, 0x0360u, 0x0002u, 0x0240u, 0x0002u,
+                        0x0120u, 0x0003u, 0x0000u, 0x0000u},
+                       1};
   }
   return SoundStream{{0x01C0u, 0x0003u, 0x0000u, 0x0000u}, 1};
 }

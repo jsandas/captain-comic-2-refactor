@@ -2009,6 +2009,217 @@ void test_gate_14b_cavern_lantern_and_palette_darkness() {
   }
 }
 
+void test_gate_14c_tile_modification() {
+  // Gate 14-C: Drainage Corkscrew (DS:0x08b2), Door Keys (DS:0x08b6), and
+  // Teleportation Wand (DS:0x08b4) runtime grid tile transformations.
+
+  // 1. Drainage Corkscrew: Impassable Metal Grate -> Passable Passage
+  {
+    auto state = comic2::make_default_runtime_state();
+    state.room_grid.tile_w = 4;
+    state.room_grid.tile_h = 3;
+    state.room_grid.row_pointers = {0, 4, 8};
+    state.room_grid.tile_data.assign(12, 0);
+
+    const comic2::TileTransformationConfig config;
+    const comic2::TileCollisionConfig collision{.solid_tile_threshold = 1};
+
+    // Place an impassable metal grate at tile (1, 1) -> (16, 16)
+    comic2::set_tile_at_coords(state.room_grid, 1, 1, config.grate_tile);
+    expect(
+        !comic2::is_tile_passable_at_pixels(state.room_grid, 16, 16, collision),
+        "Gate 14-C: grate tile must be impassable prior to transformation");
+
+    // Position player directly adjacent to grate tile facing it
+    state.player.x = 0;
+    state.player.y = 16;
+    state.player.facing_right = true;
+
+    // Contact without corkscrew: tile remains impassable grate
+    state.player.corkscrew_equipped = false;
+    const bool grate_unlocked_without =
+        comic2::process_player_tile_interactions(state, config);
+    expect(!grate_unlocked_without,
+           "Gate 14-C: grate must not break without corkscrew equipped");
+    auto tile_after_no_corkscrew =
+        comic2::get_tile_at_pixels(state.room_grid, 16, 16);
+    expect(tile_after_no_corkscrew.has_value() &&
+               *tile_after_no_corkscrew == config.grate_tile,
+           "Gate 14-C: grate tile ID must remain intact without corkscrew");
+    expect(
+        !comic2::is_tile_passable_at_pixels(state.room_grid, 16, 16, collision),
+        "Gate 14-C: grate tile must stay impassable without corkscrew");
+
+    // Equip Corkscrew [DS:0x08b2] and contact grate: breaks grate to passable
+    // tile
+    state.player.corkscrew_equipped = true;
+    const bool grate_broken =
+        comic2::process_player_tile_interactions(state, config);
+    expect(grate_broken,
+           "Gate 14-C: corkscrew equipped must break grate on contact");
+    auto tile_after_corkscrew =
+        comic2::get_tile_at_pixels(state.room_grid, 16, 16);
+    expect(tile_after_corkscrew.has_value() &&
+               *tile_after_corkscrew == config.passable_tile,
+           "Gate 14-C: grate tile must transform into passable tile in runtime "
+           "grid");
+    expect(
+        comic2::is_tile_passable_at_pixels(state.room_grid, 16, 16, collision),
+        "Gate 14-C: transformed grate tile must now be passable passage");
+  }
+
+  // 2. Door Keys: Impassable Locked Grate / Door -> Passable Passage
+  {
+    auto state = comic2::make_default_runtime_state();
+    state.room_grid.tile_w = 4;
+    state.room_grid.tile_h = 3;
+    state.room_grid.row_pointers = {0, 4, 8};
+    state.room_grid.tile_data.assign(12, 0);
+
+    const comic2::TileTransformationConfig config;
+    const comic2::TileCollisionConfig collision{.solid_tile_threshold = 1};
+
+    // Place a locked door tile at tile (2, 1) -> (32, 16)
+    comic2::set_tile_at_coords(state.room_grid, 2, 1, config.locked_door_tile);
+    expect(
+        !comic2::is_tile_passable_at_pixels(state.room_grid, 32, 16, collision),
+        "Gate 14-C: locked door tile must be impassable prior to unlock");
+
+    // Player adjacent to locked door
+    state.player.x = 16;
+    state.player.y = 16;
+    state.player.facing_right = true;
+
+    // Contact with 0 keys: fails, door stays locked and impassable
+    state.player.key_count = 0;
+    const bool door_unlocked_zero =
+        comic2::process_player_tile_interactions(state, config);
+    expect(!door_unlocked_zero,
+           "Gate 14-C: locked door must not unlock with 0 keys");
+    expect(state.player.key_count == 0,
+           "Gate 14-C: key count must remain 0 when unlock fails");
+    expect(
+        !comic2::is_tile_passable_at_pixels(state.room_grid, 32, 16, collision),
+        "Gate 14-C: locked door must remain impassable with 0 keys");
+
+    // Acquire key [DS:0x08b6] = 1: contact unlocks door, decrements key count,
+    // transforms tile
+    state.player.key_count = 1;
+    const bool door_unlocked =
+        comic2::process_player_tile_interactions(state, config);
+    expect(door_unlocked, "Gate 14-C: touching locked door with key must "
+                          "unlock and transform tile");
+    expect(state.player.key_count == 0,
+           "Gate 14-C: key count must decrement upon unlocking door");
+    auto door_tile = comic2::get_tile_at_pixels(state.room_grid, 32, 16);
+    expect(door_tile.has_value() && *door_tile == config.passable_tile,
+           "Gate 14-C: door tile must transform to passable passage in runtime "
+           "grid");
+    expect(
+        comic2::is_tile_passable_at_pixels(state.room_grid, 32, 16, collision),
+        "Gate 14-C: unlocked door tile must now be passable passage");
+
+    // Verify DoorOpen audio event was dispatched
+    expect(!state.audio.pending_events.empty() &&
+               state.audio.pending_events.back() ==
+                   comic2::AudioEvent::DoorOpen,
+           "Gate 14-C: door unlock must queue AudioEvent::DoorOpen");
+  }
+
+  // 3. Teleportation Wand: Return to Room Entrance & Warp Beacon Tile
+  // Transformation
+  {
+    auto state = comic2::make_default_runtime_state();
+    state.room_grid.tile_w = 4;
+    state.room_grid.tile_h = 3;
+    state.room_grid.row_pointers = {0, 4, 8};
+    state.room_grid.tile_data.assign(12, 0);
+
+    const comic2::TileTransformationConfig config;
+
+    state.room_entrance_x = 64;
+    state.room_entrance_y = 96;
+
+    // Player at distant coordinates in motion
+    state.player.x = 220;
+    state.player.y = 140;
+    state.player.x_vel = 8;
+    state.player.y_vel = -6;
+    state.player.is_airborne = true;
+
+    // Wand unequipped [DS:0x08b4] -> cannot teleport
+    state.player.wand_equipped = false;
+    expect(!comic2::try_use_teleport_wand(state, config),
+           "Gate 14-C: teleport wand use must fail when wand is unequipped");
+    expect(
+        state.player.x == 220 && state.player.y == 140,
+        "Gate 14-C: player coordinates must not change when wand unequipped");
+
+    // Equip wand [DS:0x08b4] -> teleports back to room entrance
+    state.player.wand_equipped = true;
+    state.audio.pending_events.clear();
+    const bool wand_success = comic2::try_use_teleport_wand(state, config);
+    expect(wand_success,
+           "Gate 14-C: teleport wand use must succeed when equipped");
+    expect(state.player.x == 64 && state.player.y == 96,
+           "Gate 14-C: wand must teleport Comic back to room entrance");
+    expect(state.player.x_vel == 0 && state.player.y_vel == 0,
+           "Gate 14-C: wand teleport must reset player velocities to 0");
+    expect(!state.player.is_airborne,
+           "Gate 14-C: wand teleport must clear airborne state");
+    expect(!state.audio.pending_events.empty() &&
+               state.audio.pending_events.back() ==
+                   comic2::AudioEvent::Teleport,
+           "Gate 14-C: wand teleport must queue AudioEvent::Teleport");
+
+    // Warp Beacon tile transformation in runtime grid
+    comic2::set_tile_at_coords(state.room_grid, 2, 2, config.warp_beacon_tile);
+    const bool beacon_activated =
+        comic2::try_activate_warp_beacon(state, 32, 32, config);
+    expect(beacon_activated,
+           "Gate 14-C: wand must activate warp beacon tile on contact");
+    auto beacon_tile = comic2::get_tile_at_pixels(state.room_grid, 32, 32);
+    expect(beacon_tile.has_value() &&
+               *beacon_tile == config.active_warp_portal_tile,
+           "Gate 14-C: warp beacon tile must transform into active portal in "
+           "runtime grid");
+    expect(state.warp_beacon.has_value() && state.warp_beacon->first == 32 &&
+               state.warp_beacon->second == 32,
+           "Gate 14-C: warp beacon coordinates must be registered in state");
+
+    // Teleporting with active warp beacon teleports to beacon
+    state.player.x = 180;
+    state.player.y = 120;
+    expect(comic2::try_use_teleport_wand(state, config),
+           "Gate 14-C: teleporting with active warp beacon must succeed");
+    expect(
+        state.player.x == 32 && state.player.y == 32,
+        "Gate 14-C: player must be teleported to active warp beacon location");
+  }
+
+  // 4. Progression State Synchronization
+  {
+    auto state = comic2::make_default_runtime_state();
+    state.player.boots_equipped = true;
+    state.player.lantern_equipped = true;
+    state.player.corkscrew_equipped = true;
+    state.player.wand_equipped = true;
+    state.player.key_count = 3;
+
+    comic2::update_progression_state(state);
+    expect(state.progression.boots_acquired,
+           "Gate 14-C: boots_acquired must sync with boots_equipped");
+    expect(state.progression.lantern_acquired,
+           "Gate 14-C: lantern_acquired must sync with lantern_equipped");
+    expect(state.progression.corkscrew_acquired,
+           "Gate 14-C: corkscrew_acquired must sync with corkscrew_equipped");
+    expect(state.progression.wand_acquired,
+           "Gate 14-C: wand_acquired must sync with wand_equipped");
+    expect(state.progression.keys_collected == 3,
+           "Gate 14-C: keys_collected must sync with key_count");
+  }
+}
+
 } // namespace
 
 void run_integration_gate_tests() {
@@ -2062,4 +2273,7 @@ void run_integration_gate_tests() {
 
   // Gate 14-B: Cavern lantern illumination and palette darkness mechanics.
   test_gate_14b_cavern_lantern_and_palette_darkness();
+
+  // Gate 14-C: Tile modification (corkscrew, keys, and teleportation wand).
+  test_gate_14c_tile_modification();
 }

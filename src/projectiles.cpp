@@ -138,6 +138,14 @@ void advance_runtime_projectiles(RuntimeState &state,
   if (state.input.fire_pressed) {
     try_player_fire_projectile(state);
   }
+  if (state.player.corkscrew_equipped) {
+    for (const auto &proj : state.projectiles) {
+      if (proj.active) {
+        try_break_grate_tile(state, static_cast<std::int16_t>(proj.x + 3),
+                             static_cast<std::int16_t>(proj.y + 3));
+      }
+    }
+  }
   update_projectiles(state.projectiles, bounds, state.room_grid, viewport_min_x,
                      viewport_min_y, viewport_width_pixels,
                      viewport_height_pixels);
