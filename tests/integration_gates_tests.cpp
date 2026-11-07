@@ -1925,6 +1925,29 @@ void test_gate_14b_cavern_lantern_and_palette_darkness() {
     expect(hud_has_pixels,
            "Gate 14-B: HUD panel must remain visible during cavern darkness");
 
+    // Verify playfield remains black during active room transition effects
+    auto transition_dark_state = dark_state;
+    transition_dark_state.transition_state.active = true;
+    transition_dark_state.transition_state.palette_tint = 3;
+    transition_dark_state.transition_state.palette_shift = 1;
+    transition_dark_state.transition_state.frame_index = 4;
+    transition_dark_state.transition_state.effect_type = 0;
+    comic2::render_bootstrap_frame(presenter, transition_dark_state);
+    expect(presenter.has_frame(),
+           "Gate 14-B: transition frame must be presented");
+    const auto &trans_frame = presenter.last_frame();
+    bool transition_playfield_black = true;
+    for (std::size_t y = 8U; y < 184U && transition_playfield_black; ++y) {
+      for (std::size_t x = 8U; x < 248U && transition_playfield_black; ++x) {
+        if (read_gate11_color(trans_frame, x, y) != 0x00U) {
+          transition_playfield_black = false;
+        }
+      }
+    }
+    expect(transition_playfield_black,
+           "Gate 14-B: playfield viewport must remain entirely black during "
+           "transitions without lantern");
+
     // 3. Equip Cavern Lantern: Visible Field Renders
     dark_state.player.lantern_equipped = true;
     comic2::render_bootstrap_frame(presenter, dark_state);
