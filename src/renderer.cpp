@@ -715,6 +715,129 @@ void load_ega_palette_table(
   state.palette.entries = palette_table;
 }
 
+std::array<std::array<std::uint8_t, 4>, 16> make_default_ega_palette() {
+  return {{
+      {0, 0, 0, 255},       // 0: Black
+      {0, 0, 200, 255},     // 1: Blue
+      {0, 200, 0, 255},     // 2: Green
+      {0, 200, 200, 255},   // 3: Cyan
+      {200, 0, 0, 255},     // 4: Red
+      {200, 0, 200, 255},   // 5: Magenta
+      {200, 100, 0, 255},   // 6: Brown
+      {200, 200, 200, 255}, // 7: Light gray
+      {100, 100, 100, 255}, // 8: Dark gray
+      {50, 50, 255, 255},   // 9: Light blue
+      {50, 255, 50, 255},   // 10: Light green
+      {50, 255, 255, 255},  // 11: Light cyan
+      {255, 50, 50, 255},   // 12: Light red
+      {255, 50, 255, 255},  // 13: Light magenta
+      {255, 255, 50, 255},  // 14: Yellow
+      {255, 255, 255, 255}, // 15: White
+  }};
+}
+
+std::array<std::array<std::uint8_t, 4>, 16> make_black_palette_mask() {
+  std::array<std::array<std::uint8_t, 4>, 16> mask{};
+  mask.fill({0, 0, 0, 255});
+  return mask;
+}
+
+bool is_black_palette_mask(const EgaPaletteState &palette) {
+  return std::all_of(palette.entries.begin(), palette.entries.end(),
+                     [](const auto &color) {
+                       return color[0] == 0 && color[1] == 0 && color[2] == 0;
+                     });
+}
+
+void update_room_lighting_palette(RuntimeState &state) {
+  state.palette.loaded = true;
+  if (state.is_dark_room && !state.player.lantern_equipped) {
+    state.palette.entries = make_black_palette_mask();
+  } else {
+    state.palette.entries = make_default_ega_palette();
+  }
+}
+
+void apply_cavern_darkness_mask(EgaPlanarSurface &surface,
+                                const RuntimeState &state, std::int32_t vp_x,
+                                std::int32_t vp_y, std::int32_t vp_w,
+                                std::int32_t vp_h) {
+  if (!state.is_dark_room || state.player.lantern_equipped) {
+    return;
+  }
+
+  const std::int32_t x0 = std::max<std::int32_t>(0, vp_x);
+  const std::int32_t y0 = std::max<std::int32_t>(0, vp_y);
+  const std::int32_t x1 = std::min<std::int32_t>(
+      static_cast<std::int32_t>(surface.width_pixels()),
+      vp_w > 0 ? vp_x + vp_w
+               : static_cast<std::int32_t>(surface.width_pixels()));
+  const std::int32_t y1 = std::min<std::int32_t>(
+      static_cast<std::int32_t>(surface.height_rows()),
+      vp_h > 0 ? vp_y + vp_h
+               : static_cast<std::int32_t>(surface.height_rows()));
+
+  if (x0 >= x1 || y0 >= y1) {
+    return;
+  }
+
+  // Fast path: byte-aligned spans (multiples of 8 pixels)
+  if ((x0 % 8) == 0 && (x1 % 8) == 0) {
+    const std::size_t start_byte = static_cast<std::size_t>(x0 / 8);
+    const std::size_t byte_count = static_cast<std::size_t>((x1 - x0) / 8);
+    const std::size_t stride = surface.row_stride_bytes();
+
+    for (std::size_t p = 0; p < EgaPlanarSurface::kPlaneCount; ++p) {
+      auto plane_span = surface.plane(p);
+      for (std::int32_t y = y0; y < y1; ++y) {
+        const std::size_t row_start =
+            static_cast<std::size_t>(y) * stride + start_byte;
+        std::fill(plane_span.begin() + row_start,
+                  plane_span.begin() + row_start + byte_count,
+                  static_cast<std::uint8_t>(0));
+      }
+    }
+    return;
+  }
+
+  // Fallback for unaligned rectangles
+  for (std::int32_t y = y0; y < y1; ++y) {
+    for (std::int32_t x = x0; x < x1; ++x) {
+      set_surface_pixel(surface, x, y, 0);
+    }
+  }
+}
+
+void apply_radial_darkness_mask(EgaPlanarSurface &surface,
+                                std::int32_t center_x, std::int32_t center_y,
+                                std::int32_t radius_pixels, std::int32_t vp_x,
+                                std::int32_t vp_y, std::int32_t vp_w,
+                                std::int32_t vp_h) {
+  const std::int32_t x0 = std::max<std::int32_t>(0, vp_x);
+  const std::int32_t y0 = std::max<std::int32_t>(0, vp_y);
+  const std::int32_t x1 = std::min<std::int32_t>(
+      static_cast<std::int32_t>(surface.width_pixels()),
+      vp_w > 0 ? vp_x + vp_w
+               : static_cast<std::int32_t>(surface.width_pixels()));
+  const std::int32_t y1 = std::min<std::int32_t>(
+      static_cast<std::int32_t>(surface.height_rows()),
+      vp_h > 0 ? vp_y + vp_h
+               : static_cast<std::int32_t>(surface.height_rows()));
+
+  const std::int32_t radius_sq = radius_pixels * radius_pixels;
+
+  for (std::int32_t y = y0; y < y1; ++y) {
+    const std::int32_t dy = y - center_y;
+    const std::int32_t dy_sq = dy * dy;
+    for (std::int32_t x = x0; x < x1; ++x) {
+      const std::int32_t dx = x - center_x;
+      if (dx * dx + dy_sq > radius_sq) {
+        set_surface_pixel(surface, x, y, 0);
+      }
+    }
+  }
+}
+
 void room_transition_palette_wave(EgaPlanarSurface &surface,
                                   const RoomTransitionState &transition) {
   for (std::int32_t y = 0; y < surface.height_rows(); ++y) {
@@ -908,28 +1031,11 @@ Sdl2FramePresenter::Sdl2FramePresenter(std::uint16_t window_width,
                              std::string(SDL_GetError()));
   }
 
-  constexpr std::uint8_t kEgaPalette[16][4] = {
-      {0, 0, 0, 255},       // Black
-      {0, 0, 200, 255},     // Blue
-      {0, 200, 0, 255},     // Green
-      {0, 200, 200, 255},   // Cyan
-      {200, 0, 0, 255},     // Red
-      {200, 0, 200, 255},   // Magenta
-      {200, 100, 0, 255},   // Brown
-      {200, 200, 200, 255}, // Light gray
-      {100, 100, 100, 255}, // Dark gray
-      {50, 50, 255, 255},   // Light blue
-      {50, 255, 50, 255},   // Light green
-      {50, 255, 255, 255},  // Light cyan
-      {255, 50, 50, 255},   // Light red
-      {255, 50, 255, 255},  // Light magenta
-      {255, 255, 50, 255},  // Yellow
-      {255, 255, 255, 255}, // White
-  };
+  const auto default_palette = make_default_ega_palette();
   for (std::size_t i = 0; i < impl_->palette.size(); ++i) {
-    impl_->palette[i] =
-        SDL_MapRGBA(impl_->pixel_format, kEgaPalette[i][0], kEgaPalette[i][1],
-                    kEgaPalette[i][2], kEgaPalette[i][3]);
+    impl_->palette[i] = SDL_MapRGBA(
+        impl_->pixel_format, default_palette[i][0], default_palette[i][1],
+        default_palette[i][2], default_palette[i][3]);
   }
 
   impl_->texture = SDL_CreateTexture(impl_->renderer, SDL_PIXELFORMAT_RGBA8888,
@@ -947,6 +1053,18 @@ Sdl2FramePresenter::Sdl2FramePresenter(std::uint16_t window_width,
 }
 
 Sdl2FramePresenter::~Sdl2FramePresenter() { delete impl_; }
+
+void Sdl2FramePresenter::set_palette(
+    const std::array<std::array<std::uint8_t, 4>, 16> &palette_table) {
+  if (!impl_ || !impl_->pixel_format) {
+    return;
+  }
+  for (std::size_t i = 0; i < impl_->palette.size(); ++i) {
+    impl_->palette[i] = SDL_MapRGBA(impl_->pixel_format, palette_table[i][0],
+                                    palette_table[i][1], palette_table[i][2],
+                                    palette_table[i][3]);
+  }
+}
 
 void Sdl2FramePresenter::present(const EgaPlanarSurface &frame) {
   if (!impl_ || !impl_->renderer || !impl_->texture) {

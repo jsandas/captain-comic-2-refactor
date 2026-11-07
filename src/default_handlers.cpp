@@ -148,6 +148,9 @@ void complete_pending_room_transition(RuntimeState &state) {
   transition.player_frozen = false;
 
   state.current_room = transition.target_room;
+  state.is_dark_room =
+      is_cavern_room_dark(state.current_level, state.current_room);
+  update_room_lighting_palette(state);
   state.player.x = transition.target_player_x;
   state.player.y = std::clamp(
       state.player.y, static_cast<std::int16_t>(0),
@@ -455,6 +458,9 @@ void handle_level_transition(RuntimeState &state) {
   }
   candidate_state.level_data =
       get_level_runtime_data(candidate_state.current_level);
+  candidate_state.is_dark_room = is_cavern_room_dark(
+      candidate_state.current_level, candidate_state.current_room);
+  update_room_lighting_palette(candidate_state);
   candidate_state.transition_state.active = true;
   candidate_state.transition_state.player_frozen = true;
   candidate_state.transition_state.completed = false;

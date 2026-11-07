@@ -1840,4 +1840,11 @@ check_room_transition_zone(std::uint16_t level_id, std::uint16_t room_id,
   return std::nullopt;
 }
 
+bool is_cavern_room_dark(std::uint16_t level_id, std::uint16_t room_id) {
+  (void)room_id;
+  // Level 1 corresponds to the underground mines and cavern system.
+  // Cavern chambers require the Cavern Lantern [DS:0x08b0] to illuminate.
+  return level_id == 1;
+}
+
 } // namespace comic2

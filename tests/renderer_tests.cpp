@@ -449,6 +449,110 @@ void test_render_bootstrap_frame_draws_player_after_entities() {
          "player marker should overwrite entity pixels when drawn last");
 }
 
+void test_default_ega_palette_and_black_mask() {
+  const auto ega = comic2::make_default_ega_palette();
+  expect(ega.size() == 16, "default EGA palette must have 16 entries");
+  expect(ega[0][0] == 0 && ega[0][1] == 0 && ega[0][2] == 0,
+         "color 0 should be black");
+  expect(ega[15][0] == 255 && ega[15][1] == 255 && ega[15][2] == 255,
+         "color 15 should be white");
+
+  const auto black_mask = comic2::make_black_palette_mask();
+  comic2::EgaPaletteState palette_state;
+  palette_state.entries = black_mask;
+  expect(comic2::is_black_palette_mask(palette_state),
+         "black mask must be detected by is_black_palette_mask");
+
+  palette_state.entries = ega;
+  expect(!comic2::is_black_palette_mask(palette_state),
+         "standard EGA palette must not be detected as black mask");
+}
+
+void test_update_room_lighting_palette() {
+  auto state = comic2::make_default_runtime_state();
+  state.is_dark_room = true;
+  state.player.lantern_equipped = false;
+
+  comic2::update_room_lighting_palette(state);
+  expect(state.palette.loaded, "palette must be marked loaded");
+  expect(comic2::is_black_palette_mask(state.palette),
+         "unlit dark room must apply black palette mask");
+
+  state.player.lantern_equipped = true;
+  comic2::update_room_lighting_palette(state);
+  expect(!comic2::is_black_palette_mask(state.palette),
+         "lantern equipped must restore visible palette");
+  expect(state.palette.entries == comic2::make_default_ega_palette(),
+         "palette must match standard visible EGA table");
+
+  state.is_dark_room = false;
+  state.player.lantern_equipped = false;
+  comic2::update_room_lighting_palette(state);
+  expect(!comic2::is_black_palette_mask(state.palette),
+         "lit room without lantern must maintain visible palette");
+}
+
+void test_apply_cavern_darkness_mask() {
+  comic2::EgaPlanarSurface surface(320, 200);
+  surface.clear(0xFF);
+
+  auto state = comic2::make_default_runtime_state();
+  state.is_dark_room = true;
+  state.player.lantern_equipped = false;
+
+  comic2::apply_cavern_darkness_mask(surface, state, 8, 8, 240, 176);
+
+  // Viewport interior must be masked to black
+  expect(read_surface_color(surface, 100, 100) == 0x00,
+         "playfield pixel must be masked to black in unlit dark room");
+  expect(read_surface_color(surface, 8, 8) == 0x00,
+         "top-left viewport corner must be masked to black");
+  expect(read_surface_color(surface, 247, 183) == 0x00,
+         "bottom-right viewport corner must be masked to black");
+
+  // Outside viewport (bezel / HUD) must remain untouched
+  expect(read_surface_color(surface, 4, 4) == 0x0F,
+         "top bezel border pixel must remain unmasked");
+  expect(read_surface_color(surface, 260, 50) == 0x0F,
+         "right HUD panel pixel must remain unmasked");
+
+  // Equipping lantern restores visibility
+  surface.clear(0xFF);
+  state.player.lantern_equipped = true;
+  comic2::apply_cavern_darkness_mask(surface, state, 8, 8, 240, 176);
+  expect(read_surface_color(surface, 100, 100) == 0x0F,
+         "playfield pixel must remain visible when lantern is equipped");
+
+  // Fallback path: unaligned rectangle (not multiples of 8)
+  surface.clear(0xFF);
+  state.player.lantern_equipped = false;
+  comic2::apply_cavern_darkness_mask(surface, state, 5, 10, 23, 15);
+  expect(read_surface_color(surface, 5, 10) == 0x00,
+         "unaligned rect corner must be masked to black");
+  expect(read_surface_color(surface, 27, 24) == 0x00,
+         "unaligned rect interior must be masked to black");
+  expect(read_surface_color(surface, 4, 10) == 0x0F,
+         "pixel outside unaligned rect left edge must remain unmasked");
+  expect(read_surface_color(surface, 28, 24) == 0x0F,
+         "pixel outside unaligned rect right edge must remain unmasked");
+}
+
+void test_apply_radial_darkness_mask() {
+  comic2::EgaPlanarSurface surface(320, 200);
+  surface.clear(0xFF);
+
+  comic2::apply_radial_darkness_mask(surface, 100, 100, 20, 8, 8, 240, 176);
+
+  expect(read_surface_color(surface, 100, 100) == 0x0F,
+         "center pixel within illumination radius must remain visible");
+  expect(read_surface_color(surface, 110, 100) == 0x0F,
+         "offset pixel within illumination radius must remain visible");
+  expect(read_surface_color(surface, 130, 100) == 0x00,
+         "pixel outside illumination radius must be masked to black");
+  expect(read_surface_color(surface, 4, 4) == 0x0F,
+         "pixel outside viewport border must remain untouched");
+}
+
 } // namespace
 
 void run_renderer_tests() {
@@ -475,6 +579,10 @@ void run_renderer_tests() {
   test_render_bootstrap_frame_skips_entities_outside_viewport();
   test_render_bootstrap_frame_renders_entities_on_viewport_edge();
   test_render_bootstrap_frame_draws_player_after_entities();
+  test_default_ega_palette_and_black_mask();
+  test_update_room_lighting_palette();
+  test_apply_cavern_darkness_mask();
+  test_apply_radial_darkness_mask();
   // EgaPageFlipper tests
   {
     comic2::EgaPageFlipper flipper;

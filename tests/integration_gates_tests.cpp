@@ -1814,6 +1814,201 @@ void test_gate_14a_boots_trajectory_and_firepower() {
          "Gate 14-A: sixth shot blocked at Level 5 firepower concurrency cap");
 }
 
+void test_gate_14b_cavern_lantern_and_palette_darkness() {
+  // Gate 14-B: Cavern lantern illumination and palette darkness mechanics
+  // (comic2_data.asm DS:0x08b0, comic2_standalone.asm vid_load_alt_palette
+  // 1000:7999, vid_set_ega_palette 1000:010e).
+
+  // 1. Palette Table Darkness Mask Verification
+  {
+    auto state = comic2::make_default_runtime_state();
+    state.is_dark_room = true;
+    state.player.lantern_equipped = false;
+
+    comic2::update_room_lighting_palette(state);
+    expect(state.palette.loaded,
+           "Gate 14-B: palette must be marked loaded after lighting update");
+    expect(
+        comic2::is_black_palette_mask(state.palette),
+        "Gate 14-B: dark room without lantern must apply black palette mask");
+
+    // Verify all 16 palette entries are mapped to black
+    for (std::size_t i = 0; i < state.palette.entries.size(); ++i) {
+      expect(state.palette.entries[i][0] == 0U &&
+                 state.palette.entries[i][1] == 0U &&
+                 state.palette.entries[i][2] == 0U,
+             "Gate 14-B: palette entry must have 0 RGB in dark room");
+    }
+
+    // Equip lantern: palette must swap back to full visible 16-color EGA
+    // palette
+    state.player.lantern_equipped = true;
+    comic2::update_room_lighting_palette(state);
+    expect(!comic2::is_black_palette_mask(state.palette),
+           "Gate 14-B: dark room with lantern equipped must not be black mask");
+    expect(
+        state.palette.entries == comic2::make_default_ega_palette(),
+        "Gate 14-B: dark room with lantern must restore standard EGA palette");
+
+    // In lit room (e.g. outdoors), palette is visible regardless of lantern
+    state.is_dark_room = false;
+    state.player.lantern_equipped = false;
+    comic2::update_room_lighting_palette(state);
+    expect(!comic2::is_black_palette_mask(state.palette),
+           "Gate 14-B: lit room without lantern must maintain visible palette");
+  }
+
+  // 2. Playfield Viewport Planar Frame Rendering Verification
+  {
+    auto dark_state = comic2::make_default_runtime_state();
+    constexpr std::uint8_t kBorderColor = 0x05U; // sentinel border color
+    dark_state.bezel_frame =
+        make_gate11_bezel_with_sentinel(kBorderColor, 0x00U);
+    dark_state.player.score = 500U;
+    dark_state.player.gems = 2U;
+    dark_state.player.lives = 3U;
+    dark_state.player.shield_power = 5U;
+    dark_state.is_dark_room = true;
+    dark_state.player.lantern_equipped = false;
+
+    // Build a room grid with non-zero tile indices and non-zero tile graphics
+    dark_state.room_grid.tile_w = 20;
+    dark_state.room_grid.tile_h = 12;
+    dark_state.room_grid.row_pointers.resize(12);
+    dark_state.room_grid.tile_data.assign(20 * 12, 0x01);
+    for (std::uint16_t row = 0; row < 12; ++row) {
+      dark_state.room_grid.row_pointers[row] =
+          static_cast<std::uint16_t>(row * 20);
+    }
+
+    comic2::Ega4PlaneImage tile{};
+    tile.width_bytes = 2U;
+    tile.height_rows = 16U;
+    tile.row_span_bytes = 32U;
+    for (auto &plane : tile.planes) {
+      plane.assign(32U, 0xFFU); // white tile (color index 0x0F)
+    }
+    dark_state.level_tileset = {tile};
+
+    comic2::MemoryFramePresenter presenter;
+    comic2::render_bootstrap_frame(presenter, dark_state);
+    expect(presenter.has_frame(), "Gate 14-B: frame must be presented");
+    const auto &dark_frame = presenter.last_frame();
+
+    // Verify all pixels inside the playfield viewport (x=8..247, y=8..183) are
+    // 0x00
+    bool all_playfield_black = true;
+    for (std::size_t y = 8U; y < 184U && all_playfield_black; ++y) {
+      for (std::size_t x = 8U; x < 248U && all_playfield_black; ++x) {
+        if (read_gate11_color(dark_frame, x, y) != 0x00U) {
+          all_playfield_black = false;
+        }
+      }
+    }
+    expect(
+        all_playfield_black,
+        "Gate 14-B: playfield viewport must be entirely black without lantern");
+
+    // Verify bezel border and HUD panel pixels outside playfield remain intact
+    expect(read_gate11_color(dark_frame, 3U, 3U) == kBorderColor,
+           "Gate 14-B: bezel border must remain intact during darkness "
+           "masking");
+
+    bool hud_has_pixels = false;
+    for (std::size_t y = 90U; y < 176U && !hud_has_pixels; ++y) {
+      for (std::size_t x = 258U; x < 288U && !hud_has_pixels; ++x) {
+        if (read_gate11_color(dark_frame, x, y) != 0x00U) {
+          hud_has_pixels = true;
+        }
+      }
+    }
+    expect(hud_has_pixels,
+           "Gate 14-B: HUD panel must remain visible during cavern darkness");
+
+    // Verify playfield remains black during active room transition effects
+    auto transition_dark_state = dark_state;
+    transition_dark_state.transition_state.active = true;
+    transition_dark_state.transition_state.palette_tint = 3;
+    transition_dark_state.transition_state.palette_shift = 1;
+    transition_dark_state.transition_state.frame_index = 4;
+    transition_dark_state.transition_state.effect_type = 0;
+    comic2::render_bootstrap_frame(presenter, transition_dark_state);
+    expect(presenter.has_frame(),
+           "Gate 14-B: transition frame must be presented");
+    const auto &trans_frame = presenter.last_frame();
+    bool transition_playfield_black = true;
+    for (std::size_t y = 8U; y < 184U && transition_playfield_black; ++y) {
+      for (std::size_t x = 8U; x < 248U && transition_playfield_black; ++x) {
+        if (read_gate11_color(trans_frame, x, y) != 0x00U) {
+          transition_playfield_black = false;
+        }
+      }
+    }
+    expect(transition_playfield_black,
+           "Gate 14-B: playfield viewport must remain entirely black during "
+           "transitions without lantern");
+
+    // 3. Equip Cavern Lantern: Visible Field Renders
+    dark_state.player.lantern_equipped = true;
+    comic2::render_bootstrap_frame(presenter, dark_state);
+    expect(presenter.has_frame(),
+           "Gate 14-B: illuminated frame must be presented");
+    const auto &lit_frame = presenter.last_frame();
+
+    std::size_t visible_pixel_count = 0;
+    for (std::size_t y = 8U; y < 184U; ++y) {
+      for (std::size_t x = 8U; x < 248U; ++x) {
+        if (read_gate11_color(lit_frame, x, y) != 0x00U) {
+          ++visible_pixel_count;
+        }
+      }
+    }
+    expect(visible_pixel_count > 0,
+           "Gate 14-B: playfield must render visible pixels with lantern "
+           "equipped");
+
+    // Compare with an identical baseline room with is_dark_room = false
+    auto baseline_state = dark_state;
+    baseline_state.is_dark_room = false;
+    comic2::MemoryFramePresenter baseline_presenter;
+    comic2::render_bootstrap_frame(baseline_presenter, baseline_state);
+    const auto &baseline_frame = baseline_presenter.last_frame();
+
+    bool playfield_matches_baseline = true;
+    for (std::size_t y = 8U; y < 184U && playfield_matches_baseline; ++y) {
+      for (std::size_t x = 8U; x < 248U && playfield_matches_baseline; ++x) {
+        if (read_gate11_color(lit_frame, x, y) !=
+            read_gate11_color(baseline_frame, x, y)) {
+          playfield_matches_baseline = false;
+        }
+      }
+    }
+    expect(playfield_matches_baseline,
+           "Gate 14-B: lantern illumination must match standard lit room "
+           "playfield");
+
+    // 4. Dynamic Toggle and Level Transition
+    // Unequip lantern -> becomes dark again
+    dark_state.player.lantern_equipped = false;
+    comic2::render_bootstrap_frame(presenter, dark_state);
+    expect(read_gate11_color(presenter.last_frame(), 100U, 100U) == 0x00U,
+           "Gate 14-B: unequipping lantern must re-apply darkness mask");
+
+    // Re-equip -> restores visibility
+    dark_state.player.lantern_equipped = true;
+    comic2::render_bootstrap_frame(presenter, dark_state);
+    expect(read_gate11_color(presenter.last_frame(), 100U, 100U) != 0x00U,
+           "Gate 14-B: re-equipping lantern must restore visibility "
+           "immediately");
+
+    // Level detection: level 1 cavern detection
+    expect(comic2::is_cavern_room_dark(1, 0),
+           "Gate 14-B: Level 1 rooms must be recognized as cavern dark rooms");
+    expect(!comic2::is_cavern_room_dark(0, 0),
+           "Gate 14-B: Level 0 rooms must be recognized as outdoor lit rooms");
+  }
+}
+
 } // namespace
 
 void run_integration_gate_tests() {
@@ -1864,4 +2059,7 @@ void run_integration_gate_tests() {
 
   // Gate 14-A: High-jump boots trajectory parity and firepower progression.
   test_gate_14a_boots_trajectory_and_firepower();
+
+  // Gate 14-B: Cavern lantern illumination and palette darkness mechanics.
+  test_gate_14b_cavern_lantern_and_palette_darkness();
 }

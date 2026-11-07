@@ -968,6 +968,11 @@ void render_bootstrap_frame(IFramePresenter &presenter, RuntimeState &state) {
     }
   }
 
+  // Cavern Lantern & Darkness Mechanics (Phase 14 Slice 2 / Gate 14-B)
+  // Applied after transition effects so unlit cavern playfields remain black.
+  update_room_lighting_palette(state);
+  apply_cavern_darkness_mask(frame, state, vp_x, vp_y, vp_w, vp_h);
+
   if (state.ui.menu_state == MenuState::Pause ||
       state.ui.menu_state == MenuState::Options ||
       state.ui.menu_state == MenuState::Help ||
