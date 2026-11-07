@@ -72,8 +72,8 @@ public:
   ~Sdl2FramePresenter() override;
 
   void present(const EgaPlanarSurface &frame) override;
-  void
-  set_palette(const std::array<std::array<std::uint8_t, 4>, 16> &palette_table);
+  void set_palette(
+      const std::array<std::array<std::uint8_t, 4>, 16> &palette_table);
 
   // Disable copying
   Sdl2FramePresenter(const Sdl2FramePresenter &) = delete;
