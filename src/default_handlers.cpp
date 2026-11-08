@@ -158,6 +158,9 @@ void complete_pending_room_transition(RuntimeState &state) {
   state.player.x_vel = 0;
   state.player.y_vel = 0;
   state.player.is_airborne = false;
+  state.room_entrance_x = state.player.x;
+  state.room_entrance_y = state.player.y;
+  state.warp_beacon = std::nullopt;
 }
 
 void advance_transition_state(RuntimeState &state) {
@@ -328,6 +331,9 @@ void reset_runtime_for_new_game(RuntimeState &state) {
   state.player.gems = 0;
   state.player.lives = 3;
   state.player.invuln_ticks = 0;
+  state.room_entrance_x = 64;
+  state.room_entrance_y = 96;
+  state.warp_beacon = std::nullopt;
   state.current_room = 0;
   state.current_level = 0;
   state.level_data = get_level_runtime_data(0);
@@ -930,6 +936,12 @@ void update_progression_state(RuntimeState &state) {
     state.ui.inventory_mask =
         static_cast<std::uint8_t>(state.ui.inventory_mask | 0x04U);
   }
+
+  state.progression.boots_acquired = state.player.boots_equipped;
+  state.progression.lantern_acquired = state.player.lantern_equipped;
+  state.progression.corkscrew_acquired = state.player.corkscrew_equipped;
+  state.progression.wand_acquired = state.player.wand_equipped;
+  state.progression.keys_collected = state.player.key_count;
 }
 
 void handle_input_fallback(RuntimeState &state) {
@@ -946,6 +958,7 @@ void handle_input_fallback(RuntimeState &state) {
   }
 
   handle_mapped_object_interaction(state);
+  process_player_tile_interactions(state);
   show_pending_room_event_message(state);
   if (state.ui.modal_active && !state.ui.modal_prompt.empty() &&
       state.ui.pending_event_message.empty() &&
@@ -979,6 +992,10 @@ void handle_input_fallback(RuntimeState &state) {
   update_entity_behaviors(state);
   apply_entity_combat(state);
   apply_input_tick(state, kDefaultMotion);
+  if (state.input.teleport_pressed) {
+    try_use_teleport_wand(state);
+  }
+  process_player_tile_interactions(state);
   update_player_mode_cycle(state);
   update_player_mode_activation(state);
   update_player_mode_effect(state);

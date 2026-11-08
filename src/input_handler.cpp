@@ -113,6 +113,9 @@ bool KeyboardInputHandler::poll_events(InputState &input) {
         } else if (event.key.keysym.scancode == SDL_SCANCODE_RETURN ||
                    event.key.keysym.sym == SDLK_e) {
           input.mode_activate_pressed = true;
+        } else if (event.key.keysym.scancode == SDL_SCANCODE_T ||
+                   event.key.keysym.sym == SDLK_t) {
+          input.teleport_pressed = true;
         }
         break;
 
@@ -137,6 +140,7 @@ bool KeyboardInputHandler::poll_events(InputState &input) {
                          keys[SDL_SCANCODE_F] || keys[SDL_SCANCODE_J];
     input.mode_activate_pressed =
         keys[SDL_SCANCODE_RETURN] || keys[SDL_SCANCODE_E];
+    input.teleport_pressed = keys[SDL_SCANCODE_T];
 
     return !impl_->quit_requested;
   }
@@ -149,6 +153,7 @@ bool KeyboardInputHandler::poll_events(InputState &input) {
   input.down_pressed = read_env_bool("COMIC2_INPUT_DOWN");
   input.fire_pressed = read_env_bool("COMIC2_INPUT_FIRE");
   input.mode_activate_pressed = read_env_bool("COMIC2_INPUT_MODE_ACTIVATE");
+  input.teleport_pressed = read_env_bool("COMIC2_INPUT_TELEPORT");
 
   if (read_env_bool("COMIC2_INPUT_QUIT")) {
     impl_->quit_requested = true;

@@ -1510,12 +1510,12 @@ Implement Comic's full inventory powerups, equipment abilities, and world intera
 - [x] Wire High-Jump Gravity Boots (`DS:0x08ae`) jump capacity increase (5 to 6 ticks) and trajectory mechanics into `player_controller.cpp`.
 - [x] Implement Firepower progression (Levels 1-5, `DS:0x08ac`), projectile concurrency caps, and firing rate cooldown timer (`DS:0x08a8`) into `projectiles.cpp`.
 - [x] Implement Cavern Lantern (`DS:0x08b0`) palette illumination / darkness masking.
-- [ ] Implement Drainage Corkscrew (`DS:0x08b2`), Keys (`DS:0x08b6`), and Teleportation Wand (`DS:0x08b4`) runtime grid tile transformation.
+- [x] Implement Drainage Corkscrew (`DS:0x08b2`), Keys (`DS:0x08b6`), and Teleportation Wand (`DS:0x08b4`) runtime grid tile transformation.
 
 ### Phase 14 Validation Gates
 - [x] **Gate 14-A (Boots Trajectory & Firepower)**: Boots jump achieves verified 6-tick peak height, variable jump height truncation, and firepower levels 1-5 rate-limited concurrency.
 - [x] **Gate 14-B (Palette Darkness)**: Dark room without lantern applies black palette mask; with lantern renders visible field.
-- [ ] **Gate 14-C (Tile Modification)**: Corkscrew and keys transform impassable tiles to passable tiles in runtime grid.
+- [x] **Gate 14-C (Tile Modification)**: Corkscrew and keys transform impassable tiles to passable tiles in runtime grid.
 
 ---
 
