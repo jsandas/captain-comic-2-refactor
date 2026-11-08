@@ -27,7 +27,7 @@ clean-tools:
 quality: cppcheck format-check check-compiler_warnings
 
 cppcheck:
-	@docker run --name cppcheck_container --rm -v ${PWD}:/workspace \
+	@docker run --name cppcheck_$(shell basename ${PWD}) --rm -v ${PWD}:/workspace \
 		--workdir /workspace \
 		--pull always \
 		alpine:edge \
