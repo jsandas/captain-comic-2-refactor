@@ -287,6 +287,13 @@ void test_keys_door_tile_transformation() {
          "locked door tile must transform into passable tile");
   expect(comic2::is_tile_passable_at_pixels(state.room_grid, 32, 0),
          "unlocked door tile must now be passable");
+
+  // Attempt on invalid / out-of-bounds coords: fails, key count preserved
+  state.player.key_count = 5;
+  expect(!comic2::try_unlock_door_tile(state, -16, 0, config),
+         "unlock door out of bounds must fail");
+  expect(state.player.key_count == 5,
+         "key count must not decrement if door unlock write fails");
 }
 
 void test_teleportation_wand_mechanics_and_beacon_transformation() {

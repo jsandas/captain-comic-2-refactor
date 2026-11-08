@@ -221,10 +221,10 @@ bool try_unlock_door_tile(RuntimeState &state, std::int16_t pixel_x,
   if (!tile.has_value() || *tile != config.locked_door_tile) {
     return false;
   }
-  --state.player.key_count;
   const bool changed = set_tile_at_pixels(state.room_grid, pixel_x, pixel_y,
                                           config.passable_tile);
   if (changed) {
+    --state.player.key_count;
     queue_audio_event(state, AudioEvent::DoorOpen);
   }
   return changed;
