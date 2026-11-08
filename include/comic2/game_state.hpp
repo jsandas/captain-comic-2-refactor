@@ -97,7 +97,7 @@ struct PlayerState {
   bool wand_equipped = false;      // [DS:0x08b4] Teleportation wand flag
   std::uint8_t key_count = 0;      // [DS:0x08b6] Door keys collected count
   std::uint8_t wand_charges =
-      0; // Teleportation wand charges (0 = infinite / uncharged)
+      0; // Teleportation wand charges (0 = unlimited; >0 decrements per use)
 
   bool operator==(const PlayerState &) const = default;
 };
