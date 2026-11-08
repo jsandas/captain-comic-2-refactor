@@ -27,7 +27,6 @@ struct TileTransformationConfig {
   std::uint8_t locked_door_tile = kLockedDoorTileId;
   std::uint8_t warp_beacon_tile = kWarpBeaconTileId;
   std::uint8_t active_warp_portal_tile = kActiveWarpPortalTileId;
-  std::uint8_t solid_tile_threshold = 0x01;
 };
 
 std::optional<std::uint8_t> get_tile_at_pixels(const RoomTileGrid &grid,
