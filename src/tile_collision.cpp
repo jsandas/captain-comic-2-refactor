@@ -1,5 +1,6 @@
 #include "comic2/tile_collision.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <optional>
 #include <utility>
@@ -314,13 +315,9 @@ bool process_player_tile_interactions(RuntimeState &state,
     if (tx >= state.room_grid.tile_w || ty >= state.room_grid.tile_h) {
       continue;
     }
-    bool already_visited = false;
-    for (const auto &vt : visited_tiles) {
-      if (vt.first == tx && vt.second == ty) {
-        already_visited = true;
-        break;
-      }
-    }
+    const bool already_visited = std::any_of(
+        visited_tiles.begin(), visited_tiles.end(),
+        [tx, ty](const auto &vt) { return vt.first == tx && vt.second == ty; });
     if (!already_visited) {
       visited_tiles.push_back({tx, ty});
     }
