@@ -38,6 +38,7 @@ cppcheck:
 		--suppress=missingIncludeSystem \
 		--check-level=exhaustive \
 		--inline-suppr \
+		--error-exitcode=1 \
 		-I include \
 		src tests"
 
