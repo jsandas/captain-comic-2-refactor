@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
@@ -21,10 +22,12 @@ std::filesystem::path find_reference_original_dir() {
       "../reference/original",
       "../../reference/original",
   };
-  for (const auto &p : candidates) {
-    if (std::filesystem::exists(p / "GAME.000")) {
-      return p;
-    }
+  const auto it = std::find_if(candidates.begin(), candidates.end(),
+                               [](const std::filesystem::path &p) {
+                                 return std::filesystem::exists(p / "GAME.000");
+                               });
+  if (it != candidates.end()) {
+    return *it;
   }
   return {};
 }
