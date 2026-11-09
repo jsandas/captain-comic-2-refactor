@@ -223,6 +223,11 @@ struct RuntimeState {
   std::vector<std::uint8_t> sprite_resource_bytes;
   std::vector<FrpakDecodedRecordCacheEntry> frpak_decode_cache;
   std::optional<Ega4PlaneImage> bezel_frame;
+  std::optional<Ega4PlaneImage> title_screen;
+  std::vector<Ega4PlaneImage> intro_screens;
+  std::optional<Ega4PlaneImage> victory_screen;
+  std::optional<Ega4PlaneImage> menu_panel;
+  std::vector<MaskedSpriteRecord> menu_buttons;
 
   PlayerState player;
   InputState input;

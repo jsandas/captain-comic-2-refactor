@@ -124,6 +124,9 @@ void gfx_rle_blit_masked_or_4plane(EgaPlanarSurface &dest, std::size_t x_pixels,
                                    std::size_t y_rows,
                                    const Ega4PlaneImage &image_data);
 
+// Converts a MaskedSpriteRecord into an Ega4PlaneImage suitable for blitting.
+Ega4PlaneImage make_masked_sprite_image(const MaskedSpriteRecord &record);
+
 // Authentic in-game playfield viewport within the 320x200 bezel frame.
 // The FRPAK.001 bezel has an 8-pixel border; the playfield sits within it.
 constexpr std::int32_t kPlayfieldX = 8;

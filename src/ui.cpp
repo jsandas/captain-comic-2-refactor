@@ -275,9 +275,44 @@ void ui_render_option_list(EgaPlanarSurface &surface,
   }
 }
 
-// cppcheck-suppress unusedFunction ; reserved for Phase 10
 void ui_render_game_selection_panel(EgaPlanarSurface &surface,
                                     const RuntimeState &state) {
+  if (state.menu_panel.has_value()) {
+    gfx_rle_blit_opaque_4plane(surface, 8, 8, *state.menu_panel);
+
+    struct WorldButton {
+      std::size_t x;
+      std::size_t y;
+      const char *name;
+    };
+    static constexpr std::array<WorldButton, 6> kWorldButtons = {{
+        {24, 24, "NATURE"},
+        {88, 24, "MAGIC"},
+        {152, 24, "TIME"},
+        {24, 112, "ICE"},
+        {88, 112, "TECHNO"},
+        {152, 112, "DREAMS"},
+    }};
+
+    if (state.menu_buttons.size() >= 2) {
+      const auto unselected_image =
+          make_masked_sprite_image(state.menu_buttons[1]);
+      const auto selected_image =
+          make_masked_sprite_image(state.menu_buttons[0]);
+      for (std::size_t i = 0; i < kWorldButtons.size(); ++i) {
+        const bool is_selected = (i == state.ui.selected_option_index);
+        const auto &btn_img = is_selected ? selected_image : unselected_image;
+        gfx_rle_blit_masked_or_4plane(surface, kWorldButtons[i].x,
+                                      kWorldButtons[i].y, btn_img);
+      }
+      if (state.ui.selected_option_index < kWorldButtons.size()) {
+        blit_string(surface, 136, 90,
+                    kWorldButtons[state.ui.selected_option_index].name, 0x0F);
+      }
+    }
+    return;
+  }
+
   draw_rect(surface, 20, 20, 280, 140, 0x02);
   draw_rect(surface, 28, 32, 264, 12, 0x0F);
   if (state.ui.menu_state == MenuState::GameSelect) {
@@ -350,17 +385,48 @@ bool ui_select_prev_valid_option(RuntimeState &state) {
   return true;
 }
 
-// cppcheck-suppress unusedFunction ; reserved for Phase 10
+bool render_title_screen(EgaPlanarSurface &surface, const RuntimeState &state) {
+  if (state.title_screen.has_value()) {
+    gfx_rle_blit_opaque_4plane(surface, 0, 0, *state.title_screen);
+    return true;
+  }
+
+  draw_rect(surface, 0, 0, 320, 200, 0x01);
+  draw_rect(surface, 40, 40, 240, 120, 0x09);
+  blit_string(surface, 64, 80, "CAPTAIN COMIC II", 0x0F);
+  blit_string(surface, 80, 100, "FRACTURED REALITY", 0x0E);
+  return false;
+}
+
 bool play_intro_cinematic(EgaPlanarSurface &surface, RuntimeState &state) {
+  if (!state.intro_screens.empty()) {
+    const std::size_t count = state.intro_screens.size();
+    const std::size_t index =
+        static_cast<std::size_t>(state.ui.cinematic_frame) % count;
+    gfx_rle_blit_opaque_4plane(surface, 0, 0, state.intro_screens[index]);
+    state.ui.cinematic_frame =
+        static_cast<std::uint8_t>(state.ui.cinematic_frame + 1U);
+    return state.ui.cinematic_frame >= count;
+  }
+
   draw_rect(surface, 0, 0, 320, 200, 0x00);
   draw_rect(surface, 40, 50, 240, 100, 0x0F);
   state.ui.cinematic_frame =
       static_cast<std::uint8_t>(state.ui.cinematic_frame + 1U);
-  return true;
+  return state.ui.cinematic_frame >= 4U;
 }
 
 bool event_finale_transition_sequence(EgaPlanarSurface &surface,
                                       RuntimeState &state) {
+  if (state.victory_screen.has_value()) {
+    gfx_rle_blit_opaque_4plane(surface, 0, 0, *state.victory_screen);
+    state.progression.flags =
+        static_cast<std::uint8_t>(state.progression.flags | 0x80U);
+    state.ui.cinematic_frame =
+        static_cast<std::uint8_t>(state.ui.cinematic_frame + 1U);
+    return true;
+  }
+
   draw_rect(surface, 0, 0, 320, 200, 0x08);
   draw_rect(surface, 20, 20, 280, 160, 0x0C);
   state.ui.cinematic_frame =
