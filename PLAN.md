@@ -1542,8 +1542,8 @@ Implement the complete frontend, title sequence, options configuration, save gam
    - Victory ending: `FRPAK.007` victory graphic display and award medals ceremony.
 
 ### Phase 15 Validation Gates
-- [ ] **Gate 15-A (Savegame Roundtrip)**: Saved `GAME.000` binary exactly matches original DOS save game file structure.
-- [ ] **Gate 15-B (Config Persistence)**: Custom key definitions and sound settings correctly save and restore from `FR.CFG`.
+- [x] **Gate 15-A (Savegame Roundtrip)**: Saved `GAME.000` binary exactly matches original DOS save game file structure.
+- [x] **Gate 15-B (Config Persistence)**: Custom key definitions and sound settings correctly save and restore from `FR.CFG`.
 - [ ] **Gate 15-C (End-to-End Game Flow)**: State machine smoothly transitions: Title -> Intro -> Menu -> Gameplay -> Save -> Victory without memory leaks or state corruption.
 
 ---

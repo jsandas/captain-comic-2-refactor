@@ -251,6 +251,11 @@ struct RuntimeState {
 
   std::vector<ProjectileState> projectiles;
   AudioDispatchState audio;
+
+  DosKeyBindings key_bindings{};
+  DosConfig dos_config{};
+  std::vector<std::uint8_t> savegame_mapped_objects_raw;
+  std::vector<std::uint8_t> savegame_tail_bytes;
 };
 
 RuntimeState make_default_runtime_state();

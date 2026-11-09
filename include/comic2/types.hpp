@@ -1,6 +1,8 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace comic2 {
@@ -56,7 +58,28 @@ struct FrdataRoomEntry {
   bool operator==(const FrdataRoomEntry &) const = default;
 };
 
+// Authentic DOS key bindings structure as serialized to KEYS.DEF (6 bytes)
+struct DosKeyBindings {
+  std::uint8_t left = 0x4B;  // Left arrow
+  std::uint8_t right = 0x4D; // Right arrow
+  std::uint8_t up = 0x48;    // Up arrow
+  std::uint8_t down = 0x50;  // Down arrow
+  std::uint8_t jump = 0x39;  // Space bar
+  std::uint8_t fire = 0x52;  // 'R' / Ins / trigger
+
+  bool operator==(const DosKeyBindings &) const = default;
+};
+
 #pragma pack(pop)
+
+// Authentic DOS configuration data as serialized to FR.CFG (102 bytes)
+struct DosConfig {
+  std::uint16_t player_count = 0;
+  std::array<std::string, 5> player_names{};
+  std::array<std::uint16_t, 10> records{};
+
+  bool operator==(const DosConfig &) const = default;
+};
 
 struct RoomTileGrid {
   std::uint16_t tile_w = 0;

@@ -17,6 +17,7 @@
 #include "comic2/entity_runtime.hpp"
 #include "comic2/level_data.hpp"
 #include "comic2/oracle.hpp"
+#include "comic2/persistence.hpp"
 #include "comic2/player_controller.hpp"
 #include "comic2/projectiles.hpp"
 #include "comic2/renderer.hpp"
@@ -2220,6 +2221,165 @@ void test_gate_14c_tile_modification() {
   }
 }
 
+std::filesystem::path find_gate_reference_original_dir() {
+  const std::vector<std::filesystem::path> candidates = {
+      "reference/original",
+      "../reference/original",
+      "../../reference/original",
+  };
+  for (const auto &p : candidates) {
+    if (std::filesystem::exists(p / "GAME.000")) {
+      return p;
+    }
+  }
+  return {};
+}
+
+void test_gate_15a_savegame_roundtrip() {
+  const auto dir = find_gate_reference_original_dir();
+  if (dir.empty()) {
+    return;
+  }
+
+  // 1. Validate authentic GAME.000 byte-for-byte roundtrip
+  const auto game0_path = dir / "GAME.000";
+  const auto game0_bytes = comic2::load_file_bytes(game0_path);
+  expect(game0_bytes.has_value(), "Gate 15-A: GAME.000 file must exist");
+  expect(game0_bytes->size() == comic2::kDosSavegameSize,
+         "Gate 15-A: GAME.000 binary size must be exactly 3,127 bytes");
+
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  comic2::savegame_read_snapshot(state, *game0_bytes);
+
+  expect(state.mapped_objects.size() == 250,
+         "Gate 15-A: GAME.000 must deserialize 250 mapped object descriptors");
+  expect(state.player.x == 568 && state.player.y == 80,
+         "Gate 15-A: GAME.000 player spawn coordinates must equal (568, 80)");
+  expect(state.player.facing_right,
+         "Gate 15-A: GAME.000 initial facing direction must be right");
+  expect(state.current_level == 0 && state.current_room == 0,
+         "Gate 15-A: GAME.000 initial level/room must be 0/0");
+
+  std::vector<std::uint8_t> roundtrip_bytes;
+  comic2::savegame_write_snapshot(state, roundtrip_bytes);
+  expect(roundtrip_bytes.size() == comic2::kDosSavegameSize,
+         "Gate 15-A: serialized savegame must be exactly 3,127 bytes");
+  expect(roundtrip_bytes == *game0_bytes,
+         "Gate 15-A: saved GAME.000 binary must match original DOS file byte-for-byte");
+
+  // 2. Validate mutated in-game state serialization roundtrip
+  state.player.x = 420;
+  state.player.y = 112;
+  state.player.firepower = 4;
+  state.player.boots_equipped = true;
+  state.player.lantern_equipped = true;
+  state.player.wand_equipped = true;
+  state.player.key_count = 5;
+  state.player.score = 9876;
+  state.player.gems = 42;
+  state.current_level = 2;
+  state.current_room = 5;
+
+  std::vector<std::uint8_t> mutated_bytes;
+  comic2::savegame_write_snapshot(state, mutated_bytes);
+  expect(mutated_bytes.size() == comic2::kDosSavegameSize,
+         "Gate 15-A: mutated savegame snapshot must be 3,127 bytes");
+
+  comic2::RuntimeState loaded_mutated = comic2::make_default_runtime_state();
+  comic2::savegame_read_snapshot(loaded_mutated, mutated_bytes);
+  expect(loaded_mutated.player.x == 420 && loaded_mutated.player.y == 112,
+         "Gate 15-A: restored coordinates must match mutated values");
+  expect(loaded_mutated.player.firepower == 4,
+         "Gate 15-A: restored firepower must match mutated level");
+  expect(loaded_mutated.player.boots_equipped &&
+             loaded_mutated.player.lantern_equipped &&
+             loaded_mutated.player.wand_equipped,
+         "Gate 15-A: restored equipment flags must remain active");
+  expect(loaded_mutated.player.key_count == 5,
+         "Gate 15-A: restored keys count must match mutated count");
+  expect(loaded_mutated.player.score == 9876,
+         "Gate 15-A: restored score must match mutated score");
+  expect(loaded_mutated.player.gems == 42,
+         "Gate 15-A: restored gems must match mutated gems");
+  expect(loaded_mutated.current_level == 2 && loaded_mutated.current_room == 5,
+         "Gate 15-A: restored level/room must match mutated coordinates");
+}
+
+void test_gate_15b_config_persistence() {
+  const auto dir = find_gate_reference_original_dir();
+  if (dir.empty()) {
+    return;
+  }
+
+  // 1. Validate authentic FR.CFG byte-for-byte roundtrip
+  const auto frcfg_path = dir / "FR.CFG";
+  const auto frcfg_bytes = comic2::load_file_bytes(frcfg_path);
+  expect(frcfg_bytes.has_value(), "Gate 15-B: FR.CFG file must exist");
+  expect(frcfg_bytes->size() == comic2::kDosConfigSize,
+         "Gate 15-B: FR.CFG binary size must be exactly 102 bytes");
+
+  comic2::RuntimeState cfg_state = comic2::make_default_runtime_state();
+  comic2::cfg_load_options_or_defaults(cfg_state, *frcfg_bytes);
+
+  std::vector<std::uint8_t> saved_cfg_bytes;
+  comic2::cfg_save_options(cfg_state, saved_cfg_bytes);
+  expect(saved_cfg_bytes.size() == comic2::kDosConfigSize,
+         "Gate 15-B: saved FR.CFG must be exactly 102 bytes");
+  expect(saved_cfg_bytes == *frcfg_bytes,
+         "Gate 15-B: saved FR.CFG binary must match original DOS file byte-for-byte");
+
+  // 2. Validate custom player profiles and audio options persistence
+  cfg_state.dos_config.player_count = 2;
+  cfg_state.dos_config.player_names[0] = "COMIC";
+  cfg_state.dos_config.player_names[1] = "FRACTURE";
+  cfg_state.ui.music_volume = 7;
+  cfg_state.ui.sfx_volume = 8;
+  cfg_state.ui.display_scale = 2;
+
+  std::vector<std::uint8_t> custom_cfg_bytes;
+  comic2::cfg_save_options(cfg_state, custom_cfg_bytes);
+  expect(custom_cfg_bytes.size() == comic2::kDosConfigSize,
+         "Gate 15-B: custom config must serialize to 102 bytes");
+
+  comic2::RuntimeState loaded_cfg = comic2::make_default_runtime_state();
+  comic2::cfg_load_options_or_defaults(loaded_cfg, custom_cfg_bytes);
+  expect(loaded_cfg.dos_config.player_count == 2,
+         "Gate 15-B: player profile count must roundtrip");
+  expect(loaded_cfg.dos_config.player_names[0] == "COMIC",
+         "Gate 15-B: player 0 name must roundtrip");
+  expect(loaded_cfg.dos_config.player_names[1] == "FRACTURE",
+         "Gate 15-B: player 1 name must roundtrip");
+  expect(loaded_cfg.ui.music_volume == 7 && loaded_cfg.ui.sfx_volume == 8,
+         "Gate 15-B: custom music/sfx volume levels must roundtrip");
+  expect(loaded_cfg.ui.display_scale == 2,
+         "Gate 15-B: custom display scale must roundtrip");
+
+  // 3. Validate KEYS.DEF custom scancode persistence and defaults
+  const auto keys_path = dir / "KEYS.DEF";
+  const auto keys_bytes = comic2::load_file_bytes(keys_path);
+  if (keys_bytes.has_value()) {
+    expect(keys_bytes->size() == comic2::kDosKeyBindingsSize,
+           "Gate 15-B: KEYS.DEF binary size must be exactly 6 bytes");
+
+    comic2::DosKeyBindings keys{};
+    comic2::keys_load_or_defaults(keys, *keys_bytes);
+
+    std::vector<std::uint8_t> saved_keys;
+    comic2::keys_save(keys, saved_keys);
+    expect(saved_keys.size() == comic2::kDosKeyBindingsSize,
+           "Gate 15-B: saved KEYS.DEF must be exactly 6 bytes");
+    expect(saved_keys == *keys_bytes,
+           "Gate 15-B: saved KEYS.DEF must match original DOS file byte-for-byte");
+  }
+
+  comic2::DosKeyBindings default_keys{};
+  comic2::keys_load_or_defaults(default_keys, {});
+  expect(default_keys.left == 0x4B && default_keys.right == 0x4D &&
+             default_keys.up == 0x48 && default_keys.down == 0x50 &&
+             default_keys.jump == 0x39 && default_keys.fire == 0x52,
+         "Gate 15-B: empty payload must restore authentic DOS default scancodes");
+}
+
 } // namespace
 
 void run_integration_gate_tests() {
@@ -2276,4 +2436,10 @@ void run_integration_gate_tests() {
 
   // Gate 14-C: Tile modification (corkscrew, keys, and teleportation wand).
   test_gate_14c_tile_modification();
+
+  // Gate 15-A: Authentic DOS savegame binary roundtrip.
+  test_gate_15a_savegame_roundtrip();
+
+  // Gate 15-B: Authentic DOS configuration and key definition persistence.
+  test_gate_15b_config_persistence();
 }
