@@ -43,10 +43,8 @@ bool savegame_read_snapshot_file(RuntimeState &state,
 // Key definitions serialization (KEYS.DEF - 6 bytes)
 void keys_load_or_defaults(DosKeyBindings &keys,
                            const std::vector<std::uint8_t> &bytes);
-void keys_save(const DosKeyBindings &keys,
-               std::vector<std::uint8_t> &bytes);
-bool keys_load_file(DosKeyBindings &keys,
-                    const std::filesystem::path &path);
+void keys_save(const DosKeyBindings &keys, std::vector<std::uint8_t> &bytes);
+bool keys_load_file(DosKeyBindings &keys, const std::filesystem::path &path);
 bool keys_save_file(const DosKeyBindings &keys,
                     const std::filesystem::path &path);
 

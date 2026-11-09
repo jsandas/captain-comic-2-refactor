@@ -46,13 +46,16 @@ void test_reference_original_game000_roundtrip() {
 
   expect(state.player.x == 568, "GAME.000 spawn X should equal 568");
   expect(state.player.y == 80, "GAME.000 spawn Y should equal 80");
-  expect(state.player.facing_right == true, "GAME.000 facing right should be true");
+  expect(state.player.facing_right == true,
+         "GAME.000 facing right should be true");
   expect(state.player.firepower == 0, "GAME.000 firepower should equal 0");
-  expect(state.player.boots_equipped == false, "GAME.000 boots should be unequipped");
+  expect(state.player.boots_equipped == false,
+         "GAME.000 boots should be unequipped");
   expect(state.player.score == 0, "GAME.000 score should equal 0");
   expect(state.player.gems == 0, "GAME.000 gems should equal 0");
   expect(state.current_level == 0, "GAME.000 level should equal 0");
-  expect(state.mapped_objects.size() == 250, "GAME.000 must have 250 mapped objects");
+  expect(state.mapped_objects.size() == 250,
+         "GAME.000 must have 250 mapped objects");
 
   // Roundtrip save
   std::vector<std::uint8_t> saved_bytes;
@@ -83,10 +86,13 @@ void test_reference_original_game_slots_roundtrip() {
     comic2::savegame_read_snapshot(state, *bytes);
 
     if (filename == "GAME.003") {
-      expect(!state.player.facing_right, "GAME.003 facing right should be false");
+      expect(!state.player.facing_right,
+             "GAME.003 facing right should be false");
       expect(state.player.firepower == 1, "GAME.003 firepower should be 1");
-      expect(state.player.boots_equipped == true, "GAME.003 boots should be equipped");
-      expect(state.progression.boots_acquired == true, "GAME.003 boots progression acquired");
+      expect(state.player.boots_equipped == true,
+             "GAME.003 boots should be equipped");
+      expect(state.progression.boots_acquired == true,
+             "GAME.003 boots progression acquired");
       expect(state.current_room == 2, "GAME.003 room should be 2");
       expect(state.player.score == 1280, "GAME.003 score should equal 1280");
     }
@@ -132,17 +138,25 @@ void test_savegame_mutation_roundtrip() {
   expect(loaded.player.y == 128, "mutated y should roundtrip");
   expect(loaded.player.x_vel == 12, "mutated x_vel should roundtrip");
   expect(loaded.player.y_vel == -8, "mutated y_vel should roundtrip");
-  expect(loaded.player.facing_right == false, "mutated facing direction should roundtrip");
-  expect(loaded.player.animation_state == 3, "mutated animation state should roundtrip");
+  expect(loaded.player.facing_right == false,
+         "mutated facing direction should roundtrip");
+  expect(loaded.player.animation_state == 3,
+         "mutated animation state should roundtrip");
   expect(loaded.player.firepower == 3, "mutated firepower should roundtrip");
-  expect(loaded.player.boots_equipped == true, "mutated boots should roundtrip");
-  expect(loaded.progression.boots_acquired == true, "mutated boots progression should roundtrip");
-  expect(loaded.player.lantern_equipped == true, "mutated lantern should roundtrip");
-  expect(loaded.progression.lantern_acquired == true, "mutated lantern progression should roundtrip");
+  expect(loaded.player.boots_equipped == true,
+         "mutated boots should roundtrip");
+  expect(loaded.progression.boots_acquired == true,
+         "mutated boots progression should roundtrip");
+  expect(loaded.player.lantern_equipped == true,
+         "mutated lantern should roundtrip");
+  expect(loaded.progression.lantern_acquired == true,
+         "mutated lantern progression should roundtrip");
   expect(loaded.player.wand_equipped == true, "mutated wand should roundtrip");
-  expect(loaded.progression.wand_acquired == true, "mutated wand progression should roundtrip");
+  expect(loaded.progression.wand_acquired == true,
+         "mutated wand progression should roundtrip");
   expect(loaded.player.key_count == 4, "mutated key count should roundtrip");
-  expect(loaded.progression.keys_collected == 4, "mutated keys progression should roundtrip");
+  expect(loaded.progression.keys_collected == 4,
+         "mutated keys progression should roundtrip");
   expect(loaded.player.score == 5432, "mutated score should roundtrip");
   expect(loaded.player.gems == 18, "mutated gems should roundtrip");
   expect(loaded.player.lives == 5, "mutated lives should roundtrip");
@@ -183,15 +197,19 @@ void test_config_player_profiles_roundtrip() {
 
   std::vector<std::uint8_t> bytes;
   comic2::cfg_save_options(state, bytes);
-  expect(bytes.size() == comic2::kDosConfigSize, "config should serialize to 102 bytes");
+  expect(bytes.size() == comic2::kDosConfigSize,
+         "config should serialize to 102 bytes");
 
   comic2::RuntimeState loaded = comic2::make_default_runtime_state();
   comic2::cfg_load_options_or_defaults(loaded, bytes);
 
   expect(loaded.dos_config.player_count == 3, "player_count should roundtrip");
-  expect(loaded.dos_config.player_names[0] == "COMIC", "player 0 name should roundtrip");
-  expect(loaded.dos_config.player_names[1] == "CAPTAIN", "player 1 name should roundtrip");
-  expect(loaded.dos_config.player_names[2] == "HERO", "player 2 name should roundtrip");
+  expect(loaded.dos_config.player_names[0] == "COMIC",
+         "player 0 name should roundtrip");
+  expect(loaded.dos_config.player_names[1] == "CAPTAIN",
+         "player 1 name should roundtrip");
+  expect(loaded.dos_config.player_names[2] == "HERO",
+         "player 2 name should roundtrip");
 }
 
 void test_reference_original_keys_def_roundtrip() {

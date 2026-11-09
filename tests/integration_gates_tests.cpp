@@ -2265,7 +2265,8 @@ void test_gate_15a_savegame_roundtrip() {
   expect(roundtrip_bytes.size() == comic2::kDosSavegameSize,
          "Gate 15-A: serialized savegame must be exactly 3,127 bytes");
   expect(roundtrip_bytes == *game0_bytes,
-         "Gate 15-A: saved GAME.000 binary must match original DOS file byte-for-byte");
+         "Gate 15-A: saved GAME.000 binary must match original DOS file "
+         "byte-for-byte");
 
   // 2. Validate mutated in-game state serialization roundtrip
   state.player.x = 420;
@@ -2326,7 +2327,8 @@ void test_gate_15b_config_persistence() {
   expect(saved_cfg_bytes.size() == comic2::kDosConfigSize,
          "Gate 15-B: saved FR.CFG must be exactly 102 bytes");
   expect(saved_cfg_bytes == *frcfg_bytes,
-         "Gate 15-B: saved FR.CFG binary must match original DOS file byte-for-byte");
+         "Gate 15-B: saved FR.CFG binary must match original DOS file "
+         "byte-for-byte");
 
   // 2. Validate custom player profiles and audio options persistence
   cfg_state.dos_config.player_count = 2;
@@ -2368,16 +2370,18 @@ void test_gate_15b_config_persistence() {
     comic2::keys_save(keys, saved_keys);
     expect(saved_keys.size() == comic2::kDosKeyBindingsSize,
            "Gate 15-B: saved KEYS.DEF must be exactly 6 bytes");
-    expect(saved_keys == *keys_bytes,
-           "Gate 15-B: saved KEYS.DEF must match original DOS file byte-for-byte");
+    expect(
+        saved_keys == *keys_bytes,
+        "Gate 15-B: saved KEYS.DEF must match original DOS file byte-for-byte");
   }
 
   comic2::DosKeyBindings default_keys{};
   comic2::keys_load_or_defaults(default_keys, {});
-  expect(default_keys.left == 0x4B && default_keys.right == 0x4D &&
-             default_keys.up == 0x48 && default_keys.down == 0x50 &&
-             default_keys.jump == 0x39 && default_keys.fire == 0x52,
-         "Gate 15-B: empty payload must restore authentic DOS default scancodes");
+  expect(
+      default_keys.left == 0x4B && default_keys.right == 0x4D &&
+          default_keys.up == 0x48 && default_keys.down == 0x50 &&
+          default_keys.jump == 0x39 && default_keys.fire == 0x52,
+      "Gate 15-B: empty payload must restore authentic DOS default scancodes");
 }
 
 } // namespace

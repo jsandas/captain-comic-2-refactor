@@ -18,7 +18,8 @@ constexpr std::array<std::uint16_t, 10> kDefaultDosConfigRecords = {
     0x0000, 0x0000, 0x0000, 0x0000, 0x37BD,
 };
 
-// Default 127-byte savegame tail from original reference GAME.000 (DS:0x210..0x28E)
+// Default 127-byte savegame tail from original reference GAME.000
+// (DS:0x210..0x28E)
 const std::array<std::uint8_t, 127> kDefaultDosSavegameTail = {
     0x38, 0x02, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00,
     0x00, 0x00, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x50,
@@ -101,13 +102,11 @@ void keys_load_or_defaults(DosKeyBindings &keys,
   }
 }
 
-void keys_save(const DosKeyBindings &keys,
-               std::vector<std::uint8_t> &bytes) {
+void keys_save(const DosKeyBindings &keys, std::vector<std::uint8_t> &bytes) {
   bytes = {keys.left, keys.right, keys.up, keys.down, keys.jump, keys.fire};
 }
 
-bool keys_load_file(DosKeyBindings &keys,
-                    const std::filesystem::path &path) {
+bool keys_load_file(DosKeyBindings &keys, const std::filesystem::path &path) {
   const auto loaded = load_file_bytes(path);
   if (!loaded.has_value()) {
     keys_load_or_defaults(keys, {});
@@ -218,7 +217,8 @@ void cfg_save_options(const RuntimeState &state,
     write_u16_at(bytes, 82 + i * 2, source_records[i]);
   }
 
-  // Preserve customized audio volume and display scale settings in records 4 & 5
+  // Preserve customized audio volume and display scale settings in records 4 &
+  // 5
   if (state.ui.music_volume != 0x04 || state.ui.sfx_volume != 0x04) {
     const std::uint16_t vol_word =
         static_cast<std::uint16_t>(state.ui.music_volume) |
@@ -226,7 +226,8 @@ void cfg_save_options(const RuntimeState &state,
     write_u16_at(bytes, 82 + 4 * 2, vol_word);
   }
   if (state.ui.display_scale != 0x01) {
-    write_u16_at(bytes, 82 + 5 * 2, static_cast<std::uint16_t>(state.ui.display_scale));
+    write_u16_at(bytes, 82 + 5 * 2,
+                 static_cast<std::uint16_t>(state.ui.display_scale));
   }
 }
 
@@ -263,9 +264,9 @@ void savegame_read_snapshot(RuntimeState &state,
                 kDosMappedObjectsBytes);
 
     // 2. Trailing 127 bytes: player/session state
-    state.savegame_tail_bytes.assign(
-        bytes.begin() + kDosMappedObjectsBytes,
-        bytes.begin() + kDosMappedObjectsBytes + kDosSavegameTailBytes);
+    state.savegame_tail_bytes.assign(bytes.begin() + kDosMappedObjectsBytes,
+                                     bytes.begin() + kDosMappedObjectsBytes +
+                                         kDosSavegameTailBytes);
 
     const std::size_t tail = kDosMappedObjectsBytes;
     state.player.x = read_i16_at(bytes, tail + 0);
@@ -356,14 +357,14 @@ void savegame_write_snapshot(const RuntimeState &state,
     std::memcpy(bytes.data(), state.savegame_mapped_objects_raw.data(),
                 kDosMappedObjectsBytes);
     if (!state.mapped_objects.empty()) {
-      const std::size_t count =
-          std::min<std::size_t>(state.mapped_objects.size(), kDosMappedObjectsCount);
+      const std::size_t count = std::min<std::size_t>(
+          state.mapped_objects.size(), kDosMappedObjectsCount);
       std::memcpy(bytes.data(), state.mapped_objects.data(),
                   count * sizeof(MappedObject12));
     }
   } else if (!state.mapped_objects.empty()) {
-    const std::size_t count =
-        std::min<std::size_t>(state.mapped_objects.size(), kDosMappedObjectsCount);
+    const std::size_t count = std::min<std::size_t>(state.mapped_objects.size(),
+                                                    kDosMappedObjectsCount);
     std::memcpy(bytes.data(), state.mapped_objects.data(),
                 count * sizeof(MappedObject12));
   }
@@ -398,9 +399,9 @@ void savegame_write_snapshot(const RuntimeState &state,
   bytes[tail + 14] = state.player.lantern_equipped ? 1 : 0;
   bytes[tail + 15] = state.player.wand_equipped ? 1 : 0;
 
-  if (state.current_room == 0 &&
-      (!state.savegame_tail_bytes.empty() ? state.savegame_tail_bytes[16] == 0xFF
-                                          : true)) {
+  if (state.current_room == 0 && (!state.savegame_tail_bytes.empty()
+                                      ? state.savegame_tail_bytes[16] == 0xFF
+                                      : true)) {
     bytes[tail + 16] = 0xFF;
   } else {
     bytes[tail + 16] = static_cast<std::uint8_t>(state.current_room & 0xFF);
@@ -409,9 +410,10 @@ void savegame_write_snapshot(const RuntimeState &state,
 
   write_u16_at(bytes, tail + 18, state.player.score);
 
-  const auto orig_gems = state.savegame_tail_bytes.size() == kDosSavegameTailBytes
-                             ? read_u16_at(state.savegame_tail_bytes, 20)
-                             : 0;
+  const auto orig_gems =
+      state.savegame_tail_bytes.size() == kDosSavegameTailBytes
+          ? read_u16_at(state.savegame_tail_bytes, 20)
+          : 0;
   if ((orig_gems & 0xFF) == state.player.gems) {
     write_u16_at(bytes, tail + 20, orig_gems);
   } else {
