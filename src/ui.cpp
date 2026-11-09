@@ -277,7 +277,7 @@ void ui_render_option_list(EgaPlanarSurface &surface,
 
 void ui_render_game_selection_panel(EgaPlanarSurface &surface,
                                     const RuntimeState &state) {
-  if (state.menu_panel.has_value()) {
+  if (state.menu_panel.has_value() && state.menu_buttons.size() >= 2) {
     gfx_rle_blit_opaque_4plane(surface, 8, 8, *state.menu_panel);
 
     struct WorldButton {
