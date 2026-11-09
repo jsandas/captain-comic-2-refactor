@@ -1,7 +1,12 @@
+#include <algorithm>
+#include <cstdio>
+#include <filesystem>
 #include <stdexcept>
+#include <vector>
 
 #include "comic2/game_state.hpp"
 #include "comic2/renderer.hpp"
+#include "comic2/resource_loader.hpp"
 #include "comic2/ui.hpp"
 
 namespace {
@@ -10,6 +15,22 @@ void expect(bool condition, const char *message) {
   if (!condition) {
     throw std::runtime_error(message);
   }
+}
+
+std::filesystem::path find_reference_original_dir() {
+  const std::vector<std::filesystem::path> candidates = {
+      "reference/original",
+      "../reference/original",
+      "../../reference/original",
+  };
+  const auto it = std::find_if(
+      candidates.begin(), candidates.end(), [](const std::filesystem::path &p) {
+        return std::filesystem::exists(p / "FRPAK.002");
+      });
+  if (it != candidates.end()) {
+    return *it;
+  }
+  return {};
 }
 
 void test_bcd_counter_helpers() {
@@ -137,6 +158,268 @@ void test_menu_state_machine_and_option_navigation() {
          "pause input should keep the menu active");
 }
 
+void test_frpak002_title_screen_decode_and_render() {
+  const auto dir = find_reference_original_dir();
+  if (dir.empty()) {
+    return;
+  }
+
+  const auto title = comic2::load_frpak_fullscreen(dir / "FRPAK.002");
+  expect(title.has_value(), "FRPAK.002 must decode successfully");
+  expect(title->width_bytes == 40,
+         "Title image must have width_bytes == 40 (320 pixels)");
+  expect(title->height_rows == 200, "Title image must have height_rows == 200");
+  expect(title->row_span_bytes == 8000,
+         "Title image row span must be 8000 bytes");
+  for (std::size_t p = 0; p < 4; ++p) {
+    expect(title->planes[p].size() == 8000, "Each plane must have 8000 bytes");
+  }
+
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  state.title_screen = *title;
+
+  comic2::EgaPlanarSurface surface(320, 200);
+  surface.clear(0x00);
+  const bool rendered = comic2::render_title_screen(surface, state);
+  expect(rendered,
+         "render_title_screen should return true with authentic title asset");
+
+  bool saw_pixels = false;
+  for (std::size_t y = 0; y < 200; ++y) {
+    for (std::size_t x = 0; x < 320; ++x) {
+      if (surface.get_plane_byte(0, x / 8, y) != 0x00 ||
+          surface.get_plane_byte(1, x / 8, y) != 0x00 ||
+          surface.get_plane_byte(2, x / 8, y) != 0x00 ||
+          surface.get_plane_byte(3, x / 8, y) != 0x00) {
+        saw_pixels = true;
+        break;
+      }
+    }
+    if (saw_pixels) {
+      break;
+    }
+  }
+  expect(saw_pixels, "render_title_screen must blit visible pixels");
+
+  // Fallback test
+  state.title_screen.reset();
+  surface.clear(0x00);
+  const bool fallback_rendered = comic2::render_title_screen(surface, state);
+  expect(!fallback_rendered,
+         "render_title_screen should return false in fallback mode");
+}
+
+void test_frpak_intro_cutscenes_decode_and_progression() {
+  const auto dir = find_reference_original_dir();
+  if (dir.empty()) {
+    return;
+  }
+
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  for (int i = 3; i <= 6; ++i) {
+    char name[16];
+    std::snprintf(name, sizeof(name), "FRPAK.00%d", i);
+    auto slide = comic2::load_frpak_fullscreen(dir / name);
+    expect(slide.has_value(), "Each intro slide FRPAK.003..006 must decode");
+    expect(slide->width_bytes == 40 && slide->height_rows == 200,
+           "Intro slide must be 320x200");
+    state.intro_screens.push_back(std::move(*slide));
+  }
+  expect(state.intro_screens.size() == 4,
+         "Must have exactly 4 intro screens loaded");
+
+  comic2::EgaPlanarSurface surface(320, 200);
+  state.ui.cinematic_frame = 0;
+
+  // Slide 1
+  expect(!comic2::play_intro_cinematic(surface, state),
+         "Slide 1 should not finish cinematic");
+  expect(state.ui.cinematic_frame == 1, "Cinematic frame should advance to 1");
+
+  // Slide 2
+  expect(!comic2::play_intro_cinematic(surface, state),
+         "Slide 2 should not finish cinematic");
+  expect(state.ui.cinematic_frame == 2, "Cinematic frame should advance to 2");
+
+  // Slide 3
+  expect(!comic2::play_intro_cinematic(surface, state),
+         "Slide 3 should not finish cinematic");
+  expect(state.ui.cinematic_frame == 3, "Cinematic frame should advance to 3");
+
+  // Slide 4 (final)
+  expect(comic2::play_intro_cinematic(surface, state),
+         "Slide 4 should finish cinematic");
+  expect(state.ui.cinematic_frame == 4, "Cinematic frame should be 4");
+
+  // Fallback test
+  state.intro_screens.clear();
+  state.ui.cinematic_frame = 0;
+  expect(!comic2::play_intro_cinematic(surface, state),
+         "Fallback slide 1 in progress");
+  expect(!comic2::play_intro_cinematic(surface, state),
+         "Fallback slide 2 in progress");
+  expect(!comic2::play_intro_cinematic(surface, state),
+         "Fallback slide 3 in progress");
+  expect(comic2::play_intro_cinematic(surface, state),
+         "Fallback slide 4 completes");
+}
+
+void test_frpak007_victory_screen_decode_and_render() {
+  const auto dir = find_reference_original_dir();
+  if (dir.empty()) {
+    return;
+  }
+
+  const auto victory = comic2::load_frpak_fullscreen(dir / "FRPAK.007");
+  expect(victory.has_value(), "FRPAK.007 must decode successfully");
+  expect(victory->width_bytes == 40 && victory->height_rows == 200,
+         "Victory screen must be 320x200");
+
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  state.victory_screen = *victory;
+  state.progression.flags = 0;
+
+  comic2::EgaPlanarSurface surface(320, 200);
+  surface.clear(0x00);
+  const bool done = comic2::event_finale_transition_sequence(surface, state);
+  expect(done, "event_finale_transition_sequence must return true");
+  expect((state.progression.flags & 0x80) != 0,
+         "Victory flag 0x80 must be set in progression flags");
+}
+
+void test_frdata0_menu_panel_decode() {
+  const auto dir = find_reference_original_dir();
+  if (dir.empty()) {
+    return;
+  }
+
+  const auto bytes = comic2::load_file_bytes(dir / "FRDATA.0");
+  expect(bytes.has_value(), "FRDATA.0 must be loaded");
+  const auto panel = comic2::decode_frdata0_panel(*bytes);
+  expect(panel.has_value(), "FRDATA.0 must decode successfully");
+  expect(panel->width_bytes == 26,
+         "FRDATA.0 width_bytes must be 26 (208 pixels)");
+  expect(panel->height_rows == 160, "FRDATA.0 height_rows must be 160");
+  expect(panel->row_span_bytes == 4160, "FRDATA.0 row_span_bytes must be 4160");
+  for (std::size_t p = 0; p < 4; ++p) {
+    expect(panel->planes[p].size() == 4160, "Plane size must match 4160 bytes");
+    const bool has_data =
+        std::any_of(panel->planes[p].begin(), panel->planes[p].end(),
+                    [](std::uint8_t b) { return b != 0; });
+    expect(has_data, "Plane must contain non-zero graphical data");
+  }
+
+  // Malformed / overflowing tests
+  std::vector<std::uint8_t> tiny = {0x10, 0x00};
+  expect(!comic2::decode_frdata0_panel(tiny).has_value(),
+         "Payload < 4 bytes must be rejected");
+
+  std::vector<std::uint8_t> zero_dim = {0x00, 0x00, 0x10, 0x00};
+  expect(!comic2::decode_frdata0_panel(zero_dim).has_value(),
+         "Zero dimensions must be rejected");
+
+  // Plane size overflow: width = 64000 pixels (8000 bytes), height = 10 rows ->
+  // 80000 bytes > 65535
+  std::vector<std::uint8_t> overflow(4, 0);
+  overflow[0] = static_cast<std::uint8_t>(64000 & 0xFF);
+  overflow[1] = static_cast<std::uint8_t>((64000 >> 8) & 0xFF);
+  overflow[2] = 10;
+  overflow[3] = 0;
+  expect(!comic2::decode_frdata0_panel(overflow).has_value(),
+         "Overflowing plane size must be rejected");
+}
+
+void test_frdata1_menu_buttons_decode() {
+  const auto dir = find_reference_original_dir();
+  if (dir.empty()) {
+    return;
+  }
+
+  const auto bytes = comic2::load_file_bytes(dir / "FRDATA.1");
+  expect(bytes.has_value(), "FRDATA.1 must be loaded");
+  const auto buttons = comic2::decode_frdata1_sprites(*bytes);
+  expect(buttons.has_value(), "FRDATA.1 must decode successfully");
+  expect(buttons->size() == 2,
+         "FRDATA.1 must contain exactly 2 masked button sprites");
+
+  for (const auto &btn : *buttons) {
+    expect(btn.width_pixels == 48, "Button sprite width must be 48 pixels");
+    expect(btn.height_rows == 40, "Button sprite height must be 40 rows");
+    expect(btn.mask_bytes.size() == 240,
+           "Button sprite mask must be 240 bytes (6 * 40)");
+    for (std::size_t p = 0; p < 4; ++p) {
+      expect(btn.planes[p].size() == 240,
+             "Each plane of button sprite must be 240 bytes");
+    }
+    const auto img = comic2::make_masked_sprite_image(btn);
+    expect(img.width_bytes == 6,
+           "make_masked_sprite_image width_bytes must be 6");
+    expect(img.height_rows == 40,
+           "make_masked_sprite_image height_rows must be 40");
+  }
+}
+
+void test_ui_render_game_selection_panel_with_authentic_assets() {
+  const auto dir = find_reference_original_dir();
+  if (dir.empty()) {
+    return;
+  }
+
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  comic2::load_ui_assets(state, dir);
+  expect(state.menu_panel.has_value(), "load_ui_assets must load menu_panel");
+  expect(state.menu_buttons.size() == 2,
+         "load_ui_assets must load menu_buttons");
+
+  comic2::EgaPlanarSurface surface(320, 200);
+  surface.clear(0x00);
+
+  state.ui.selected_option_index = 2; // TIME
+  comic2::ui_render_game_selection_panel(surface, state);
+
+  // Check that pixels exist at button locations
+  bool saw_button_pixel = false;
+  for (std::size_t y = 24; y < 64; ++y) {
+    for (std::size_t x = 24; x < 72; ++x) {
+      if (surface.get_plane_byte(0, x / 8, y) != 0x00 ||
+          surface.get_plane_byte(1, x / 8, y) != 0x00 ||
+          surface.get_plane_byte(2, x / 8, y) != 0x00 ||
+          surface.get_plane_byte(3, x / 8, y) != 0x00) {
+        saw_button_pixel = true;
+        break;
+      }
+    }
+    if (saw_button_pixel) {
+      break;
+    }
+  }
+  expect(saw_button_pixel, "Button at (24, 24) must have visible pixels");
+}
+
+void test_load_ui_assets_helper() {
+  const auto dir = find_reference_original_dir();
+  if (dir.empty()) {
+    return;
+  }
+
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  comic2::load_ui_assets(state, dir);
+
+  expect(state.title_screen.has_value(), "Title screen must be populated");
+  expect(state.intro_screens.size() == 4, "4 intro slides must be populated");
+  expect(state.victory_screen.has_value(), "Victory screen must be populated");
+  expect(state.menu_panel.has_value(), "Menu panel must be populated");
+  expect(state.menu_buttons.size() == 2, "2 menu buttons must be populated");
+
+  // Re-calling with an empty or non-existent path must clear all UI assets
+  comic2::load_ui_assets(state, "/nonexistent/path");
+  expect(!state.title_screen.has_value(), "Title screen must be cleared");
+  expect(state.intro_screens.empty(), "Intro screens must be cleared");
+  expect(!state.victory_screen.has_value(), "Victory screen must be cleared");
+  expect(!state.menu_panel.has_value(), "Menu panel must be cleared");
+  expect(state.menu_buttons.empty(), "Menu buttons must be cleared");
+}
+
 } // namespace
 
 void run_ui_tests() {
@@ -146,4 +429,11 @@ void run_ui_tests() {
   test_hud_renders_mode_inventory_bits();
   test_modal_prompt_overlay_is_rendered();
   test_menu_state_machine_and_option_navigation();
+  test_frpak002_title_screen_decode_and_render();
+  test_frpak_intro_cutscenes_decode_and_progression();
+  test_frpak007_victory_screen_decode_and_render();
+  test_frdata0_menu_panel_decode();
+  test_frdata1_menu_buttons_decode();
+  test_ui_render_game_selection_panel_with_authentic_assets();
+  test_load_ui_assets_helper();
 }

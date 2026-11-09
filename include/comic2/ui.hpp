@@ -28,6 +28,7 @@ void ui_edit_selected_option_text(RuntimeState &state, const std::string &text);
 void ui_select_next_valid_option(RuntimeState &state);
 bool ui_select_prev_valid_option(RuntimeState &state);
 
+bool render_title_screen(EgaPlanarSurface &surface, const RuntimeState &state);
 bool play_intro_cinematic(EgaPlanarSurface &surface, RuntimeState &state);
 bool event_finale_transition_sequence(EgaPlanarSurface &surface,
                                       RuntimeState &state);

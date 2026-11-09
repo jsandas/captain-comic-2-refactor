@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <fstream>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -388,10 +389,15 @@ decode_frpak_catalog_record(const RuntimeState &state,
   }
 
   try {
-    return decode_ega_4plane_rle(
+    auto img = decode_ega_4plane_rle(
         std::span<const std::uint8_t>(state.sprite_resource_bytes)
             .subspan(global_offset, record.data_size),
         true);
+    if (img.row_span_bytes > 0 && img.row_span_bytes % 40 == 0) {
+      img.width_bytes = 40;
+      img.height_rows = static_cast<std::uint16_t>(img.row_span_bytes / 40);
+    }
+    return img;
   } catch (const std::exception &) {
     return std::nullopt;
   }
@@ -536,6 +542,197 @@ Ega4PlaneImage decode_ega_4plane_rle(std::span<const std::uint8_t> encoded,
   return image;
 }
 
+std::optional<Ega4PlaneImage>
+decode_frdata0_panel(std::span<const std::uint8_t> payload) {
+  if (payload.size() < 4) {
+    return std::nullopt;
+  }
+
+  const auto width_pixels = read_u16(payload, 0);
+  const auto height_rows = read_u16(payload, 2);
+  if (width_pixels == 0 || height_rows == 0) {
+    return std::nullopt;
+  }
+
+  const std::size_t width_bytes =
+      (static_cast<std::size_t>(width_pixels) + 7U) / 8U;
+  if (width_bytes > std::numeric_limits<std::uint16_t>::max()) {
+    return std::nullopt;
+  }
+
+  const std::size_t plane_size =
+      width_bytes * static_cast<std::size_t>(height_rows);
+  if (plane_size == 0 ||
+      plane_size > std::numeric_limits<std::uint16_t>::max()) {
+    return std::nullopt;
+  }
+
+  constexpr std::size_t kMaxSafePlaneSize =
+      (std::numeric_limits<std::size_t>::max() - 4U) / 4U;
+  if (plane_size > kMaxSafePlaneSize) {
+    return std::nullopt;
+  }
+
+  const std::size_t expected_total = 4U + 4U * plane_size;
+  if (payload.size() < expected_total) {
+    return std::nullopt;
+  }
+
+  Ega4PlaneImage image{};
+  image.width_bytes = static_cast<std::uint16_t>(width_bytes);
+  image.height_rows = height_rows;
+  image.row_span_bytes = static_cast<std::uint16_t>(plane_size);
+
+  for (std::size_t plane = 0; plane < 4U; ++plane) {
+    const std::size_t offset = 4U + plane * plane_size;
+    image.planes[plane].assign(
+        payload.begin() + static_cast<std::ptrdiff_t>(offset),
+        payload.begin() + static_cast<std::ptrdiff_t>(offset + plane_size));
+  }
+
+  return image;
+}
+
+std::optional<std::vector<MaskedSpriteRecord>>
+decode_frdata1_sprites(std::span<const std::uint8_t> payload) {
+  if (payload.empty()) {
+    return std::nullopt;
+  }
+
+  std::vector<MaskedSpriteRecord> sprites;
+  std::size_t offset = 0;
+
+  while (offset + 6U <= payload.size()) {
+    const auto width_pixels = read_u16(payload, offset);
+    const auto height_rows = read_u16(payload, offset + 2U);
+    const auto mask_bytes = read_u16(payload, offset + 4U);
+
+    if (width_pixels == 0 || height_rows == 0) {
+      break;
+    }
+
+    const std::size_t width_bytes =
+        (static_cast<std::size_t>(width_pixels) + 7U) / 8U;
+    if (width_bytes > std::numeric_limits<std::uint16_t>::max()) {
+      break;
+    }
+
+    const std::size_t plane_size =
+        width_bytes * static_cast<std::size_t>(height_rows);
+    if (plane_size > std::numeric_limits<std::uint16_t>::max() ||
+        offset > std::numeric_limits<std::uint16_t>::max()) {
+      break;
+    }
+
+    constexpr std::size_t kMaxSafePlaneSize =
+        (std::numeric_limits<std::size_t>::max() - 6U) / 4U;
+    if (plane_size > kMaxSafePlaneSize) {
+      break;
+    }
+
+    const std::size_t record_size = 6U + mask_bytes + 4U * plane_size;
+    if (offset + record_size > payload.size()) {
+      break;
+    }
+
+    MaskedSpriteRecord record{};
+    record.width_pixels = width_pixels;
+    record.height_rows = height_rows;
+    record.image_data_off = static_cast<std::uint16_t>(offset);
+
+    const auto mask_start =
+        payload.begin() + static_cast<std::ptrdiff_t>(offset + 6U);
+    record.mask_bytes.assign(
+        mask_start, mask_start + static_cast<std::ptrdiff_t>(mask_bytes));
+
+    const auto planes_start = offset + 6U + mask_bytes;
+    for (std::size_t plane = 0; plane < 4U; ++plane) {
+      const std::size_t plane_off = planes_start + plane * plane_size;
+      record.planes[plane].assign(
+          payload.begin() + static_cast<std::ptrdiff_t>(plane_off),
+          payload.begin() +
+              static_cast<std::ptrdiff_t>(plane_off + plane_size));
+    }
+
+    sprites.push_back(std::move(record));
+    offset += record_size;
+  }
+
+  if (sprites.empty()) {
+    return std::nullopt;
+  }
+  return sprites;
+}
+
+std::optional<Ega4PlaneImage>
+load_frpak_fullscreen(const std::filesystem::path &path) {
+  const auto bytes = load_file_bytes(path);
+  if (!bytes.has_value()) {
+    return std::nullopt;
+  }
+
+  try {
+    auto image = decode_ega_4plane_rle(*bytes, true);
+    if (image.row_span_bytes > 0 && image.row_span_bytes % 40 == 0) {
+      image.width_bytes = 40;
+      image.height_rows = static_cast<std::uint16_t>(image.row_span_bytes / 40);
+    }
+    return image;
+  } catch (const std::exception &) {
+    return std::nullopt;
+  }
+}
+
+void load_ui_assets(RuntimeState &state,
+                    const std::filesystem::path &asset_root) {
+  state.title_screen.reset();
+  state.intro_screens.clear();
+  state.victory_screen.reset();
+  state.menu_panel.reset();
+  state.menu_buttons.clear();
+
+  const auto title_path = asset_root / "FRPAK.002";
+  if (path_exists(title_path)) {
+    state.title_screen = load_frpak_fullscreen(title_path);
+  }
+
+  for (int i = 3; i <= 6; ++i) {
+    char name[16];
+    std::snprintf(name, sizeof(name), "FRPAK.00%d", i);
+    const auto pak_path = asset_root / name;
+    if (path_exists(pak_path)) {
+      auto slide = load_frpak_fullscreen(pak_path);
+      if (slide.has_value()) {
+        state.intro_screens.push_back(std::move(*slide));
+      }
+    }
+  }
+
+  const auto victory_path = asset_root / "FRPAK.007";
+  if (path_exists(victory_path)) {
+    state.victory_screen = load_frpak_fullscreen(victory_path);
+  }
+
+  const auto frdata0_path = asset_root / "FRDATA.0";
+  if (path_exists(frdata0_path)) {
+    const auto bytes = load_file_bytes(frdata0_path);
+    if (bytes.has_value()) {
+      state.menu_panel = decode_frdata0_panel(*bytes);
+    }
+  }
+
+  const auto frdata1_path = asset_root / "FRDATA.1";
+  if (path_exists(frdata1_path)) {
+    const auto bytes = load_file_bytes(frdata1_path);
+    if (bytes.has_value()) {
+      auto buttons = decode_frdata1_sprites(*bytes);
+      if (buttons.has_value()) {
+        state.menu_buttons = std::move(*buttons);
+      }
+    }
+  }
+}
+
 BootstrapLoadSummary
 load_initial_bootstrap_resources(RuntimeState &state,
                                  const std::filesystem::path &root) {
@@ -644,6 +841,8 @@ load_initial_bootstrap_resources(RuntimeState &state,
       }
     }
   }
+
+  load_ui_assets(state, root);
 
   return summary;
 }

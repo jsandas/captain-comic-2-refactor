@@ -553,9 +553,61 @@ void test_apply_radial_darkness_mask() {
          "pixel outside viewport border must remain untouched");
 }
 
+void test_make_masked_sprite_image_validation() {
+  // 1. Valid sprite succeeds
+  comic2::MaskedSpriteRecord valid{};
+  valid.width_pixels = 16;
+  valid.height_rows = 16;
+  valid.mask_bytes.assign(32, 0xFF);
+  for (auto &plane : valid.planes) {
+    plane.assign(32, 0xAA);
+  }
+  const auto img = comic2::make_masked_sprite_image(valid);
+  expect(img.width_bytes == 2, "valid sprite width_bytes should be 2");
+  expect(img.height_rows == 16, "valid sprite height_rows should be 16");
+  expect(img.row_span_bytes == 32, "valid sprite row_span_bytes should be 32");
+
+  // 2. Zero width or height throws invalid_argument
+  comic2::MaskedSpriteRecord zero_dim = valid;
+  zero_dim.width_pixels = 0;
+  bool caught_zero = false;
+  try {
+    comic2::make_masked_sprite_image(zero_dim);
+  } catch (const std::invalid_argument &) {
+    caught_zero = true;
+  }
+  expect(caught_zero, "zero width should throw std::invalid_argument");
+
+  // 3. Truncated plane data throws invalid_argument
+  comic2::MaskedSpriteRecord truncated = valid;
+  truncated.planes[1].resize(10); // less than 32
+  bool caught_truncated = false;
+  try {
+    comic2::make_masked_sprite_image(truncated);
+  } catch (const std::invalid_argument &) {
+    caught_truncated = true;
+  }
+  expect(caught_truncated,
+         "truncated plane should throw std::invalid_argument");
+
+  // 4. Row span overflow throws invalid_argument
+  comic2::MaskedSpriteRecord overflow = valid;
+  overflow.width_pixels = 64000;
+  overflow.height_rows = 100;
+  bool caught_overflow = false;
+  try {
+    comic2::make_masked_sprite_image(overflow);
+  } catch (const std::invalid_argument &) {
+    caught_overflow = true;
+  }
+  expect(caught_overflow,
+         "overflowing row span should throw std::invalid_argument");
+}
+
 } // namespace
 
 void run_renderer_tests() {
+  test_make_masked_sprite_image_validation();
   test_surface_geometry();
   test_surface_plane_rw();
   test_presenter_copies_frame();

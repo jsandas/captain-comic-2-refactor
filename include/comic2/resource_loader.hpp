@@ -60,6 +60,18 @@ std::optional<Ega4PlaneImage> decode_frpak_record(RuntimeState &state,
 
 void clear_frpak_decode_cache(RuntimeState &state);
 
+std::optional<Ega4PlaneImage>
+decode_frdata0_panel(std::span<const std::uint8_t> payload);
+
+std::optional<std::vector<MaskedSpriteRecord>>
+decode_frdata1_sprites(std::span<const std::uint8_t> payload);
+
+std::optional<Ega4PlaneImage>
+load_frpak_fullscreen(const std::filesystem::path &path);
+
+void load_ui_assets(RuntimeState &state,
+                    const std::filesystem::path &asset_root);
+
 BootstrapLoadSummary
 load_initial_bootstrap_resources(RuntimeState &state,
                                  const std::filesystem::path &root);

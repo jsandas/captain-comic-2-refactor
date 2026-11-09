@@ -1,6 +1,7 @@
 #include "comic2/renderer.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <stdexcept>
 
 #ifdef COMIC2_USE_SDL2
@@ -14,6 +15,46 @@
 #endif
 
 namespace comic2 {
+
+Ega4PlaneImage make_masked_sprite_image(const MaskedSpriteRecord &record) {
+  if (record.width_pixels == 0U || record.height_rows == 0U) {
+    throw std::invalid_argument(
+        "MaskedSpriteRecord width_pixels and height_rows must be non-zero");
+  }
+
+  const std::size_t width_bytes =
+      (static_cast<std::size_t>(record.width_pixels) + 7U) / 8U;
+  const std::size_t plane_bytes =
+      width_bytes * static_cast<std::size_t>(record.height_rows);
+
+  if (plane_bytes > std::numeric_limits<std::uint16_t>::max()) {
+    throw std::invalid_argument(
+        "MaskedSpriteRecord row span exceeds uint16_t limit");
+  }
+
+  for (std::size_t plane = 0; plane < record.planes.size(); ++plane) {
+    if (record.planes[plane].size() < plane_bytes) {
+      throw std::invalid_argument(
+          "MaskedSpriteRecord plane size is smaller than width_bytes * "
+          "height_rows");
+    }
+  }
+
+  Ega4PlaneImage image{};
+  image.width_bytes = static_cast<std::uint16_t>(width_bytes);
+  image.height_rows = record.height_rows;
+  image.row_span_bytes = static_cast<std::uint16_t>(plane_bytes);
+
+  for (std::size_t plane = 0; plane < record.planes.size(); ++plane) {
+    const auto &source = record.planes[plane];
+    auto &target = image.planes[plane];
+    target.assign(source.begin(),
+                  source.begin() + static_cast<std::ptrdiff_t>(plane_bytes));
+  }
+
+  return image;
+}
+
 namespace {
 
 std::size_t checked_offset(const EgaPlanarSurface &surface, std::size_t x_byte,
@@ -220,23 +261,6 @@ bool is_valid_masked_sprite_record(const MaskedSpriteRecord &record) {
                      [expected_mask_bytes](const auto &plane) {
                        return plane.size() == expected_mask_bytes;
                      });
-}
-
-Ega4PlaneImage make_masked_sprite_image(const MaskedSpriteRecord &record) {
-  Ega4PlaneImage image{};
-  image.width_bytes =
-      static_cast<std::uint16_t>((record.width_pixels + 7U) / 8U);
-  image.height_rows = record.height_rows;
-  image.row_span_bytes = static_cast<std::uint16_t>(
-      image.width_bytes * static_cast<std::uint16_t>(record.height_rows));
-
-  for (std::size_t plane = 0; plane < record.planes.size(); ++plane) {
-    const auto &source = record.planes[plane];
-    auto &target = image.planes[plane];
-    target.assign(source.begin(), source.end());
-  }
-
-  return image;
 }
 
 std::size_t
