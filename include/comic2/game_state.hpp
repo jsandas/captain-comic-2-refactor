@@ -17,6 +17,17 @@ namespace comic2 {
 
 struct LevelRuntimeData;
 
+enum class GameLifecycleState {
+  Title = 0,
+  Intro = 1,
+  Menu = 2,
+  Gameplay = 3,
+  Save = 4,
+  Victory = 5,
+  GameOver = 6,
+  Quit = 7,
+};
+
 enum class MenuState {
   None = 0,
   Pause = 1,
@@ -185,6 +196,7 @@ struct ProgressionState {
 };
 
 struct UiState {
+  GameLifecycleState lifecycle_state = GameLifecycleState::Title;
   MenuState menu_state = MenuState::None;
   std::size_t selected_option_index = 0;
   std::vector<std::string> option_labels;
@@ -261,6 +273,7 @@ struct RuntimeState {
   DosConfig dos_config{};
   std::vector<std::uint8_t> savegame_mapped_objects_raw;
   std::vector<std::uint8_t> savegame_tail_bytes;
+  std::vector<std::uint8_t> saved_snapshot_bytes;
 };
 
 RuntimeState make_default_runtime_state();
