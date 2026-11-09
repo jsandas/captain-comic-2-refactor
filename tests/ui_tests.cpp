@@ -308,6 +308,25 @@ void test_frdata0_menu_panel_decode() {
                     [](std::uint8_t b) { return b != 0; });
     expect(has_data, "Plane must contain non-zero graphical data");
   }
+
+  // Malformed / overflowing tests
+  std::vector<std::uint8_t> tiny = {0x10, 0x00};
+  expect(!comic2::decode_frdata0_panel(tiny).has_value(),
+         "Payload < 4 bytes must be rejected");
+
+  std::vector<std::uint8_t> zero_dim = {0x00, 0x00, 0x10, 0x00};
+  expect(!comic2::decode_frdata0_panel(zero_dim).has_value(),
+         "Zero dimensions must be rejected");
+
+  // Plane size overflow: width = 64000 pixels (8000 bytes), height = 10 rows ->
+  // 80000 bytes > 65535
+  std::vector<std::uint8_t> overflow(4, 0);
+  overflow[0] = static_cast<std::uint8_t>(64000 & 0xFF);
+  overflow[1] = static_cast<std::uint8_t>((64000 >> 8) & 0xFF);
+  overflow[2] = 10;
+  overflow[3] = 0;
+  expect(!comic2::decode_frdata0_panel(overflow).has_value(),
+         "Overflowing plane size must be rejected");
 }
 
 void test_frdata1_menu_buttons_decode() {

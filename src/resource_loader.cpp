@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <fstream>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -553,8 +554,25 @@ decode_frdata0_panel(std::span<const std::uint8_t> payload) {
     return std::nullopt;
   }
 
-  const std::size_t width_bytes = (width_pixels + 7U) / 8U;
-  const std::size_t plane_size = width_bytes * height_rows;
+  const std::size_t width_bytes =
+      (static_cast<std::size_t>(width_pixels) + 7U) / 8U;
+  if (width_bytes > std::numeric_limits<std::uint16_t>::max()) {
+    return std::nullopt;
+  }
+
+  const std::size_t plane_size =
+      width_bytes * static_cast<std::size_t>(height_rows);
+  if (plane_size == 0 ||
+      plane_size > std::numeric_limits<std::uint16_t>::max()) {
+    return std::nullopt;
+  }
+
+  constexpr std::size_t kMaxSafePlaneSize =
+      (std::numeric_limits<std::size_t>::max() - 4U) / 4U;
+  if (plane_size > kMaxSafePlaneSize) {
+    return std::nullopt;
+  }
+
   const std::size_t expected_total = 4U + 4U * plane_size;
   if (payload.size() < expected_total) {
     return std::nullopt;
@@ -593,10 +611,26 @@ decode_frdata1_sprites(std::span<const std::uint8_t> payload) {
       break;
     }
 
-    const std::size_t width_bytes = (width_pixels + 7U) / 8U;
-    const std::size_t plane_size = width_bytes * height_rows;
-    const std::size_t record_size = 6U + mask_bytes + 4U * plane_size;
+    const std::size_t width_bytes =
+        (static_cast<std::size_t>(width_pixels) + 7U) / 8U;
+    if (width_bytes > std::numeric_limits<std::uint16_t>::max()) {
+      break;
+    }
 
+    const std::size_t plane_size =
+        width_bytes * static_cast<std::size_t>(height_rows);
+    if (plane_size > std::numeric_limits<std::uint16_t>::max() ||
+        offset > std::numeric_limits<std::uint16_t>::max()) {
+      break;
+    }
+
+    constexpr std::size_t kMaxSafePlaneSize =
+        (std::numeric_limits<std::size_t>::max() - 6U) / 4U;
+    if (plane_size > kMaxSafePlaneSize) {
+      break;
+    }
+
+    const std::size_t record_size = 6U + mask_bytes + 4U * plane_size;
     if (offset + record_size > payload.size()) {
       break;
     }
