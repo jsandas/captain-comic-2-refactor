@@ -410,6 +410,14 @@ void test_load_ui_assets_helper() {
   expect(state.victory_screen.has_value(), "Victory screen must be populated");
   expect(state.menu_panel.has_value(), "Menu panel must be populated");
   expect(state.menu_buttons.size() == 2, "2 menu buttons must be populated");
+
+  // Re-calling with an empty or non-existent path must clear all UI assets
+  comic2::load_ui_assets(state, "/nonexistent/path");
+  expect(!state.title_screen.has_value(), "Title screen must be cleared");
+  expect(state.intro_screens.empty(), "Intro screens must be cleared");
+  expect(!state.victory_screen.has_value(), "Victory screen must be cleared");
+  expect(!state.menu_panel.has_value(), "Menu panel must be cleared");
+  expect(state.menu_buttons.empty(), "Menu buttons must be cleared");
 }
 
 } // namespace

@@ -685,12 +685,17 @@ load_frpak_fullscreen(const std::filesystem::path &path) {
 
 void load_ui_assets(RuntimeState &state,
                     const std::filesystem::path &asset_root) {
+  state.title_screen.reset();
+  state.intro_screens.clear();
+  state.victory_screen.reset();
+  state.menu_panel.reset();
+  state.menu_buttons.clear();
+
   const auto title_path = asset_root / "FRPAK.002";
   if (path_exists(title_path)) {
     state.title_screen = load_frpak_fullscreen(title_path);
   }
 
-  state.intro_screens.clear();
   for (int i = 3; i <= 6; ++i) {
     char name[16];
     std::snprintf(name, sizeof(name), "FRPAK.00%d", i);
