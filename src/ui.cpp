@@ -491,6 +491,9 @@ bool transition_game_lifecycle(RuntimeState &state,
   if (!can_transition_game_lifecycle(state.ui.lifecycle_state, next_state)) {
     return false;
   }
+  if (state.ui.lifecycle_state == next_state) {
+    return true;
+  }
 
   // Handle entry side-effects
   switch (next_state) {
