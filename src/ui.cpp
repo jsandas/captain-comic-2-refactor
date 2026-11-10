@@ -513,9 +513,7 @@ bool transition_game_lifecycle(RuntimeState &state,
     break;
   case GameLifecycleState::Save: {
     // Perform authentic snapshot serialization
-    std::vector<std::uint8_t> snapshot_bytes(kDosSavegameSize, 0x00);
-    savegame_write_snapshot(state, snapshot_bytes);
-    state.saved_snapshot_bytes = std::move(snapshot_bytes);
+    savegame_write_snapshot(state, state.saved_snapshot_bytes);
     break;
   }
   case GameLifecycleState::Victory:
