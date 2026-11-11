@@ -1065,16 +1065,22 @@ FrameLoopSummary run_render_loop(RuntimeState &state,
     if (state.ui.lifecycle_enabled) {
       const bool was_gameplay =
           (state.ui.lifecycle_state == GameLifecycleState::Gameplay);
+      const bool will_dispatch_tick =
+          was_gameplay &&
+          !(state.flags.room_event_triggered ||
+            state.ui.pending_event_message == "Room Event Triggered" ||
+            (state.ui.modal_active &&
+             state.ui.modal_prompt == "Room Event Triggered") ||
+            (state.progression.flags & 0x80U) != 0U ||
+            (state.player.hp == 0 && state.player.lives == 0));
       if (!update_game_lifecycle(state, state.input, &dispatcher) ||
           state.ui.lifecycle_state == GameLifecycleState::Quit) {
         summary.quit_requested = true;
         break;
       }
-      if (was_gameplay) {
-        did_gameplay_tick = true;
-        if (!dispatcher.trace_log().empty()) {
-          current_stage = dispatcher.trace_log().back();
-        }
+      did_gameplay_tick = will_dispatch_tick;
+      if (will_dispatch_tick && !dispatcher.trace_log().empty()) {
+        current_stage = dispatcher.trace_log().back();
       }
     } else {
       const auto result = dispatcher.run_tick(state);
