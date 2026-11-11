@@ -97,7 +97,9 @@ std::size_t mapped_player_sprite_frame_index(const RuntimeState &state) {
 
 bool draw_level_sprite_record(EgaPlanarSurface &frame,
                               const RuntimeState &state,
-                              std::size_t sprite_index) {
+                              std::size_t sprite_index,
+                              std::int32_t x_offset = 0,
+                              std::int32_t y_offset = 0) {
   if (sprite_index >= state.level_sprites.size()) {
     return false;
   }
@@ -110,21 +112,10 @@ bool draw_level_sprite_record(EgaPlanarSurface &frame,
     return false;
   }
 
-  Ega4PlaneImage sprite{};
-  sprite.width_bytes =
-      static_cast<std::uint16_t>((record.width_pixels + 7U) / 8U);
-  sprite.height_rows = record.height_rows;
-  sprite.row_span_bytes = static_cast<std::uint16_t>(
-      sprite.width_bytes * static_cast<std::uint16_t>(record.height_rows));
+  const Ega4PlaneImage sprite = make_masked_sprite_image(record);
 
-  for (std::size_t plane = 0; plane < record.planes.size(); ++plane) {
-    const auto &source = record.planes[plane];
-    auto &target = sprite.planes[plane];
-    target.assign(source.begin(), source.end());
-  }
-
-  const std::int32_t px = state.player.x - state.camera_x;
-  const std::int32_t py = state.player.y - state.camera_y;
+  const std::int32_t px = state.player.x - state.camera_x + x_offset;
+  const std::int32_t py = state.player.y - state.camera_y + y_offset;
   if (!is_sprite_in_viewport(px, py,
                              static_cast<std::int32_t>(record.width_pixels),
                              static_cast<std::int32_t>(record.height_rows))) {
@@ -630,7 +621,8 @@ bool draw_player_sprite_from_asset(EgaPlanarSurface &frame,
                                    std::int32_t y_offset = 0) {
   if (has_valid_player_sprite_sheet(state)) {
     const std::size_t sprite_index = select_player_sprite_frame(state);
-    if (draw_level_sprite_record(frame, state, sprite_index)) {
+    if (draw_level_sprite_record(frame, state, sprite_index, x_offset,
+                                 y_offset)) {
       return true;
     }
   }
@@ -886,8 +878,7 @@ std::size_t estimate_runtime_state_bytes(const RuntimeState &state) {
   return bytes;
 }
 
-void render_bootstrap_frame(IFramePresenter &presenter, RuntimeState &state) {
-  EgaPlanarSurface frame(320, 200);
+void render_bootstrap_surface(EgaPlanarSurface &frame, RuntimeState &state) {
   const bool has_room_grid = has_room_grid_data(state);
   bool used_bezel_background = false;
   bool used_level_tileset_background = false;
@@ -937,14 +928,20 @@ void render_bootstrap_frame(IFramePresenter &presenter, RuntimeState &state) {
   draw_room_event_anchor_sprite(frame, state, vp_x, vp_y);
 
   // Phase 10.1: draw the player above projectiles.
-  if (used_asset_background && should_render_player_sprite(state)) {
-    if (!draw_player_sprite_from_asset(frame, state, *asset, vp_x, vp_y)) {
+  if (should_render_player_sprite(state)) {
+    bool drew_player = false;
+    if (has_valid_player_sprite_sheet(state)) {
+      const std::size_t sprite_index = select_player_sprite_frame(state);
+      drew_player =
+          draw_level_sprite_record(frame, state, sprite_index, vp_x, vp_y);
+    }
+    if (!drew_player && used_asset_background) {
+      drew_player =
+          draw_player_sprite_from_asset(frame, state, *asset, vp_x, vp_y);
+    }
+    if (!drew_player) {
       draw_player_marker(frame, state, vp_x, vp_y);
     }
-  }
-
-  if (!used_asset_background && should_render_player_sprite(state)) {
-    draw_player_marker(frame, state, vp_x, vp_y);
   }
 
   // Phase 10.1: draw any timed overlay last before the HUD.
@@ -990,6 +987,14 @@ void render_bootstrap_frame(IFramePresenter &presenter, RuntimeState &state) {
   }
 
   hud_render_overlay(frame, state);
+}
+
+void render_bootstrap_frame(IFramePresenter &presenter, RuntimeState &state) {
+  EgaPlanarSurface frame(320, 200);
+  render_bootstrap_surface(frame, state);
+  if (state.palette.loaded) {
+    presenter.set_palette(state.palette.entries);
+  }
   presenter.present(frame);
 }
 
@@ -1000,6 +1005,7 @@ run_integrated_bootstrap_loop(const std::filesystem::path &root,
                               IAudioBackend *audio_backend) {
   auto state = make_default_runtime_state();
   const auto bootstrap = initialize_runtime_scene(state, root);
+  state.ui.lifecycle_enabled = !read_bootstrap_bool_env("COMIC2_SKIP_FRONTEND");
 
   auto dispatcher = make_default_game_dispatcher();
   dispatcher.set_trace_enabled(
@@ -1053,7 +1059,29 @@ FrameLoopSummary run_render_loop(RuntimeState &state,
     }
 
     const auto tick_start = std::chrono::steady_clock::now();
-    const auto result = dispatcher.run_tick(state);
+    DispatchStage current_stage = summary.last_stage;
+    bool did_gameplay_tick = false;
+
+    if (state.ui.lifecycle_enabled) {
+      const bool was_gameplay =
+          (state.ui.lifecycle_state == GameLifecycleState::Gameplay);
+      if (!update_game_lifecycle(state, state.input, &dispatcher) ||
+          state.ui.lifecycle_state == GameLifecycleState::Quit) {
+        summary.quit_requested = true;
+        break;
+      }
+      if (was_gameplay) {
+        did_gameplay_tick = true;
+        if (!dispatcher.trace_log().empty()) {
+          current_stage = dispatcher.trace_log().back();
+        }
+      }
+    } else {
+      const auto result = dispatcher.run_tick(state);
+      current_stage = result.stage;
+      did_gameplay_tick = true;
+    }
+
     const auto tick_end = std::chrono::steady_clock::now();
     const auto tick_us = std::chrono::duration_cast<std::chrono::microseconds>(
                              tick_end - tick_start)
@@ -1073,9 +1101,18 @@ FrameLoopSummary run_render_loop(RuntimeState &state,
       audio_backend->update();
     }
 
-    render_bootstrap_frame(presenter, state);
+    if (state.ui.lifecycle_enabled) {
+      EgaPlanarSurface lifecycle_frame(320, 200);
+      render_game_lifecycle_frame(lifecycle_frame, state);
+      if (state.palette.loaded) {
+        presenter.set_palette(state.palette.entries);
+      }
+      presenter.present(lifecycle_frame);
+    } else {
+      render_bootstrap_frame(presenter, state);
+    }
 
-    if (read_bootstrap_bool_env("COMIC2_ORACLE_REPLAY")) {
+    if (did_gameplay_tick && read_bootstrap_bool_env("COMIC2_ORACLE_REPLAY")) {
       std::vector<InputState> single_frame_inputs(1, state.input);
       RuntimeState oracle_state = state;
       capture_oracle_trace_if_enabled(oracle_state, dispatcher,
@@ -1084,7 +1121,7 @@ FrameLoopSummary run_render_loop(RuntimeState &state,
 
     summary.frames_rendered += 1;
     summary.ticks_processed += 1;
-    summary.last_stage = result.stage;
+    summary.last_stage = current_stage;
     was_airborne = state.player.is_airborne;
     previous_hp = state.player.hp;
 

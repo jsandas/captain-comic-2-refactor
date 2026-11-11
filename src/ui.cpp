@@ -9,8 +9,10 @@
 #include <string>
 #include <utility>
 
+#include "comic2/bootstrap.hpp"
 #include "comic2/dispatcher.hpp"
 #include "comic2/persistence.hpp"
+#include "comic2/room_loader.hpp"
 
 namespace comic2 {
 namespace {
@@ -112,7 +114,8 @@ void draw_rect_unaligned(EgaPlanarSurface &surface, std::size_t x,
 }
 
 bool should_draw_hud_overlay(const RuntimeState &state) {
-  return state.ui.menu_state != MenuState::None || state.ui.modal_active ||
+  return state.bezel_frame.has_value() ||
+         state.ui.menu_state != MenuState::None || state.ui.modal_active ||
          state.player.score != 0 || state.player.gems != 0 ||
          state.player.lives != 3 || state.ui.active_mode_mask != 0 ||
          state.ui.inventory_mask != 0 ||
@@ -280,6 +283,9 @@ void ui_render_option_list(EgaPlanarSurface &surface,
 
 void ui_render_game_selection_panel(EgaPlanarSurface &surface,
                                     const RuntimeState &state) {
+  if (state.bezel_frame.has_value()) {
+    gfx_rle_blit_opaque_4plane(surface, 0, 0, *state.bezel_frame);
+  }
   if (state.menu_panel.has_value() && state.menu_buttons.size() >= 2) {
     gfx_rle_blit_opaque_4plane(surface, 8, 8, *state.menu_panel);
 
@@ -359,11 +365,14 @@ void ui_edit_selected_option_text(RuntimeState &state,
 }
 
 void ui_select_next_valid_option(RuntimeState &state) {
-  if (state.ui.option_labels.empty()) {
+  const std::size_t count =
+      !state.ui.option_labels.empty()
+          ? state.ui.option_labels.size()
+          : (state.ui.menu_state == MenuState::GameSelect ? 6U : 0U);
+  if (count == 0U) {
     return;
   }
 
-  const std::size_t count = state.ui.option_labels.size();
   std::size_t next = state.ui.selected_option_index + 1U;
   if (next >= count) {
     next = 0U;
@@ -372,11 +381,14 @@ void ui_select_next_valid_option(RuntimeState &state) {
 }
 
 bool ui_select_prev_valid_option(RuntimeState &state) {
-  if (state.ui.option_labels.empty()) {
+  const std::size_t count =
+      !state.ui.option_labels.empty()
+          ? state.ui.option_labels.size()
+          : (state.ui.menu_state == MenuState::GameSelect ? 6U : 0U);
+  if (count == 0U) {
     return false;
   }
 
-  const std::size_t count = state.ui.option_labels.size();
   std::size_t prev = state.ui.selected_option_index;
   if (prev == 0U) {
     prev = count - 1U;
@@ -506,10 +518,18 @@ bool transition_game_lifecycle(RuntimeState &state,
   case GameLifecycleState::Menu:
     state.ui.menu_state = MenuState::GameSelect;
     state.ui.selected_option_index = 0;
+    if (state.ui.option_labels.empty()) {
+      state.ui.option_labels = {"NATURE", "MAGIC",  "TIME",
+                                "ICE",    "TECHNO", "DREAMS"};
+    }
     break;
   case GameLifecycleState::Gameplay:
     state.ui.menu_state = MenuState::None;
     state.player.is_physics_active = true;
+    if (state.room_grid.tile_data.empty() && !state.assets_root.empty()) {
+      load_room_tilemap_from_asset_root(
+          state, state.assets_root, state.current_level, state.current_room);
+    }
     if (state.ui.modal_prompt == "Room Event Triggered") {
       state.ui.modal_active = false;
       state.ui.modal_prompt.clear();
@@ -542,6 +562,9 @@ bool transition_game_lifecycle(RuntimeState &state,
     state.ui.modal_active = true;
     state.ui.modal_game_over = true;
     state.ui.game_over = true;
+    if (state.ui.modal_prompt.empty()) {
+      state.ui.modal_prompt = "Game Over";
+    }
     break;
   case GameLifecycleState::Quit:
     break;
@@ -658,24 +681,30 @@ void render_game_lifecycle_frame(EgaPlanarSurface &surface,
                                  RuntimeState &state) {
   switch (state.ui.lifecycle_state) {
   case GameLifecycleState::Title:
+    load_ega_palette_table(state, make_default_ega_palette());
     render_title_screen(surface, state);
     break;
   case GameLifecycleState::Intro:
+    load_ega_palette_table(state, make_default_ega_palette());
     play_intro_cinematic(surface, state);
     break;
   case GameLifecycleState::Menu:
+    load_ega_palette_table(state, make_default_ega_palette());
     ui_render_game_selection_panel(surface, state);
     break;
   case GameLifecycleState::Gameplay:
-    hud_render_overlay(surface, state);
+    render_bootstrap_surface(surface, state);
     break;
   case GameLifecycleState::Save:
+    render_bootstrap_surface(surface, state);
     ui_render_modal_prompt(surface, state);
     break;
   case GameLifecycleState::Victory:
+    load_ega_palette_table(state, make_default_ega_palette());
     event_finale_transition_sequence(surface, state);
     break;
   case GameLifecycleState::GameOver:
+    render_bootstrap_surface(surface, state);
     ui_render_modal_prompt(surface, state);
     break;
   case GameLifecycleState::Quit:

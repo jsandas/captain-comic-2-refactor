@@ -1246,7 +1246,8 @@ Transition from bootstrap placeholder shapes, heuristic room probing, and synthe
 - [x] The bootstrap room renderer now prefers decoded `RuntimeState::level_tileset` bytes when available, while preserving FRPAK-backed and diagnostic fallback rendering paths.
 - [x] Runtime entity and projectile sprites now prefer decoded `RuntimeState::level_sprites` records from `FR###.2` when valid, while preserving placeholder rendering when records are missing or invalid.
 - [x] Bootstrap resource loading now decodes and caches `FRPAK.001` as a 320x200 bezel frame when available, and rendering seeds from that bezel canvas before scene overlays.
-- [ ] Remaining work is focused on the bezel/player viewport composition and replay-stability checks for the final live-gameplay validation gates.
+- [x] Room loading (`try_load_level_tileset_for_root`) automatically decodes and caches `FR###.2` level sprite sheets alongside `FR###.0` tilesets, and `render_bootstrap_surface` renders the player's `FR###.2` masked sprite (`draw_level_sprite_record`) with bezel viewport offsets (`x=8`, `y=8`) even when the `FR###.0` level tileset background is active.
+- [x] Dynamic EGA palette state (`RuntimeState::palette.entries`) is forwarded to `IFramePresenter::set_palette` each frame during bootstrap and lifecycle rendering.
 
 ### Background & Asset Architecture Analysis
 Cross-referencing `comic2_standalone.asm` (specifically `io_load_resource` at `1000:095c` and level table `table_level_tuples` at `1000:812c`) against `comic2_data.asm` and `comic2.asm` (`unk_2E3CC` at line 147836) confirms the exact layout of the original asset pipeline:
@@ -1390,23 +1391,23 @@ Cross-referencing `comic2_standalone.asm` (specifically `io_load_resource` at `1
 **Scope**: Blit real Comic walk/jump/shoot frames, enemy sprites, and projectiles using masked blit.
 **Status**: [x] Runtime entity and projectile rendering now tries `RuntimeState::level_sprites` first and retains placeholder fallback when records are absent or invalid.
 
-#### PR 11-D1: Authentic Bezel Compositing (`FRPAK.001`), Viewport Clipping & HUD Counters [NEXT]
+#### PR 11-D1: Authentic Bezel Compositing (`FRPAK.001`), Viewport Clipping & HUD Counters [COMPLETED]
 **Objective**: Composite in-game viewport and authentic HUD status counters onto the `FRPAK.001` border bezel using font glyphs from `comic2_data.asm`.
-**Files**: `src/bootstrap.cpp`, `src/renderer.cpp`, `include/comic2/renderer.hpp`, `tests/integration_gates_tests.cpp`.
+**Files**: `src/bootstrap.cpp`, `src/renderer.cpp`, `src/ui.cpp`, `include/comic2/renderer.hpp`, `tests/integration_gates_tests.cpp`, `tests/bootstrap_wiring_tests.cpp`.
 **Scope**:
 - Render 8x8 font glyphs from `font_glyphs_start` (`0x0D2D0` in `comic2_data.asm`) to blit HUD digits and characters (`hud_draw_digits`, `hud_draw_char`).
 - Implement authentic HUD elements matching `comic2_standalone.asm`:
   - `hud_draw_shield_bar` (`1000:38b3`): 8-pip shield energy bar using `[DS:0x089a]`.
   - `hud_draw_digits`: BCD counters for firepower (`[DS:0x08ac]`), gems (`[DS:0x08b8]`), lives (`[DS:0x0926]`), and keys (`[DS:0x08b6]`).
   - `hud_update_score`: 32-bit score display (`score` + `score_high`).
-  - Mode items display: icons for Boots (`DS:0x08ae`), Lantern (`DS:0x08b0`), Corkscrew (`DS:0x08b2`), Wand (`DS:0x08b4`).
+  - Mode items display: icons for Boots (`DS:0x08ae`), Lantern (`DS:0x08b0`), Corkscrew (`DS:0x08b2`), Wand (`DS:0x08b4`) (tracked for completion in Phase 16.3).
 - Clip the room tilemap, entities, and projectiles inside the authentic playfield viewport rect (`x=8..248`, `y=8..184`).
 - Pass Gate 11-E (Frame Compositing hash verification).
 
-#### PR 11-E1: End-to-End Live Gameplay Bootstrap & Gate Verification
+#### PR 11-E1: End-to-End Live Gameplay Bootstrap & Gate Verification [COMPLETED]
 **Objective**: Verify end-to-end playability with real assets and pass all Gate 11 validation checks.
-**Files**: `src/main.cpp`, `src/bootstrap.cpp`, `tests/integration_gates_tests.cpp`.
-**Scope**: Validate full loop startup on Level 0 Room 0, room transitions, and oracle replay matching. Pass Gate 11-F.
+**Files**: `src/main.cpp`, `src/bootstrap.cpp`, `src/room_loader.cpp`, `src/ui.cpp`, `tests/integration_gates_tests.cpp`, `tests/bootstrap_wiring_tests.cpp`.
+**Scope**: Validate full loop startup on Level 0 Room 0, automatic `FR###.2` sprite sheet loading on room load, live frontend lifecycle + gameplay scene rendering (`render_bootstrap_surface` inside `render_game_lifecycle_frame`), room transitions, and oracle replay matching. Pass Gate 11-F.
 
 ---
 
@@ -1541,10 +1542,84 @@ Implement the complete frontend, title sequence, options configuration, save gam
    - Intro cutscene: `play_intro_cinematic` (`1000:6164`), cycling `FRPAK.003` through `FRPAK.006`.
    - Victory ending: `FRPAK.007` victory graphic display and award medals ceremony.
 
+### Phase 15 Implementation Roadmap
+- [x] Implement deterministic `GAME.000` (58-byte savegame snapshot) and `FR.CFG` (configuration + key bindings + sound toggle) binary serialization (`src/persistence.cpp`).
+- [x] Implement `GameLifecycleState` state machine (`Title -> Intro -> Menu -> Gameplay -> Save -> GameOver -> Victory`) in `src/ui.cpp`, including post-tick modal promotion detection (`was_modal_active` -> `state.ui.modal_active`) for `Gameplay -> Save` transitions.
+- [x] Wire live frontend lifecycle (`state.ui.lifecycle_enabled`, controlled by `COMIC2_SKIP_FRONTEND=0` default) into `run_integrated_bootstrap_loop` and `run_render_loop` (`src/bootstrap.cpp`) so `update_game_lifecycle` and `render_game_lifecycle_frame` drive the active runtime loop.
+- [x] Extract `render_bootstrap_surface` (`src/bootstrap.cpp`) and invoke it inside `render_game_lifecycle_frame` (`src/ui.cpp`) during `Gameplay`, `Save`, and `GameOver` states so the full room tilemap, player/entity/projectile sprites, `FRPAK.001` bezel, and HUD counters render seamlessly inside the live lifecycle.
+- [x] Composite `FRPAK.001` bezel behind `FRDATA.0` in `ui_render_game_selection_panel`, enable 6-world selection navigation in `ui_select_next_valid_option` / `ui_select_prev_valid_option`, and restore the default EGA palette during `Title`, `Intro`, `Menu`, and `Victory` screens.
+
 ### Phase 15 Validation Gates
 - [x] **Gate 15-A (Savegame Roundtrip)**: Saved `GAME.000` binary exactly matches original DOS save game file structure.
 - [x] **Gate 15-B (Config Persistence)**: Custom key definitions and sound settings correctly save and restore from `FR.CFG`.
 - [x] **Gate 15-C (End-to-End Game Flow)**: State machine smoothly transitions: Title -> Intro -> Menu -> Gameplay -> Save -> Victory without memory leaks or state corruption.
+
+---
+
+## Phase 16: Full Assembly Parity, Boss Encounters & Authentic Presentation Polish
+
+### Goal
+Complete the remaining assembly-parity gaps identified across `reference/comic2/comic2_standalone.asm` and `reference/comic2/comic2_data.asm` so that every enemy/boss state machine, `FR###.3` NPC/event dialog script, HUD equipment indicator, interactive save/keybinding menu, and multi-note PC speaker tune operates identically to the original MS-DOS executable across all 15 playable levels.
+
+### Detailed Implementation Roadmap
+
+#### 16.1 Authentic Entity AI & Boss Encounter State Machines (`src/entity_runtime.cpp`, `src/entity_physics.cpp`)
+- [ ] Audit and implement full parity for all 16+ behavior handlers in `ent_update_object_behaviors` (`1000:3b25`, jump table `0x48ED` in `comic2_standalone.asm`), replacing simplified movement curves with exact per-handler velocity, bounce, and state transitions.
+- [ ] Implement multi-phase boss state machines (`kBehaviorBoss = 0x0003` and specialized boss handlers), including boss movement patterns, multi-hit damage thresholds, invulnerability windows, and boss death/victory triggers.
+- [ ] Implement hostile enemy projectile spawning (`kBehaviorShoot = 0x0002` and ranged enemy handlers) with player-targeted or directional trajectories and shield collision checks.
+- [ ] Replace fixed `slot_index % 2` sprite frame selection with authentic descriptor-driven animation indexing using `EntitySlot::anim_span`, `EntitySlot::anim_period`, and `EntitySlot::anim_tick`.
+
+#### 16.2 Interactive `FR###.3` Script Execution & Dialog/Cutscene Text (`src/room_loader.cpp`, `src/default_handlers.cpp`, `src/ui.cpp`)
+- [ ] Load and cache the level's optional XOR-`0x25` decoded `FR###.3` script payload (`LevelResourceTuple::script_filename`) into `RuntimeState` during `try_load_level_tileset_for_root`.
+- [ ] Wire `ent_process_interaction_script_and_queue_message` (`1000:1a9f`) into `handle_mapped_object_interaction` and `detect_proximity_room_event_trigger` so interacting with NPCs, signs, and scripted room anchors resolves message offsets via `level_script_offset` and extracts the decrypted text/commands from `FR###.3`.
+- [ ] Render actual multi-line dialog and prompt text inside `ui_render_modal_prompt` (`ui_draw_framed_text_box_and_text` at `1000:1272`) using 8x8 `font_glyphs_start` character blitting (`blit_string` / `blit_char`) instead of solid color placeholder rectangles.
+
+#### 16.3 Authentic HUD Mode Icons, Text Modal Prompts & Key Rebinding UI (`src/ui.cpp`, `src/input_handler.cpp`, `src/persistence.cpp`)
+- [ ] Implement `hud_update_mode_icons` to blit the collected status icons for High-Jump Gravity Boots (`DS:0x08ae`), Cavern Lantern (`DS:0x08b0`), Drainage Corkscrew (`DS:0x08b2`), and Teleportation Wand (`DS:0x08b4`) onto the right-hand `FRPAK.001` bezel panel.
+- [ ] Render readable 8x8 glyph text inside `ui_render_option_list` and main menu player/world selection panels (`FRDATA.0` / `FRDATA.1`), including high score entries (`ds_high_scores_buffer` at `0x216a4`).
+- [ ] Wire interactive player slot management ("ENTER A NEW PLAYER", "RETIRE A PLAYER"), world selection -> level/save slot loading (`GAME.000`..`GAME.005`), and interactive keyboard remapping (`KEYS.DEF` / `FR.CFG`) into the live `Menu` and `Save` lifecycle states.
+
+#### 16.4 Continuous Audio Stream Playback & Sound Table Integration (`src/audio.cpp`, `src/bootstrap.cpp`)
+- [ ] Extract all 56 authentic `(frequency_divisor, duration_ticks)` sound effect and musical tune streams from `comic2_data.asm` (`0x2170a - 0x218aa`) into static tables in `src/audio.cpp`.
+- [ ] Update `Sdl2AudioBackend` (and the frame tick audio pump) to advance `SoundDriver::tick()` continuously at the ~18.2 Hz PIT timer rate (`isr_timer_sound_int08` at `1000:0866`), streaming multi-note tunes and priority-preempted SFX smoothly across frames rather than single-divisor bursts.
+- [ ] Wire authentic sound table IDs to all gameplay, menu, pickup, boss, and cutscene events.
+
+#### 16.5 Multi-Room & Multi-Level Playthrough Verification (`tests/integration_gates_tests.cpp`, `tests/subsystem_scaffold_tests.cpp`)
+- [ ] Add comprehensive automated tests verifying Room 0 through Room N decoding, valid tile index bounds, and `MappedObject12` entity spawns across all 15 playable levels (`FR000.1` .. `FR014.1`) (completing item 11.3).
+- [ ] Add end-to-end integration tests covering menu world selection -> level load, NPC script dialog presentation, boss defeat -> victory transition, and save/load roundtrips from the live frontend.
+
+---
+
+### Phase 16 Validation Gates
+- [ ] **Gate 16-A (Entity & Boss AI Parity)**: All 16+ entity behavior handlers and boss state machines execute deterministic movement, projectile firing, animation frame cycling, and damage phases matching `comic2_standalone.asm`.
+- [ ] **Gate 16-B (Scripted Dialog & Text Rendering)**: `FR###.3` XOR-`0x25` message offsets resolve to decrypted strings and render readable 8x8 glyph text inside framed modal boxes on the EGA surface.
+- [ ] **Gate 16-C (HUD Mode Icons & Interactive Menu Persistence)**: Collected equipment icons render on the `FRPAK.001` bezel, and interactive menu/save prompts persist and reload `GAME.000..005` and `FR.CFG` / `KEYS.DEF`.
+- [ ] **Gate 16-D (Continuous PIT Sound Streams)**: Multi-note sound streams from `comic2_data.asm` advance at ~18.2 Hz through `SoundDriver::tick()` with exact divisor/duration stepping and priority preemption.
+- [ ] **Gate 16-E (15-Level Catalog & Room Verification)**: All rooms across all 15 levels (`FR000`–`FR014`) load without out-of-bounds tile indices or malformed entity/script payloads.
+
+---
+
+### Phase 16 PR-Sized Handoff Slices (Agent-Ready)
+
+#### PR 16-A1: Full Entity Behavior Dispatch, Enemy Projectiles & Boss State Machines [NEXT]
+**Objective**: Port all remaining behavior handlers from `ent_update_object_behaviors` (`1000:3b25`), enemy projectile attacks, boss multi-phase logic, and descriptor-driven sprite animation cycling.
+**Files**: `include/comic2/entity_runtime.hpp`, `src/entity_runtime.cpp`, `src/entity_physics.cpp`, `src/bootstrap.cpp`, `tests/dispatcher_tests.cpp`.
+
+#### PR 16-B1: `FR###.3` Script Text Resolution & Framed 8x8 Font Modal Rendering
+**Objective**: Load `FR###.3` scripts per level, resolve interaction/proximity message offsets, and render decrypted text strings using 8x8 bitmap glyphs inside `ui_render_modal_prompt`.
+**Files**: `include/comic2/game_state.hpp`, `src/room_loader.cpp`, `src/default_handlers.cpp`, `src/ui.cpp`, `tests/ui_tests.cpp`.
+
+#### PR 16-C1: HUD Equipment Mode Icons, Menu Text & Save/Config Slot Wiring
+**Objective**: Render Boots/Lantern/Corkscrew/Wand icons on the bezel HUD and wire interactive save/load slots (`GAME.000..005`) and key rebinding (`FR.CFG` / `KEYS.DEF`) into the frontend menu.
+**Files**: `src/ui.cpp`, `src/persistence.cpp`, `src/input_handler.cpp`, `tests/ui_tests.cpp`, `tests/persistence_tests.cpp`.
+
+#### PR 16-D1: Authentic 56-Entry Sound Table & Continuous 18.2 Hz PIT Stream Playback
+**Objective**: Extract the 56 sound streams from `comic2_data.asm` (`0x2170a - 0x218aa`) and drive `SoundDriver::tick()` continuously at 18.2 Hz in `Sdl2AudioBackend` and headless tests.
+**Files**: `include/comic2/audio.hpp`, `src/audio.cpp`, `src/bootstrap.cpp`, `tests/audio_tests.cpp`.
+
+#### PR 16-E1: All-15-Levels Room Layout Audit & End-to-End Playthrough Gates
+**Objective**: Validate Room 0..N layouts, tile bounds, entity spawns, and script offsets across all 15 levels (`FR000`–`FR014`) and pass Gates 16-A through 16-E.
+**Files**: `tests/subsystem_scaffold_tests.cpp`, `tests/integration_gates_tests.cpp`.
 
 ---
 

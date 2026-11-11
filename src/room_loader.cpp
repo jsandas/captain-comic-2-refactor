@@ -116,6 +116,19 @@ bool try_load_level_tileset_for_root(RuntimeState &state,
 
   state.level_tileset = decoded->tiles;
   state.tile_hazard_bounds = decoded->hazard_bounds;
+
+  if (!tuple->sprite_sheet_filename.empty()) {
+    const auto sprite_path = root / tuple->sprite_sheet_filename;
+    if (const auto sprite_bytes = load_file_bytes(sprite_path);
+        sprite_bytes.has_value()) {
+      if (const auto decoded_sprites = decode_masked_sprite_sheet(
+              std::span<const std::uint8_t>(*sprite_bytes));
+          decoded_sprites.has_value() && !decoded_sprites->empty()) {
+        state.level_sprites = *decoded_sprites;
+      }
+    }
+  }
+
   return true;
 }
 

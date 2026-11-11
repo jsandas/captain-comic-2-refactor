@@ -964,6 +964,12 @@ void MemoryFramePresenter::present(const EgaPlanarSurface &frame) {
   has_frame_ = true;
 }
 
+void MemoryFramePresenter::set_palette(
+    const std::array<std::array<std::uint8_t, 4>, 16> &palette_table) {
+  last_palette_ = palette_table;
+  has_palette_ = true;
+}
+
 const EgaPlanarSurface &MemoryFramePresenter::last_frame() const {
   if (!has_frame_) {
     throw std::logic_error("no frame has been presented");

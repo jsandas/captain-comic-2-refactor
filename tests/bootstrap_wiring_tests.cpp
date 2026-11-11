@@ -958,6 +958,127 @@ void test_scene_bootstrap_falls_back_with_missing_assets() {
   std::filesystem::remove_all(empty_root);
 }
 
+void test_render_bootstrap_frame_renders_level_sprite_with_tileset_and_bezel() {
+  auto state = comic2::make_default_runtime_state();
+  state.player.x = 16;
+  state.player.y = 24;
+  state.player.facing_right = true;
+  state.player.animation_state =
+      static_cast<std::uint8_t>(comic2::PlayerAnimationState::Idle);
+
+  // Set up bezel canvas (all 0x00) so playfield offset (8, 8) is active.
+  state.bezel_frame = comic2::Ega4PlaneImage{};
+  auto &bezel = *state.bezel_frame;
+  bezel.width_bytes = 40U;
+  bezel.height_rows = 200U;
+  bezel.row_span_bytes = 0x1F40U;
+  for (auto &plane : bezel.planes) {
+    plane.assign(8000U, 0x00U);
+  }
+
+  // Set up level tileset (1 all-black tile) and 1x1 room grid so
+  // used_level_tileset_background is true and used_asset_background is false.
+  state.room_grid.tile_w = 1;
+  state.room_grid.tile_h = 1;
+  state.room_grid.row_pointers = {0};
+  state.room_grid.tile_data = {0};
+  comic2::Ega4PlaneImage tile{};
+  tile.width_bytes = 2U;
+  tile.height_rows = 16U;
+  tile.row_span_bytes = 32U;
+  for (auto &plane : tile.planes) {
+    plane.assign(32U, 0x00U);
+  }
+  state.level_tileset = {tile};
+
+  // Populate 16 valid player sprite records in level_sprites where sprite 0
+  // has color 0x09 (plane 0 and plane 3 set) across a 16x24 sprite.
+  state.level_sprites.resize(16);
+  for (auto &rec : state.level_sprites) {
+    rec.width_pixels = 16U;
+    rec.height_rows = 24U;
+    rec.mask_bytes.assign(48U, 0xFFU);
+    for (auto &plane : rec.planes) {
+      plane.assign(48U, 0x00U);
+    }
+    rec.planes[0].assign(48U, 0xFFU);
+    rec.planes[3].assign(48U, 0xFFU);
+  }
+
+  comic2::MemoryFramePresenter presenter;
+  comic2::render_bootstrap_frame(presenter, state);
+
+  check(presenter.has_frame(), "frame must be presented");
+  const auto &frame = presenter.last_frame();
+  const auto sprite_pixel = read_color_index(
+      frame, static_cast<std::size_t>(state.player.x + comic2::kPlayfieldX),
+      static_cast<std::size_t>(state.player.y + comic2::kPlayfieldY));
+  check(sprite_pixel == 0x09U,
+        "player level_sprite should render with bezel viewport offset even "
+        "when level_tileset background is active");
+  const auto unoffset_pixel =
+      read_color_index(frame, static_cast<std::size_t>(state.player.x),
+                       static_cast<std::size_t>(state.player.y));
+  check(unoffset_pixel == 0x00U,
+        "player level_sprite should not render at unoffset coordinates when "
+        "bezel is active");
+}
+
+void test_render_bootstrap_frame_forwards_dynamic_palette_to_presenter() {
+  auto state = comic2::make_default_runtime_state();
+  state.is_dark_room = true;
+  state.player.lantern_equipped = false;
+
+  comic2::MemoryFramePresenter presenter;
+  comic2::render_bootstrap_frame(presenter, state);
+
+  check(presenter.has_palette(),
+        "render_bootstrap_frame should forward loaded palette to presenter");
+  check(presenter.last_palette() == comic2::make_black_palette_mask(),
+        "unlit dark room should forward black palette mask to presenter");
+
+  state.player.lantern_equipped = true;
+  comic2::render_bootstrap_frame(presenter, state);
+  check(presenter.last_palette() == comic2::make_default_ega_palette(),
+        "equipping lantern should forward standard EGA palette to presenter");
+}
+
+void test_render_loop_drives_live_frontend_lifecycle() {
+  set_test_env("COMIC2_FORCE_ENV_INPUT", "1", 1);
+  set_test_env("COMIC2_INPUT_QUIT", "0", 1);
+  set_test_env("COMIC2_INPUT_LEFT", "0", 1);
+  set_test_env("COMIC2_INPUT_RIGHT", "0", 1);
+  set_test_env("COMIC2_INPUT_DOWN", "0", 1);
+  set_test_env("COMIC2_INPUT_JUMP", "1", 1);
+  set_test_env("COMIC2_INPUT_FIRE", "0", 1);
+
+  auto state = comic2::make_default_runtime_state();
+  state.ui.lifecycle_enabled = true;
+  state.player.is_airborne = false;
+  state.player.is_physics_active = true;
+
+  auto dispatcher = comic2::make_default_game_dispatcher();
+  comic2::MemoryFramePresenter presenter;
+
+  // Frame 1: Title -> Intro
+  // Frame 2: Intro -> advances cinematic_frame (jump=1 + play_intro_cinematic)
+  // Frame 3: Intro -> Menu
+  // Frame 4: Menu -> Gameplay
+  // Frame 5: Gameplay tick
+  const auto summary = comic2::run_render_loop(state, dispatcher, presenter, 5,
+                                               std::chrono::milliseconds(0));
+
+  check(summary.frames_rendered == 5,
+        "lifecycle-enabled render loop should render all 5 frames");
+  check(state.ui.lifecycle_state == comic2::GameLifecycleState::Gameplay,
+        "lifecycle-enabled render loop should advance Title -> Intro -> Menu "
+        "-> Gameplay");
+  check(presenter.has_frame(),
+        "lifecycle-enabled render loop should present frames");
+
+  set_test_env("COMIC2_INPUT_JUMP", "0", 1);
+}
+
 } // namespace
 
 void run_bootstrap_wiring_tests() {
@@ -987,4 +1108,7 @@ void run_bootstrap_wiring_tests() {
   test_scene_bootstrap_discovers_reference_assets_from_repo_root();
   test_scene_bootstrap_does_not_commit_failed_candidate_state();
   test_scene_bootstrap_falls_back_with_missing_assets();
+  test_render_bootstrap_frame_renders_level_sprite_with_tileset_and_bezel();
+  test_render_bootstrap_frame_forwards_dynamic_palette_to_presenter();
+  test_render_loop_drives_live_frontend_lifecycle();
 }

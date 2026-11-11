@@ -197,6 +197,7 @@ struct ProgressionState {
 
 struct UiState {
   GameLifecycleState lifecycle_state = GameLifecycleState::Title;
+  bool lifecycle_enabled = false;
   MenuState menu_state = MenuState::None;
   std::size_t selected_option_index = 0;
   std::vector<std::string> option_labels;

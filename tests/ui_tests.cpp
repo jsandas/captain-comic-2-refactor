@@ -634,6 +634,50 @@ void test_game_lifecycle_gameplay_to_save_via_anchor_trigger() {
          "Save state must produce a saved snapshot");
 }
 
+void test_game_lifecycle_gameplay_renders_scene_and_menu_navigation() {
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  comic2::transition_game_lifecycle(state, comic2::GameLifecycleState::Menu);
+  expect(state.ui.selected_option_index == 0,
+         "Menu entry should initialize selected_option_index to 0");
+
+  // Navigate right in Menu without manually populating option_labels
+  comic2::update_game_lifecycle(state,
+                                comic2::InputState{.right_pressed = true});
+  expect(state.ui.selected_option_index == 1,
+         "Right input in Menu should advance world selection index to 1");
+
+  comic2::update_game_lifecycle(state,
+                                comic2::InputState{.left_pressed = true});
+  expect(state.ui.selected_option_index == 0,
+         "Left input in Menu should return world selection index to 0");
+
+  // Transition to Gameplay and verify render_game_lifecycle_frame draws scene
+  comic2::update_game_lifecycle(state,
+                                comic2::InputState{.fire_pressed = true});
+  expect(state.ui.lifecycle_state == comic2::GameLifecycleState::Gameplay,
+         "Fire input in Menu should transition to Gameplay");
+
+  state.player.x = 32;
+  state.player.y = 48;
+  state.player.is_airborne = false;
+  comic2::EgaPlanarSurface surface(320, 200);
+  surface.clear(0x00);
+  comic2::render_game_lifecycle_frame(surface, state);
+
+  // Verify the player marker/scene was rendered at (32, 48)
+  bool saw_player_pixel = false;
+  for (std::size_t plane = 0; plane < comic2::EgaPlanarSurface::kPlaneCount;
+       ++plane) {
+    if (surface.get_plane_byte(plane, 32 / 8, 48) != 0x00) {
+      saw_player_pixel = true;
+      break;
+    }
+  }
+  expect(saw_player_pixel,
+         "render_game_lifecycle_frame in Gameplay must render the gameplay "
+         "scene onto the surface");
+}
+
 } // namespace
 
 void run_ui_tests() {
@@ -654,4 +698,5 @@ void run_ui_tests() {
   test_game_lifecycle_update_and_rendering();
   test_game_lifecycle_gameplay_to_save_via_dispatcher_tick();
   test_game_lifecycle_gameplay_to_save_via_anchor_trigger();
+  test_game_lifecycle_gameplay_renders_scene_and_menu_navigation();
 }
