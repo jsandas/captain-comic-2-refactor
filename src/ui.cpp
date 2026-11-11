@@ -510,10 +510,27 @@ bool transition_game_lifecycle(RuntimeState &state,
   case GameLifecycleState::Gameplay:
     state.ui.menu_state = MenuState::None;
     state.player.is_physics_active = true;
+    if (state.ui.modal_prompt == "Room Event Triggered") {
+      state.ui.modal_active = false;
+      state.ui.modal_prompt.clear();
+      state.transition_state.player_frozen = false;
+    }
+    state.flags.room_event_triggered = false;
     break;
   case GameLifecycleState::Save: {
     // Perform authentic snapshot serialization
     savegame_write_snapshot(state, state.saved_snapshot_bytes);
+    if (!state.ui.pending_event_message.empty()) {
+      state.ui.modal_active = true;
+      state.ui.modal_prompt = state.ui.pending_event_message;
+      state.ui.pending_event_message.clear();
+      state.transition_state.player_frozen = true;
+    } else if (!state.ui.modal_active || state.ui.modal_prompt.empty()) {
+      state.ui.modal_active = true;
+      state.ui.modal_prompt = "Room Event Triggered";
+      state.transition_state.player_frozen = true;
+    }
+    state.flags.room_event_triggered = false;
     break;
   }
   case GameLifecycleState::Victory:
@@ -577,8 +594,14 @@ bool update_game_lifecycle(RuntimeState &state, const InputState &input,
     }
     return true;
 
-  case GameLifecycleState::Gameplay:
-    if (state.flags.room_event_triggered) {
+  case GameLifecycleState::Gameplay: {
+    auto should_transition_to_save = [](const RuntimeState &s) {
+      return s.flags.room_event_triggered ||
+             s.ui.pending_event_message == "Room Event Triggered" ||
+             (s.ui.modal_active && s.ui.modal_prompt == "Room Event Triggered");
+    };
+
+    if (should_transition_to_save(state)) {
       return transition_game_lifecycle(state, GameLifecycleState::Save);
     }
     if ((state.progression.flags & 0x80U) != 0U) {
@@ -591,7 +614,17 @@ bool update_game_lifecycle(RuntimeState &state, const InputState &input,
       state.input = input;
       dispatcher->run_tick(state);
     }
+    if (should_transition_to_save(state)) {
+      return transition_game_lifecycle(state, GameLifecycleState::Save);
+    }
+    if ((state.progression.flags & 0x80U) != 0U) {
+      return transition_game_lifecycle(state, GameLifecycleState::Victory);
+    }
+    if (state.player.hp == 0 && state.player.lives == 0) {
+      return transition_game_lifecycle(state, GameLifecycleState::GameOver);
+    }
     return true;
+  }
 
   case GameLifecycleState::Save:
     if (input.jump_pressed || input.fire_pressed || input.pause_pressed) {

@@ -4,6 +4,8 @@
 #include <stdexcept>
 #include <vector>
 
+#include "comic2/default_handlers.hpp"
+#include "comic2/dispatcher.hpp"
 #include "comic2/game_state.hpp"
 #include "comic2/persistence.hpp"
 #include "comic2/renderer.hpp"
@@ -560,6 +562,78 @@ void test_game_lifecycle_update_and_rendering() {
   comic2::render_game_lifecycle_frame(surface, state);
 }
 
+void test_game_lifecycle_gameplay_to_save_via_dispatcher_tick() {
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  comic2::GameDispatcher dispatcher = comic2::make_default_game_dispatcher();
+  state.ui.lifecycle_state = comic2::GameLifecycleState::Gameplay;
+
+  // Place player overlapping a proximity room event trigger
+  state.player.x = 100;
+  state.player.y = 100;
+  state.player.is_physics_active = false;
+  state.mapped_objects.push_back(comic2::MappedObject12{
+      .room_x = 0,
+      .room_y = 0,
+      .descriptor_ptr = 0x1234,
+      .state_flags = 0x0001,
+      .world_x = 90,
+      .world_y = 90,
+  });
+
+  expect(!state.flags.room_event_triggered,
+         "Room event trigger flag initially clear");
+  expect(state.ui.pending_event_message.empty(),
+         "Pending event message initially empty");
+
+  // In normal tick flow, update_game_lifecycle executes
+  // dispatcher->run_tick(state) where proximity triggers room_event_triggered,
+  // which is queued to pending_event_message. Gameplay must transition to Save.
+  comic2::update_game_lifecycle(state, comic2::InputState{}, &dispatcher);
+
+  expect(state.ui.lifecycle_state == comic2::GameLifecycleState::Save,
+         "Normal tick flow must transition Gameplay to Save on room event "
+         "trigger");
+  expect(!state.saved_snapshot_bytes.empty(),
+         "Save state must produce a saved snapshot");
+  expect(state.ui.modal_active, "Save state modal prompt should be active");
+  expect(state.ui.modal_prompt == "Room Event Triggered",
+         "Save state modal prompt should match room event");
+
+  // Acknowledging Save prompt transitions back to Gameplay
+  const comic2::InputState confirm_input{.fire_pressed = true};
+  comic2::update_game_lifecycle(state, confirm_input, &dispatcher);
+
+  expect(state.ui.lifecycle_state == comic2::GameLifecycleState::Gameplay,
+         "Acknowledging Save prompt must transition back to Gameplay");
+  expect(!state.ui.modal_active,
+         "Modal prompt should be deactivated upon returning to Gameplay");
+  expect(state.ui.modal_prompt.empty(),
+         "Modal prompt should be cleared upon returning to Gameplay");
+  expect(!state.transition_state.player_frozen,
+         "Player should be unfrozen upon returning to Gameplay");
+}
+
+void test_game_lifecycle_gameplay_to_save_via_anchor_trigger() {
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  comic2::GameDispatcher dispatcher = comic2::make_default_game_dispatcher();
+  state.ui.lifecycle_state = comic2::GameLifecycleState::Gameplay;
+
+  state.player.x = 100;
+  state.player.y = 100;
+  state.player.is_physics_active = false;
+  state.room_event_anchor.active = true;
+  state.room_event_anchor.x = 96;
+  state.room_event_anchor.y = 100;
+
+  comic2::update_game_lifecycle(state, comic2::InputState{}, &dispatcher);
+
+  expect(
+      state.ui.lifecycle_state == comic2::GameLifecycleState::Save,
+      "Normal tick flow must transition Gameplay to Save on room event anchor");
+  expect(!state.saved_snapshot_bytes.empty(),
+         "Save state must produce a saved snapshot");
+}
+
 } // namespace
 
 void run_ui_tests() {
@@ -578,4 +652,6 @@ void run_ui_tests() {
   test_load_ui_assets_helper();
   test_game_lifecycle_state_machine_transitions();
   test_game_lifecycle_update_and_rendering();
+  test_game_lifecycle_gameplay_to_save_via_dispatcher_tick();
+  test_game_lifecycle_gameplay_to_save_via_anchor_trigger();
 }
