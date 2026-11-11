@@ -23,6 +23,7 @@
 #include "comic2/renderer.hpp"
 #include "comic2/renderer_validation.hpp"
 #include "comic2/room_loader.hpp"
+#include "comic2/ui.hpp"
 
 namespace {
 
@@ -2386,6 +2387,111 @@ void test_gate_15b_config_persistence() {
       "Gate 15-B: empty payload must restore authentic DOS default scancodes");
 }
 
+void test_gate_15c_end_to_end_game_flow() {
+  using comic2::GameLifecycleState;
+  const auto dir = find_gate_reference_original_dir();
+
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  if (!dir.empty()) {
+    comic2::load_initial_bootstrap_resources(state, dir);
+  }
+
+  comic2::GameDispatcher dispatcher = comic2::make_default_game_dispatcher();
+  comic2::EgaPlanarSurface surface(320, 200);
+
+  // 1. Title State: verify initial state and rendering
+  expect(comic2::get_game_lifecycle_state(state) == GameLifecycleState::Title,
+         "Gate 15-C: initial lifecycle state must be Title");
+  comic2::render_game_lifecycle_frame(surface, state);
+
+  // Advance from Title to Intro via user input
+  comic2::InputState input{.jump_pressed = true};
+  expect(comic2::update_game_lifecycle(state, input, &dispatcher),
+         "Gate 15-C: Title input must succeed");
+  expect(comic2::get_game_lifecycle_state(state) == GameLifecycleState::Intro,
+         "Gate 15-C: state must transition to Intro");
+
+  // 2. Intro State: play through intro sequence
+  comic2::render_game_lifecycle_frame(surface, state);
+  state.ui.cinematic_frame = 4;
+  input = comic2::InputState{};
+  expect(comic2::update_game_lifecycle(state, input, &dispatcher),
+         "Gate 15-C: Intro sequence advance must succeed");
+  expect(comic2::get_game_lifecycle_state(state) == GameLifecycleState::Menu,
+         "Gate 15-C: state must transition from Intro to Menu");
+  expect(state.ui.menu_state == comic2::MenuState::GameSelect,
+         "Gate 15-C: Menu state must be GameSelect");
+
+  // 3. Menu State: navigate options and select game
+  state.ui.selected_option_index = 0;
+  comic2::render_game_lifecycle_frame(surface, state);
+
+  // Confirm selection with fire input to start gameplay
+  input = comic2::InputState{.fire_pressed = true};
+  expect(comic2::update_game_lifecycle(state, input, &dispatcher),
+         "Gate 15-C: Menu confirmation must succeed");
+  expect(comic2::get_game_lifecycle_state(state) ==
+             GameLifecycleState::Gameplay,
+         "Gate 15-C: state must transition from Menu to Gameplay");
+  expect(state.ui.menu_state == comic2::MenuState::None,
+         "Gate 15-C: Menu state must be None in Gameplay");
+
+  // 4. Gameplay State: run active gameplay loop
+  state.player.hp = 12;
+  state.player.lives = 3;
+  state.player.score = 500;
+  state.player.gems = 5;
+  const auto initial_x = state.player.x;
+
+  for (int tick = 0; tick < 10; ++tick) {
+    input = comic2::InputState{.right_pressed = true};
+    expect(comic2::update_game_lifecycle(state, input, &dispatcher),
+           "Gate 15-C: Gameplay tick must succeed");
+    comic2::render_game_lifecycle_frame(surface, state);
+  }
+  expect(state.player.x >= initial_x,
+         "Gate 15-C: player must advance right during gameplay");
+
+  // 5. Save State: trigger savegame snapshot persistence
+  state.flags.room_event_triggered = true;
+  expect(
+      comic2::update_game_lifecycle(state, comic2::InputState{}, &dispatcher),
+      "Gate 15-C: transition to Save must succeed");
+  expect(comic2::get_game_lifecycle_state(state) == GameLifecycleState::Save,
+         "Gate 15-C: state must transition from Gameplay to Save");
+  expect(state.saved_snapshot_bytes.size() == comic2::kDosSavegameSize,
+         "Gate 15-C: saved snapshot must be exact authentic 3,127-byte DOS "
+         "binary");
+
+  // Verify roundtrip fidelity of the snapshot taken in Save state
+  comic2::RuntimeState restored_state = comic2::make_default_runtime_state();
+  comic2::savegame_read_snapshot(restored_state, state.saved_snapshot_bytes);
+  expect(restored_state.player.lives == state.player.lives,
+         "Gate 15-C: save snapshot must preserve player lives");
+  expect(restored_state.player.gems == state.player.gems,
+         "Gate 15-C: save snapshot must preserve player gems");
+
+  // 6. Victory State: advance from Save/Gameplay to Victory
+  state.progression.flags |= 0x80U;
+  input = comic2::InputState{.fire_pressed = true};
+  expect(comic2::update_game_lifecycle(state, input, &dispatcher),
+         "Gate 15-C: transition to Victory must succeed");
+  expect(comic2::get_game_lifecycle_state(state) == GameLifecycleState::Victory,
+         "Gate 15-C: state must transition to Victory");
+  expect((state.progression.flags & 0x80U) != 0,
+         "Gate 15-C: victory progression flag must remain set");
+
+  // Render victory scene
+  comic2::render_game_lifecycle_frame(surface, state);
+
+  // Return to Menu from Victory
+  input = comic2::InputState{.fire_pressed = true};
+  expect(comic2::update_game_lifecycle(state, input, &dispatcher),
+         "Gate 15-C: transition from Victory to Menu must succeed");
+  expect(comic2::get_game_lifecycle_state(state) == GameLifecycleState::Menu,
+         "Gate 15-C: state must return smoothly to Menu");
+}
+
 } // namespace
 
 void run_integration_gate_tests() {
@@ -2448,4 +2554,7 @@ void run_integration_gate_tests() {
 
   // Gate 15-B: Authentic DOS configuration and key definition persistence.
   test_gate_15b_config_persistence();
+
+  // Gate 15-C: End-to-End Game Flow Lifecycle.
+  test_gate_15c_end_to_end_game_flow();
 }

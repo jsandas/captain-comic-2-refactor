@@ -33,4 +33,18 @@ bool play_intro_cinematic(EgaPlanarSurface &surface, RuntimeState &state);
 bool event_finale_transition_sequence(EgaPlanarSurface &surface,
                                       RuntimeState &state);
 
+class GameDispatcher;
+
+GameLifecycleState get_game_lifecycle_state(const RuntimeState &state);
+void set_game_lifecycle_state(RuntimeState &state,
+                              GameLifecycleState next_state);
+bool can_transition_game_lifecycle(GameLifecycleState current,
+                                   GameLifecycleState next);
+bool transition_game_lifecycle(RuntimeState &state,
+                               GameLifecycleState next_state);
+bool update_game_lifecycle(RuntimeState &state, const InputState &input,
+                           const GameDispatcher *dispatcher = nullptr);
+void render_game_lifecycle_frame(EgaPlanarSurface &surface,
+                                 RuntimeState &state);
+
 } // namespace comic2

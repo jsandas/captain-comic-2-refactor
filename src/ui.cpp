@@ -9,6 +9,9 @@
 #include <string>
 #include <utility>
 
+#include "comic2/dispatcher.hpp"
+#include "comic2/persistence.hpp"
+
 namespace comic2 {
 namespace {
 
@@ -368,7 +371,6 @@ void ui_select_next_valid_option(RuntimeState &state) {
   state.ui.selected_option_index = next;
 }
 
-// cppcheck-suppress unusedFunction ; reserved for Phase 10
 bool ui_select_prev_valid_option(RuntimeState &state) {
   if (state.ui.option_labels.empty()) {
     return false;
@@ -432,6 +434,254 @@ bool event_finale_transition_sequence(EgaPlanarSurface &surface,
   state.ui.cinematic_frame =
       static_cast<std::uint8_t>(state.ui.cinematic_frame + 1U);
   return true;
+}
+
+GameLifecycleState get_game_lifecycle_state(const RuntimeState &state) {
+  return state.ui.lifecycle_state;
+}
+
+void set_game_lifecycle_state(RuntimeState &state,
+                              GameLifecycleState next_state) {
+  state.ui.lifecycle_state = next_state;
+}
+
+bool can_transition_game_lifecycle(GameLifecycleState current,
+                                   GameLifecycleState next) {
+  if (current == next) {
+    return true;
+  }
+  switch (current) {
+  case GameLifecycleState::Title:
+    return next == GameLifecycleState::Intro ||
+           next == GameLifecycleState::Menu || next == GameLifecycleState::Quit;
+  case GameLifecycleState::Intro:
+    return next == GameLifecycleState::Menu ||
+           next == GameLifecycleState::Gameplay ||
+           next == GameLifecycleState::Title ||
+           next == GameLifecycleState::Quit;
+  case GameLifecycleState::Menu:
+    return next == GameLifecycleState::Gameplay ||
+           next == GameLifecycleState::Title ||
+           next == GameLifecycleState::Quit;
+  case GameLifecycleState::Gameplay:
+    return next == GameLifecycleState::Save ||
+           next == GameLifecycleState::Victory ||
+           next == GameLifecycleState::GameOver ||
+           next == GameLifecycleState::Menu || next == GameLifecycleState::Quit;
+  case GameLifecycleState::Save:
+    return next == GameLifecycleState::Gameplay ||
+           next == GameLifecycleState::Victory ||
+           next == GameLifecycleState::Menu || next == GameLifecycleState::Quit;
+  case GameLifecycleState::Victory:
+    return next == GameLifecycleState::Menu ||
+           next == GameLifecycleState::Title ||
+           next == GameLifecycleState::Quit;
+  case GameLifecycleState::GameOver:
+    return next == GameLifecycleState::Menu ||
+           next == GameLifecycleState::Title ||
+           next == GameLifecycleState::Quit;
+  case GameLifecycleState::Quit:
+    return false;
+  }
+  return false;
+}
+
+bool transition_game_lifecycle(RuntimeState &state,
+                               GameLifecycleState next_state) {
+  if (!can_transition_game_lifecycle(state.ui.lifecycle_state, next_state)) {
+    return false;
+  }
+  if (state.ui.lifecycle_state == next_state) {
+    return true;
+  }
+
+  // Handle entry side-effects
+  switch (next_state) {
+  case GameLifecycleState::Title:
+    state.ui.cinematic_frame = 0;
+    break;
+  case GameLifecycleState::Intro:
+    state.ui.cinematic_frame = 0;
+    break;
+  case GameLifecycleState::Menu:
+    state.ui.menu_state = MenuState::GameSelect;
+    state.ui.selected_option_index = 0;
+    break;
+  case GameLifecycleState::Gameplay:
+    state.ui.menu_state = MenuState::None;
+    state.player.is_physics_active = true;
+    if (state.ui.modal_prompt == "Room Event Triggered") {
+      state.ui.modal_active = false;
+      state.ui.modal_prompt.clear();
+      state.transition_state.player_frozen = false;
+    }
+    state.flags.room_event_triggered = false;
+    break;
+  case GameLifecycleState::Save: {
+    // Perform authentic snapshot serialization
+    savegame_write_snapshot(state, state.saved_snapshot_bytes);
+    if (!state.ui.pending_event_message.empty()) {
+      state.ui.modal_active = true;
+      state.ui.modal_prompt = state.ui.pending_event_message;
+      state.ui.pending_event_message.clear();
+      state.transition_state.player_frozen = true;
+    } else if (!state.ui.modal_active || state.ui.modal_prompt.empty()) {
+      state.ui.modal_active = true;
+      state.ui.modal_prompt = "Room Event Triggered";
+      state.transition_state.player_frozen = true;
+    }
+    state.flags.room_event_triggered = false;
+    break;
+  }
+  case GameLifecycleState::Victory:
+    state.progression.flags =
+        static_cast<std::uint8_t>(state.progression.flags | 0x80U);
+    state.ui.cinematic_frame = 0;
+    break;
+  case GameLifecycleState::GameOver:
+    state.ui.modal_active = true;
+    state.ui.modal_game_over = true;
+    state.ui.game_over = true;
+    break;
+  case GameLifecycleState::Quit:
+    break;
+  }
+
+  state.ui.lifecycle_state = next_state;
+  return true;
+}
+
+bool update_game_lifecycle(RuntimeState &state, const InputState &input,
+                           const GameDispatcher *dispatcher) {
+  switch (state.ui.lifecycle_state) {
+  case GameLifecycleState::Title:
+    if (input.jump_pressed || input.fire_pressed || input.pause_pressed ||
+        input.mode_activate_pressed || input.left_pressed ||
+        input.right_pressed) {
+      return transition_game_lifecycle(state, GameLifecycleState::Intro);
+    }
+    return true;
+
+  case GameLifecycleState::Intro:
+    if (input.pause_pressed) {
+      return transition_game_lifecycle(state, GameLifecycleState::Menu);
+    }
+    if (state.ui.cinematic_frame >= 4U ||
+        (!state.intro_screens.empty() &&
+         state.ui.cinematic_frame >= state.intro_screens.size())) {
+      return transition_game_lifecycle(state, GameLifecycleState::Menu);
+    }
+    if (input.jump_pressed || input.fire_pressed) {
+      state.ui.cinematic_frame =
+          static_cast<std::uint8_t>(state.ui.cinematic_frame + 1U);
+      if (state.ui.cinematic_frame >= 4U ||
+          (!state.intro_screens.empty() &&
+           state.ui.cinematic_frame >= state.intro_screens.size())) {
+        return transition_game_lifecycle(state, GameLifecycleState::Menu);
+      }
+    }
+    return true;
+
+  case GameLifecycleState::Menu:
+    if (input.left_pressed) {
+      ui_select_prev_valid_option(state);
+    }
+    if (input.right_pressed) {
+      ui_select_next_valid_option(state);
+    }
+    if (input.jump_pressed || input.fire_pressed) {
+      return transition_game_lifecycle(state, GameLifecycleState::Gameplay);
+    }
+    return true;
+
+  case GameLifecycleState::Gameplay: {
+    auto should_transition_to_save = [](const RuntimeState &s) {
+      return s.flags.room_event_triggered ||
+             s.ui.pending_event_message == "Room Event Triggered" ||
+             (s.ui.modal_active && s.ui.modal_prompt == "Room Event Triggered");
+    };
+
+    if (should_transition_to_save(state)) {
+      return transition_game_lifecycle(state, GameLifecycleState::Save);
+    }
+    if ((state.progression.flags & 0x80U) != 0U) {
+      return transition_game_lifecycle(state, GameLifecycleState::Victory);
+    }
+    if (state.player.hp == 0 && state.player.lives == 0) {
+      return transition_game_lifecycle(state, GameLifecycleState::GameOver);
+    }
+    if (dispatcher != nullptr) {
+      state.input = input;
+      dispatcher->run_tick(state);
+    }
+    if (should_transition_to_save(state)) {
+      return transition_game_lifecycle(state, GameLifecycleState::Save);
+    }
+    if ((state.progression.flags & 0x80U) != 0U) {
+      return transition_game_lifecycle(state, GameLifecycleState::Victory);
+    }
+    if (state.player.hp == 0 && state.player.lives == 0) {
+      return transition_game_lifecycle(state, GameLifecycleState::GameOver);
+    }
+    return true;
+  }
+
+  case GameLifecycleState::Save:
+    if (input.jump_pressed || input.fire_pressed || input.pause_pressed) {
+      if ((state.progression.flags & 0x80U) != 0U) {
+        return transition_game_lifecycle(state, GameLifecycleState::Victory);
+      }
+      return transition_game_lifecycle(state, GameLifecycleState::Gameplay);
+    }
+    return true;
+
+  case GameLifecycleState::Victory:
+    if (input.jump_pressed || input.fire_pressed || input.pause_pressed) {
+      return transition_game_lifecycle(state, GameLifecycleState::Menu);
+    }
+    return true;
+
+  case GameLifecycleState::GameOver:
+    if (input.jump_pressed || input.fire_pressed || input.pause_pressed) {
+      return transition_game_lifecycle(state, GameLifecycleState::Menu);
+    }
+    return true;
+
+  case GameLifecycleState::Quit:
+    return false;
+  }
+
+  return true;
+}
+
+void render_game_lifecycle_frame(EgaPlanarSurface &surface,
+                                 RuntimeState &state) {
+  switch (state.ui.lifecycle_state) {
+  case GameLifecycleState::Title:
+    render_title_screen(surface, state);
+    break;
+  case GameLifecycleState::Intro:
+    play_intro_cinematic(surface, state);
+    break;
+  case GameLifecycleState::Menu:
+    ui_render_game_selection_panel(surface, state);
+    break;
+  case GameLifecycleState::Gameplay:
+    hud_render_overlay(surface, state);
+    break;
+  case GameLifecycleState::Save:
+    ui_render_modal_prompt(surface, state);
+    break;
+  case GameLifecycleState::Victory:
+    event_finale_transition_sequence(surface, state);
+    break;
+  case GameLifecycleState::GameOver:
+    ui_render_modal_prompt(surface, state);
+    break;
+  case GameLifecycleState::Quit:
+    surface.clear(0x00);
+    break;
+  }
 }
 
 } // namespace comic2

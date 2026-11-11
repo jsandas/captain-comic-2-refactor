@@ -4,7 +4,10 @@
 #include <stdexcept>
 #include <vector>
 
+#include "comic2/default_handlers.hpp"
+#include "comic2/dispatcher.hpp"
 #include "comic2/game_state.hpp"
+#include "comic2/persistence.hpp"
 #include "comic2/renderer.hpp"
 #include "comic2/resource_loader.hpp"
 #include "comic2/ui.hpp"
@@ -420,6 +423,217 @@ void test_load_ui_assets_helper() {
   expect(state.menu_buttons.empty(), "Menu buttons must be cleared");
 }
 
+void test_game_lifecycle_state_machine_transitions() {
+  using comic2::GameLifecycleState;
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+
+  expect(comic2::get_game_lifecycle_state(state) == GameLifecycleState::Title,
+         "Initial lifecycle state must be Title");
+
+  comic2::set_game_lifecycle_state(state, GameLifecycleState::Menu);
+  expect(comic2::get_game_lifecycle_state(state) == GameLifecycleState::Menu,
+         "set_game_lifecycle_state must update lifecycle state");
+  comic2::set_game_lifecycle_state(state, GameLifecycleState::Title);
+
+  // Invalid transition from Title to Victory should be rejected
+  expect(!comic2::can_transition_game_lifecycle(GameLifecycleState::Title,
+                                                GameLifecycleState::Victory),
+         "Title directly to Victory must be disallowed");
+  expect(!comic2::transition_game_lifecycle(state, GameLifecycleState::Victory),
+         "transition_game_lifecycle(Title -> Victory) must return false");
+  expect(state.ui.lifecycle_state == GameLifecycleState::Title,
+         "State must remain Title after failed transition");
+
+  // 1. Title -> Intro
+  expect(comic2::can_transition_game_lifecycle(GameLifecycleState::Title,
+                                               GameLifecycleState::Intro),
+         "Title to Intro must be allowed");
+  expect(comic2::transition_game_lifecycle(state, GameLifecycleState::Intro),
+         "Transition Title -> Intro must succeed");
+  expect(state.ui.lifecycle_state == GameLifecycleState::Intro,
+         "State must be Intro");
+
+  // 2. Intro -> Menu
+  expect(comic2::can_transition_game_lifecycle(GameLifecycleState::Intro,
+                                               GameLifecycleState::Menu),
+         "Intro to Menu must be allowed");
+  expect(comic2::transition_game_lifecycle(state, GameLifecycleState::Menu),
+         "Transition Intro -> Menu must succeed");
+  expect(state.ui.lifecycle_state == GameLifecycleState::Menu,
+         "State must be Menu");
+  expect(state.ui.menu_state == comic2::MenuState::GameSelect,
+         "Menu state must be GameSelect");
+
+  // 3. Menu -> Gameplay
+  expect(comic2::can_transition_game_lifecycle(GameLifecycleState::Menu,
+                                               GameLifecycleState::Gameplay),
+         "Menu to Gameplay must be allowed");
+  expect(comic2::transition_game_lifecycle(state, GameLifecycleState::Gameplay),
+         "Transition Menu -> Gameplay must succeed");
+  expect(state.ui.lifecycle_state == GameLifecycleState::Gameplay,
+         "State must be Gameplay");
+  expect(state.ui.menu_state == comic2::MenuState::None,
+         "Menu state must be None in Gameplay");
+
+  // 4. Gameplay -> Save
+  expect(comic2::can_transition_game_lifecycle(GameLifecycleState::Gameplay,
+                                               GameLifecycleState::Save),
+         "Gameplay to Save must be allowed");
+  expect(comic2::transition_game_lifecycle(state, GameLifecycleState::Save),
+         "Transition Gameplay -> Save must succeed");
+  expect(state.ui.lifecycle_state == GameLifecycleState::Save,
+         "State must be Save");
+  expect(state.saved_snapshot_bytes.size() == comic2::kDosSavegameSize,
+         "Save state entry must serialize authentic DOS snapshot");
+
+  // 5. Save -> Victory
+  expect(comic2::can_transition_game_lifecycle(GameLifecycleState::Save,
+                                               GameLifecycleState::Victory),
+         "Save to Victory must be allowed");
+  expect(comic2::transition_game_lifecycle(state, GameLifecycleState::Victory),
+         "Transition Save -> Victory must succeed");
+  expect(state.ui.lifecycle_state == GameLifecycleState::Victory,
+         "State must be Victory");
+  expect((state.progression.flags & 0x80U) != 0,
+         "Victory flag 0x80 must be set on Victory entry");
+
+  // 6. Victory -> Menu
+  expect(comic2::can_transition_game_lifecycle(GameLifecycleState::Victory,
+                                               GameLifecycleState::Menu),
+         "Victory to Menu must be allowed");
+  expect(comic2::transition_game_lifecycle(state, GameLifecycleState::Menu),
+         "Transition Victory -> Menu must succeed");
+  expect(state.ui.lifecycle_state == GameLifecycleState::Menu,
+         "State must be Menu");
+}
+
+void test_game_lifecycle_update_and_rendering() {
+  using comic2::GameLifecycleState;
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  comic2::EgaPlanarSurface surface(320, 200);
+
+  // Starts at Title
+  comic2::render_game_lifecycle_frame(surface, state);
+  expect(state.ui.lifecycle_state == GameLifecycleState::Title,
+         "Should start in Title");
+
+  // Title input triggers transition to Intro
+  comic2::InputState input{};
+  input.jump_pressed = true;
+  comic2::update_game_lifecycle(state, input);
+  expect(state.ui.lifecycle_state == GameLifecycleState::Intro,
+         "Title input must advance to Intro");
+
+  // Stepping through intro slides
+  input = comic2::InputState{};
+  state.ui.cinematic_frame = 4; // Complete intro
+  comic2::update_game_lifecycle(state, input);
+  expect(state.ui.lifecycle_state == GameLifecycleState::Menu,
+         "Intro completion must advance to Menu");
+
+  // Menu navigation and selection
+  input.left_pressed = true;
+  comic2::update_game_lifecycle(state, input);
+  input = comic2::InputState{};
+  input.fire_pressed = true;
+  comic2::update_game_lifecycle(state, input);
+  expect(state.ui.lifecycle_state == GameLifecycleState::Gameplay,
+         "Menu confirmation must advance to Gameplay");
+
+  // Gameplay render
+  comic2::render_game_lifecycle_frame(surface, state);
+
+  // Trigger Save from gameplay
+  state.flags.room_event_triggered = true;
+  comic2::update_game_lifecycle(state, comic2::InputState{});
+  expect(state.ui.lifecycle_state == GameLifecycleState::Save,
+         "Room event trigger must transition to Save");
+  expect(!state.saved_snapshot_bytes.empty(),
+         "Saved snapshot must be generated");
+
+  // Save confirm to Victory
+  state.progression.flags |= 0x80U;
+  input = comic2::InputState{.fire_pressed = true};
+  comic2::update_game_lifecycle(state, input);
+  expect(state.ui.lifecycle_state == GameLifecycleState::Victory,
+         "Save completion with victory flag must advance to Victory");
+
+  // Victory render
+  comic2::render_game_lifecycle_frame(surface, state);
+}
+
+void test_game_lifecycle_gameplay_to_save_via_dispatcher_tick() {
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  comic2::GameDispatcher dispatcher = comic2::make_default_game_dispatcher();
+  state.ui.lifecycle_state = comic2::GameLifecycleState::Gameplay;
+
+  // Place player overlapping a proximity room event trigger
+  state.player.x = 100;
+  state.player.y = 100;
+  state.player.is_physics_active = false;
+  state.mapped_objects.push_back(comic2::MappedObject12{
+      .room_x = 0,
+      .room_y = 0,
+      .descriptor_ptr = 0x1234,
+      .state_flags = 0x0001,
+      .world_x = 90,
+      .world_y = 90,
+  });
+
+  expect(!state.flags.room_event_triggered,
+         "Room event trigger flag initially clear");
+  expect(state.ui.pending_event_message.empty(),
+         "Pending event message initially empty");
+
+  // In normal tick flow, update_game_lifecycle executes
+  // dispatcher->run_tick(state) where proximity triggers room_event_triggered,
+  // which is queued to pending_event_message. Gameplay must transition to Save.
+  comic2::update_game_lifecycle(state, comic2::InputState{}, &dispatcher);
+
+  expect(state.ui.lifecycle_state == comic2::GameLifecycleState::Save,
+         "Normal tick flow must transition Gameplay to Save on room event "
+         "trigger");
+  expect(!state.saved_snapshot_bytes.empty(),
+         "Save state must produce a saved snapshot");
+  expect(state.ui.modal_active, "Save state modal prompt should be active");
+  expect(state.ui.modal_prompt == "Room Event Triggered",
+         "Save state modal prompt should match room event");
+
+  // Acknowledging Save prompt transitions back to Gameplay
+  const comic2::InputState confirm_input{.fire_pressed = true};
+  comic2::update_game_lifecycle(state, confirm_input, &dispatcher);
+
+  expect(state.ui.lifecycle_state == comic2::GameLifecycleState::Gameplay,
+         "Acknowledging Save prompt must transition back to Gameplay");
+  expect(!state.ui.modal_active,
+         "Modal prompt should be deactivated upon returning to Gameplay");
+  expect(state.ui.modal_prompt.empty(),
+         "Modal prompt should be cleared upon returning to Gameplay");
+  expect(!state.transition_state.player_frozen,
+         "Player should be unfrozen upon returning to Gameplay");
+}
+
+void test_game_lifecycle_gameplay_to_save_via_anchor_trigger() {
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  comic2::GameDispatcher dispatcher = comic2::make_default_game_dispatcher();
+  state.ui.lifecycle_state = comic2::GameLifecycleState::Gameplay;
+
+  state.player.x = 100;
+  state.player.y = 100;
+  state.player.is_physics_active = false;
+  state.room_event_anchor.active = true;
+  state.room_event_anchor.x = 96;
+  state.room_event_anchor.y = 100;
+
+  comic2::update_game_lifecycle(state, comic2::InputState{}, &dispatcher);
+
+  expect(
+      state.ui.lifecycle_state == comic2::GameLifecycleState::Save,
+      "Normal tick flow must transition Gameplay to Save on room event anchor");
+  expect(!state.saved_snapshot_bytes.empty(),
+         "Save state must produce a saved snapshot");
+}
+
 } // namespace
 
 void run_ui_tests() {
@@ -436,4 +650,8 @@ void run_ui_tests() {
   test_frdata1_menu_buttons_decode();
   test_ui_render_game_selection_panel_with_authentic_assets();
   test_load_ui_assets_helper();
+  test_game_lifecycle_state_machine_transitions();
+  test_game_lifecycle_update_and_rendering();
+  test_game_lifecycle_gameplay_to_save_via_dispatcher_tick();
+  test_game_lifecycle_gameplay_to_save_via_anchor_trigger();
 }
