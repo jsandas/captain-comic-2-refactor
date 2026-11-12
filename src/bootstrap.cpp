@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <thread>
 #include <vector>
@@ -105,10 +106,22 @@ bool draw_level_sprite_record(EgaPlanarSurface &frame,
   }
 
   const auto &record = state.level_sprites[sprite_index];
+  const std::size_t width_bytes =
+      (static_cast<std::size_t>(record.width_pixels) + 7U) / 8U;
+  const std::size_t plane_bytes =
+      width_bytes * static_cast<std::size_t>(record.height_rows);
   if (record.width_pixels == 0U || record.height_rows == 0U ||
+      record.width_pixels > frame.width_pixels() ||
+      record.height_rows > frame.height_rows() ||
+      width_bytes > frame.row_stride_bytes() ||
+      plane_bytes > std::numeric_limits<std::uint16_t>::max() ||
       record.mask_bytes.size() != record.mask_byte_count() ||
-      record.planes[0].size() != record.mask_byte_count() ||
-      record.mask_bytes.empty() || record.planes[0].empty()) {
+      record.mask_bytes.empty() ||
+      std::any_of(record.planes.begin(), record.planes.end(),
+                  [&record, plane_bytes](const auto &plane) {
+                    return plane.size() != record.mask_byte_count() ||
+                           plane.size() < plane_bytes || plane.empty();
+                  })) {
     return false;
   }
 
@@ -122,14 +135,14 @@ bool draw_level_sprite_record(EgaPlanarSurface &frame,
     return true;
   }
 
-  const std::size_t clamped_px =
-      static_cast<std::size_t>(std::max<std::int16_t>(
-          0, std::min<std::int16_t>(px, frame.width_pixels() -
-                                            record.width_pixels)));
-  const std::size_t clamped_py =
-      static_cast<std::size_t>(std::max<std::int16_t>(
-          0, std::min<std::int16_t>(py,
-                                    frame.height_rows() - record.height_rows)));
+  const std::size_t max_px = static_cast<std::size_t>(frame.width_pixels()) -
+                             static_cast<std::size_t>(record.width_pixels);
+  const std::size_t max_py = static_cast<std::size_t>(frame.height_rows()) -
+                             static_cast<std::size_t>(record.height_rows);
+  const std::size_t clamped_px = static_cast<std::size_t>(
+      std::clamp<std::int32_t>(px, 0, static_cast<std::int32_t>(max_px)));
+  const std::size_t clamped_py = static_cast<std::size_t>(
+      std::clamp<std::int32_t>(py, 0, static_cast<std::int32_t>(max_py)));
   gfx_rle_blit_masked_or_4plane(frame, clamped_px, clamped_py, sprite);
   return true;
 }

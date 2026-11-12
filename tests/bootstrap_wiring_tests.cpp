@@ -1024,6 +1024,40 @@ void test_render_bootstrap_frame_renders_level_sprite_with_tileset_and_bezel() {
         "bezel is active");
 }
 
+void test_render_bootstrap_frame_rejects_oversized_level_sprite_records() {
+  auto state = comic2::make_default_runtime_state();
+  state.player.x = 16;
+  state.player.y = 24;
+  state.player.is_airborne = false;
+  state.player.facing_right = true;
+  state.player.animation_state =
+      static_cast<std::uint8_t>(comic2::PlayerAnimationState::Idle);
+
+  state.level_sprites.resize(16);
+  for (auto &rec : state.level_sprites) {
+    rec.width_pixels = 328U; // Larger than 320px frame width
+    rec.height_rows = 208U;  // Larger than 200px frame height
+    const auto mask_bytes = rec.mask_byte_count();
+    rec.mask_bytes.assign(mask_bytes, 0xFFU);
+    for (auto &plane : rec.planes) {
+      plane.assign(mask_bytes, 0xFFU);
+    }
+  }
+
+  comic2::MemoryFramePresenter presenter;
+  comic2::render_bootstrap_frame(presenter, state);
+
+  check(presenter.has_frame(),
+        "oversized level sprite record should fall back without throwing or "
+        "blitting out of bounds");
+  const auto &frame = presenter.last_frame();
+  const auto marker_pixel =
+      read_color_index(frame, static_cast<std::size_t>(state.player.x),
+                       static_cast<std::size_t>(state.player.y));
+  check(marker_pixel == 0x0CU,
+        "oversized level sprite should fall back to player marker");
+}
+
 void test_render_bootstrap_frame_forwards_dynamic_palette_to_presenter() {
   auto state = comic2::make_default_runtime_state();
   state.is_dark_room = true;
@@ -1109,6 +1143,7 @@ void run_bootstrap_wiring_tests() {
   test_scene_bootstrap_does_not_commit_failed_candidate_state();
   test_scene_bootstrap_falls_back_with_missing_assets();
   test_render_bootstrap_frame_renders_level_sprite_with_tileset_and_bezel();
+  test_render_bootstrap_frame_rejects_oversized_level_sprite_records();
   test_render_bootstrap_frame_forwards_dynamic_palette_to_presenter();
   test_render_loop_drives_live_frontend_lifecycle();
 }
