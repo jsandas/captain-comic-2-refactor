@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <string>
 #include <utility>
 
@@ -121,6 +122,47 @@ bool should_draw_hud_overlay(const RuntimeState &state) {
          state.ui.inventory_mask != 0 ||
          state.progression.mode_inventory_mask != 0 ||
          state.ui.cinematic_frame != 0;
+}
+
+bool can_blit_opaque_image(const EgaPlanarSurface &surface,
+                           std::size_t x_pixels, std::size_t y_rows,
+                           const Ega4PlaneImage &image) {
+  if (image.width_bytes == 0U || image.height_rows == 0U) {
+    return false;
+  }
+  if (x_pixels >= surface.width_pixels() || y_rows >= surface.height_rows()) {
+    return false;
+  }
+  const std::size_t dest_byte_offset = x_pixels / 8U;
+  if (dest_byte_offset + static_cast<std::size_t>(image.width_bytes) >
+          surface.row_stride_bytes() ||
+      y_rows + static_cast<std::size_t>(image.height_rows) >
+          surface.height_rows()) {
+    return false;
+  }
+  const std::size_t required_plane_bytes =
+      static_cast<std::size_t>(image.width_bytes) *
+      static_cast<std::size_t>(image.height_rows);
+  return std::all_of(image.planes.begin(), image.planes.end(),
+                     [required_plane_bytes](const auto &plane) {
+                       return plane.size() >= required_plane_bytes;
+                     });
+}
+
+bool can_make_masked_sprite_image(const MaskedSpriteRecord &record) {
+  if (record.width_pixels == 0U || record.height_rows == 0U) {
+    return false;
+  }
+  const std::size_t width_bytes =
+      (static_cast<std::size_t>(record.width_pixels) + 7U) / 8U;
+  const std::size_t plane_bytes =
+      width_bytes * static_cast<std::size_t>(record.height_rows);
+  if (plane_bytes > std::numeric_limits<std::uint16_t>::max()) {
+    return false;
+  }
+  return std::all_of(
+      record.planes.begin(), record.planes.end(),
+      [plane_bytes](const auto &plane) { return plane.size() >= plane_bytes; });
 }
 
 } // namespace
@@ -283,10 +325,15 @@ void ui_render_option_list(EgaPlanarSurface &surface,
 
 void ui_render_game_selection_panel(EgaPlanarSurface &surface,
                                     const RuntimeState &state) {
-  if (state.bezel_frame.has_value()) {
+  if (state.bezel_frame.has_value() &&
+      can_blit_opaque_image(surface, 0, 0, *state.bezel_frame)) {
     gfx_rle_blit_opaque_4plane(surface, 0, 0, *state.bezel_frame);
   }
-  if (state.menu_panel.has_value() && state.menu_buttons.size() >= 2) {
+  if (state.menu_panel.has_value() &&
+      can_blit_opaque_image(surface, 8, 8, *state.menu_panel) &&
+      state.menu_buttons.size() >= 2 &&
+      can_make_masked_sprite_image(state.menu_buttons[0]) &&
+      can_make_masked_sprite_image(state.menu_buttons[1])) {
     gfx_rle_blit_opaque_4plane(surface, 8, 8, *state.menu_panel);
 
     struct WorldButton {
@@ -303,21 +350,21 @@ void ui_render_game_selection_panel(EgaPlanarSurface &surface,
         {152, 112, "DREAMS"},
     }};
 
-    if (state.menu_buttons.size() >= 2) {
-      const auto unselected_image =
-          make_masked_sprite_image(state.menu_buttons[1]);
-      const auto selected_image =
-          make_masked_sprite_image(state.menu_buttons[0]);
-      for (std::size_t i = 0; i < kWorldButtons.size(); ++i) {
-        const bool is_selected = (i == state.ui.selected_option_index);
-        const auto &btn_img = is_selected ? selected_image : unselected_image;
+    const auto unselected_image =
+        make_masked_sprite_image(state.menu_buttons[1]);
+    const auto selected_image = make_masked_sprite_image(state.menu_buttons[0]);
+    for (std::size_t i = 0; i < kWorldButtons.size(); ++i) {
+      const bool is_selected = (i == state.ui.selected_option_index);
+      const auto &btn_img = is_selected ? selected_image : unselected_image;
+      if (kWorldButtons[i].x < surface.width_pixels() &&
+          kWorldButtons[i].y < surface.height_rows()) {
         gfx_rle_blit_masked_or_4plane(surface, kWorldButtons[i].x,
                                       kWorldButtons[i].y, btn_img);
       }
-      if (state.ui.selected_option_index < kWorldButtons.size()) {
-        blit_string(surface, 136, 90,
-                    kWorldButtons[state.ui.selected_option_index].name, 0x0F);
-      }
+    }
+    if (state.ui.selected_option_index < kWorldButtons.size()) {
+      blit_string(surface, 136, 90,
+                  kWorldButtons[state.ui.selected_option_index].name, 0x0F);
     }
     return;
   }
@@ -400,7 +447,8 @@ bool ui_select_prev_valid_option(RuntimeState &state) {
 }
 
 bool render_title_screen(EgaPlanarSurface &surface, const RuntimeState &state) {
-  if (state.title_screen.has_value()) {
+  if (state.title_screen.has_value() &&
+      can_blit_opaque_image(surface, 0, 0, *state.title_screen)) {
     gfx_rle_blit_opaque_4plane(surface, 0, 0, *state.title_screen);
     return true;
   }
@@ -417,10 +465,12 @@ bool play_intro_cinematic(EgaPlanarSurface &surface, RuntimeState &state) {
     const std::size_t count = state.intro_screens.size();
     const std::size_t index =
         static_cast<std::size_t>(state.ui.cinematic_frame) % count;
-    gfx_rle_blit_opaque_4plane(surface, 0, 0, state.intro_screens[index]);
-    state.ui.cinematic_frame =
-        static_cast<std::uint8_t>(state.ui.cinematic_frame + 1U);
-    return state.ui.cinematic_frame >= count;
+    if (can_blit_opaque_image(surface, 0, 0, state.intro_screens[index])) {
+      gfx_rle_blit_opaque_4plane(surface, 0, 0, state.intro_screens[index]);
+      state.ui.cinematic_frame =
+          static_cast<std::uint8_t>(state.ui.cinematic_frame + 1U);
+      return state.ui.cinematic_frame >= count;
+    }
   }
 
   draw_rect(surface, 0, 0, 320, 200, 0x00);
@@ -432,7 +482,8 @@ bool play_intro_cinematic(EgaPlanarSurface &surface, RuntimeState &state) {
 
 bool event_finale_transition_sequence(EgaPlanarSurface &surface,
                                       RuntimeState &state) {
-  if (state.victory_screen.has_value()) {
+  if (state.victory_screen.has_value() &&
+      can_blit_opaque_image(surface, 0, 0, *state.victory_screen)) {
     gfx_rle_blit_opaque_4plane(surface, 0, 0, *state.victory_screen);
     state.progression.flags =
         static_cast<std::uint8_t>(state.progression.flags | 0x80U);

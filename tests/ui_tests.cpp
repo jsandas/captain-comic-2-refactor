@@ -678,6 +678,41 @@ void test_game_lifecycle_gameplay_renders_scene_and_menu_navigation() {
          "scene onto the surface");
 }
 
+void test_ui_render_game_selection_panel_rejects_oversized_or_malformed_bezel() {
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  state.ui.menu_state = comic2::MenuState::GameSelect;
+
+  // Oversized bezel_frame (width_bytes > surface.row_stride_bytes())
+  comic2::Ega4PlaneImage oversized_bezel{};
+  oversized_bezel.width_bytes = 50U;
+  oversized_bezel.height_rows = 220U;
+  oversized_bezel.row_span_bytes = 11000U;
+  for (auto &plane : oversized_bezel.planes) {
+    plane.assign(11000U, 0xFFU);
+  }
+  state.bezel_frame = oversized_bezel;
+
+  comic2::EgaPlanarSurface surface(320, 200);
+  surface.clear(0x00);
+  comic2::ui_render_game_selection_panel(surface, state);
+
+  expect(surface.get_plane_byte(0, 0, 0) == 0x00,
+         "oversized bezel_frame must be skipped and not blitted at (0, 0)");
+  expect(surface.get_plane_byte(1, 80 / 8, 70) == 0xFF,
+         "fallback game selection panel must still render");
+
+  // Direct call to gfx_rle_blit_opaque_4plane with oversized image must throw
+  bool caught_out_of_range = false;
+  try {
+    comic2::gfx_rle_blit_opaque_4plane(surface, 0, 0, oversized_bezel);
+  } catch (const std::out_of_range &) {
+    caught_out_of_range = true;
+  }
+  expect(caught_out_of_range,
+         "gfx_rle_blit_opaque_4plane must throw std::out_of_range when image "
+         "exceeds destination bounds");
+}
+
 } // namespace
 
 void run_ui_tests() {
@@ -699,4 +734,5 @@ void run_ui_tests() {
   test_game_lifecycle_gameplay_to_save_via_dispatcher_tick();
   test_game_lifecycle_gameplay_to_save_via_anchor_trigger();
   test_game_lifecycle_gameplay_renders_scene_and_menu_navigation();
+  test_ui_render_game_selection_panel_rejects_oversized_or_malformed_bezel();
 }
