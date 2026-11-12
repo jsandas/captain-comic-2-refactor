@@ -492,6 +492,21 @@ void gfx_rle_blit_opaque_4plane(EgaPlanarSurface &dest, std::size_t x_pixels,
   const auto dest_row_stride = dest.row_stride_bytes();
   const auto dest_byte_offset = x_pixels / 8;
 
+  if (dest_byte_offset + image_data.width_bytes > dest_row_stride ||
+      y_rows + image_data.height_rows > dest.height_rows()) {
+    throw std::out_of_range("blit region exceeds destination surface bounds");
+  }
+
+  const auto required_plane_bytes =
+      static_cast<std::size_t>(image_data.width_bytes) *
+      static_cast<std::size_t>(image_data.height_rows);
+  for (std::size_t plane_index = 0; plane_index < 4; ++plane_index) {
+    if (image_data.planes[plane_index].size() < required_plane_bytes) {
+      throw std::invalid_argument(
+          "image plane buffer smaller than width_bytes * height_rows");
+    }
+  }
+
   // For each plane, copy row-by-row using explicit image dimensions
   for (std::size_t plane_index = 0; plane_index < 4; ++plane_index) {
     const auto &source_plane = image_data.planes[plane_index];
@@ -593,9 +608,22 @@ void gfx_rle_blit_masked_or_4plane(EgaPlanarSurface &dest, std::size_t x_pixels,
         "image width_bytes and height_rows must be non-zero for blitting");
   }
 
-  if ((x_pixels % 8U) == 0U) {
-    const auto dest_row_stride = dest.row_stride_bytes();
-    const auto dest_byte_offset = x_pixels / 8;
+  const auto required_plane_bytes =
+      static_cast<std::size_t>(image_data.width_bytes) *
+      static_cast<std::size_t>(image_data.height_rows);
+  for (std::size_t plane_index = 0; plane_index < 4; ++plane_index) {
+    if (image_data.planes[plane_index].size() < required_plane_bytes) {
+      throw std::invalid_argument(
+          "image plane buffer smaller than width_bytes * height_rows");
+    }
+  }
+
+  const auto dest_row_stride = dest.row_stride_bytes();
+  const auto dest_byte_offset = x_pixels / 8;
+
+  if ((x_pixels % 8U) == 0U &&
+      dest_byte_offset + image_data.width_bytes <= dest_row_stride &&
+      y_rows + image_data.height_rows <= dest.height_rows()) {
 
     for (std::size_t plane_index = 0; plane_index < 4; ++plane_index) {
       const auto &source_plane = image_data.planes[plane_index];
@@ -962,6 +990,12 @@ void camera_update_y_follow_comic_clamped(RuntimeState &state,
 void MemoryFramePresenter::present(const EgaPlanarSurface &frame) {
   last_frame_ = frame;
   has_frame_ = true;
+}
+
+void MemoryFramePresenter::set_palette(
+    const std::array<std::array<std::uint8_t, 4>, 16> &palette_table) {
+  last_palette_ = palette_table;
+  has_palette_ = true;
 }
 
 const EgaPlanarSurface &MemoryFramePresenter::last_frame() const {

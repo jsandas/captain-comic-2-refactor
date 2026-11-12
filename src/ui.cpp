@@ -6,11 +6,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <string>
 #include <utility>
 
+#include "comic2/bootstrap.hpp"
 #include "comic2/dispatcher.hpp"
 #include "comic2/persistence.hpp"
+#include "comic2/room_loader.hpp"
 
 namespace comic2 {
 namespace {
@@ -112,12 +115,54 @@ void draw_rect_unaligned(EgaPlanarSurface &surface, std::size_t x,
 }
 
 bool should_draw_hud_overlay(const RuntimeState &state) {
-  return state.ui.menu_state != MenuState::None || state.ui.modal_active ||
+  return state.bezel_frame.has_value() ||
+         state.ui.menu_state != MenuState::None || state.ui.modal_active ||
          state.player.score != 0 || state.player.gems != 0 ||
          state.player.lives != 3 || state.ui.active_mode_mask != 0 ||
          state.ui.inventory_mask != 0 ||
          state.progression.mode_inventory_mask != 0 ||
          state.ui.cinematic_frame != 0;
+}
+
+bool can_blit_opaque_image(const EgaPlanarSurface &surface,
+                           std::size_t x_pixels, std::size_t y_rows,
+                           const Ega4PlaneImage &image) {
+  if (image.width_bytes == 0U || image.height_rows == 0U) {
+    return false;
+  }
+  if (x_pixels >= surface.width_pixels() || y_rows >= surface.height_rows()) {
+    return false;
+  }
+  const std::size_t dest_byte_offset = x_pixels / 8U;
+  if (dest_byte_offset + static_cast<std::size_t>(image.width_bytes) >
+          surface.row_stride_bytes() ||
+      y_rows + static_cast<std::size_t>(image.height_rows) >
+          surface.height_rows()) {
+    return false;
+  }
+  const std::size_t required_plane_bytes =
+      static_cast<std::size_t>(image.width_bytes) *
+      static_cast<std::size_t>(image.height_rows);
+  return std::all_of(image.planes.begin(), image.planes.end(),
+                     [required_plane_bytes](const auto &plane) {
+                       return plane.size() >= required_plane_bytes;
+                     });
+}
+
+bool can_make_masked_sprite_image(const MaskedSpriteRecord &record) {
+  if (record.width_pixels == 0U || record.height_rows == 0U) {
+    return false;
+  }
+  const std::size_t width_bytes =
+      (static_cast<std::size_t>(record.width_pixels) + 7U) / 8U;
+  const std::size_t plane_bytes =
+      width_bytes * static_cast<std::size_t>(record.height_rows);
+  if (plane_bytes > std::numeric_limits<std::uint16_t>::max()) {
+    return false;
+  }
+  return std::all_of(
+      record.planes.begin(), record.planes.end(),
+      [plane_bytes](const auto &plane) { return plane.size() >= plane_bytes; });
 }
 
 } // namespace
@@ -280,7 +325,15 @@ void ui_render_option_list(EgaPlanarSurface &surface,
 
 void ui_render_game_selection_panel(EgaPlanarSurface &surface,
                                     const RuntimeState &state) {
-  if (state.menu_panel.has_value() && state.menu_buttons.size() >= 2) {
+  if (state.bezel_frame.has_value() &&
+      can_blit_opaque_image(surface, 0, 0, *state.bezel_frame)) {
+    gfx_rle_blit_opaque_4plane(surface, 0, 0, *state.bezel_frame);
+  }
+  if (state.menu_panel.has_value() &&
+      can_blit_opaque_image(surface, 8, 8, *state.menu_panel) &&
+      state.menu_buttons.size() >= 2 &&
+      can_make_masked_sprite_image(state.menu_buttons[0]) &&
+      can_make_masked_sprite_image(state.menu_buttons[1])) {
     gfx_rle_blit_opaque_4plane(surface, 8, 8, *state.menu_panel);
 
     struct WorldButton {
@@ -297,21 +350,21 @@ void ui_render_game_selection_panel(EgaPlanarSurface &surface,
         {152, 112, "DREAMS"},
     }};
 
-    if (state.menu_buttons.size() >= 2) {
-      const auto unselected_image =
-          make_masked_sprite_image(state.menu_buttons[1]);
-      const auto selected_image =
-          make_masked_sprite_image(state.menu_buttons[0]);
-      for (std::size_t i = 0; i < kWorldButtons.size(); ++i) {
-        const bool is_selected = (i == state.ui.selected_option_index);
-        const auto &btn_img = is_selected ? selected_image : unselected_image;
+    const auto unselected_image =
+        make_masked_sprite_image(state.menu_buttons[1]);
+    const auto selected_image = make_masked_sprite_image(state.menu_buttons[0]);
+    for (std::size_t i = 0; i < kWorldButtons.size(); ++i) {
+      const bool is_selected = (i == state.ui.selected_option_index);
+      const auto &btn_img = is_selected ? selected_image : unselected_image;
+      if (kWorldButtons[i].x < surface.width_pixels() &&
+          kWorldButtons[i].y < surface.height_rows()) {
         gfx_rle_blit_masked_or_4plane(surface, kWorldButtons[i].x,
                                       kWorldButtons[i].y, btn_img);
       }
-      if (state.ui.selected_option_index < kWorldButtons.size()) {
-        blit_string(surface, 136, 90,
-                    kWorldButtons[state.ui.selected_option_index].name, 0x0F);
-      }
+    }
+    if (state.ui.selected_option_index < kWorldButtons.size()) {
+      blit_string(surface, 136, 90,
+                  kWorldButtons[state.ui.selected_option_index].name, 0x0F);
     }
     return;
   }
@@ -359,11 +412,14 @@ void ui_edit_selected_option_text(RuntimeState &state,
 }
 
 void ui_select_next_valid_option(RuntimeState &state) {
-  if (state.ui.option_labels.empty()) {
+  const std::size_t count =
+      !state.ui.option_labels.empty()
+          ? state.ui.option_labels.size()
+          : (state.ui.menu_state == MenuState::GameSelect ? 6U : 0U);
+  if (count == 0U) {
     return;
   }
 
-  const std::size_t count = state.ui.option_labels.size();
   std::size_t next = state.ui.selected_option_index + 1U;
   if (next >= count) {
     next = 0U;
@@ -372,11 +428,14 @@ void ui_select_next_valid_option(RuntimeState &state) {
 }
 
 bool ui_select_prev_valid_option(RuntimeState &state) {
-  if (state.ui.option_labels.empty()) {
+  const std::size_t count =
+      !state.ui.option_labels.empty()
+          ? state.ui.option_labels.size()
+          : (state.ui.menu_state == MenuState::GameSelect ? 6U : 0U);
+  if (count == 0U) {
     return false;
   }
 
-  const std::size_t count = state.ui.option_labels.size();
   std::size_t prev = state.ui.selected_option_index;
   if (prev == 0U) {
     prev = count - 1U;
@@ -388,7 +447,8 @@ bool ui_select_prev_valid_option(RuntimeState &state) {
 }
 
 bool render_title_screen(EgaPlanarSurface &surface, const RuntimeState &state) {
-  if (state.title_screen.has_value()) {
+  if (state.title_screen.has_value() &&
+      can_blit_opaque_image(surface, 0, 0, *state.title_screen)) {
     gfx_rle_blit_opaque_4plane(surface, 0, 0, *state.title_screen);
     return true;
   }
@@ -405,10 +465,12 @@ bool play_intro_cinematic(EgaPlanarSurface &surface, RuntimeState &state) {
     const std::size_t count = state.intro_screens.size();
     const std::size_t index =
         static_cast<std::size_t>(state.ui.cinematic_frame) % count;
-    gfx_rle_blit_opaque_4plane(surface, 0, 0, state.intro_screens[index]);
-    state.ui.cinematic_frame =
-        static_cast<std::uint8_t>(state.ui.cinematic_frame + 1U);
-    return state.ui.cinematic_frame >= count;
+    if (can_blit_opaque_image(surface, 0, 0, state.intro_screens[index])) {
+      gfx_rle_blit_opaque_4plane(surface, 0, 0, state.intro_screens[index]);
+      state.ui.cinematic_frame =
+          static_cast<std::uint8_t>(state.ui.cinematic_frame + 1U);
+      return state.ui.cinematic_frame >= count;
+    }
   }
 
   draw_rect(surface, 0, 0, 320, 200, 0x00);
@@ -420,7 +482,8 @@ bool play_intro_cinematic(EgaPlanarSurface &surface, RuntimeState &state) {
 
 bool event_finale_transition_sequence(EgaPlanarSurface &surface,
                                       RuntimeState &state) {
-  if (state.victory_screen.has_value()) {
+  if (state.victory_screen.has_value() &&
+      can_blit_opaque_image(surface, 0, 0, *state.victory_screen)) {
     gfx_rle_blit_opaque_4plane(surface, 0, 0, *state.victory_screen);
     state.progression.flags =
         static_cast<std::uint8_t>(state.progression.flags | 0x80U);
@@ -506,10 +569,18 @@ bool transition_game_lifecycle(RuntimeState &state,
   case GameLifecycleState::Menu:
     state.ui.menu_state = MenuState::GameSelect;
     state.ui.selected_option_index = 0;
+    if (state.ui.option_labels.empty()) {
+      state.ui.option_labels = {"NATURE", "MAGIC",  "TIME",
+                                "ICE",    "TECHNO", "DREAMS"};
+    }
     break;
   case GameLifecycleState::Gameplay:
     state.ui.menu_state = MenuState::None;
     state.player.is_physics_active = true;
+    if (state.room_grid.tile_data.empty() && !state.assets_root.empty()) {
+      load_room_tilemap_from_asset_root(
+          state, state.assets_root, state.current_level, state.current_room);
+    }
     if (state.ui.modal_prompt == "Room Event Triggered") {
       state.ui.modal_active = false;
       state.ui.modal_prompt.clear();
@@ -542,6 +613,9 @@ bool transition_game_lifecycle(RuntimeState &state,
     state.ui.modal_active = true;
     state.ui.modal_game_over = true;
     state.ui.game_over = true;
+    if (state.ui.modal_prompt.empty()) {
+      state.ui.modal_prompt = "Game Over";
+    }
     break;
   case GameLifecycleState::Quit:
     break;
@@ -658,24 +732,30 @@ void render_game_lifecycle_frame(EgaPlanarSurface &surface,
                                  RuntimeState &state) {
   switch (state.ui.lifecycle_state) {
   case GameLifecycleState::Title:
+    load_ega_palette_table(state, make_default_ega_palette());
     render_title_screen(surface, state);
     break;
   case GameLifecycleState::Intro:
+    load_ega_palette_table(state, make_default_ega_palette());
     play_intro_cinematic(surface, state);
     break;
   case GameLifecycleState::Menu:
+    load_ega_palette_table(state, make_default_ega_palette());
     ui_render_game_selection_panel(surface, state);
     break;
   case GameLifecycleState::Gameplay:
-    hud_render_overlay(surface, state);
+    render_bootstrap_surface(surface, state);
     break;
   case GameLifecycleState::Save:
+    render_bootstrap_surface(surface, state);
     ui_render_modal_prompt(surface, state);
     break;
   case GameLifecycleState::Victory:
+    load_ega_palette_table(state, make_default_ega_palette());
     event_finale_transition_sequence(surface, state);
     break;
   case GameLifecycleState::GameOver:
+    render_bootstrap_surface(surface, state);
     ui_render_modal_prompt(surface, state);
     break;
   case GameLifecycleState::Quit:

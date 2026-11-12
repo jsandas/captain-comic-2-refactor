@@ -50,18 +50,32 @@ class IFramePresenter {
 public:
   virtual ~IFramePresenter() = default;
   virtual void present(const EgaPlanarSurface &frame) = 0;
+  virtual void set_palette(
+      const std::array<std::array<std::uint8_t, 4>, 16> &palette_table) {
+    (void)palette_table;
+  }
 };
 
 class MemoryFramePresenter final : public IFramePresenter {
 public:
   void present(const EgaPlanarSurface &frame) override;
+  void set_palette(const std::array<std::array<std::uint8_t, 4>, 16>
+                       &palette_table) override;
 
   bool has_frame() const noexcept { return has_frame_; }
   const EgaPlanarSurface &last_frame() const;
 
+  bool has_palette() const noexcept { return has_palette_; }
+  const std::array<std::array<std::uint8_t, 4>, 16> &
+  last_palette() const noexcept {
+    return last_palette_;
+  }
+
 private:
   bool has_frame_ = false;
   EgaPlanarSurface last_frame_{};
+  bool has_palette_ = false;
+  std::array<std::array<std::uint8_t, 4>, 16> last_palette_{};
 };
 
 #ifdef COMIC2_USE_SDL2
@@ -72,8 +86,8 @@ public:
   ~Sdl2FramePresenter() override;
 
   void present(const EgaPlanarSurface &frame) override;
-  void
-  set_palette(const std::array<std::array<std::uint8_t, 4>, 16> &palette_table);
+  void set_palette(const std::array<std::array<std::uint8_t, 4>, 16>
+                       &palette_table) override;
 
   // Disable copying
   Sdl2FramePresenter(const Sdl2FramePresenter &) = delete;

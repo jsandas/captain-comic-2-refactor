@@ -66,6 +66,7 @@ FrameLoopSummary run_render_loop(
     IAudioBackend *audio_backend = nullptr);
 
 bool poll_bootstrap_input(RuntimeState &state);
+void render_bootstrap_surface(EgaPlanarSurface &frame, RuntimeState &state);
 void render_bootstrap_frame(IFramePresenter &presenter, RuntimeState &state);
 BootstrapTickSummary run_bootstrap_tick(RuntimeState &state,
                                         GameDispatcher &dispatcher,
