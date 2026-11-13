@@ -45,22 +45,19 @@ bool ent_apply_gravity_and_move_y(const EntityPhysicsContext &ctx,
 bool ent_move_y_and_bounce(const EntityPhysicsContext &ctx,
                            RuntimeEntitySlot32 &slot);
 
-// Authentic entity physics helpers from reference/comic2/comic2.asm (1000:5b7b - 1000:5ccf):
+// Authentic entity physics helpers from reference/comic2/comic2.asm (1000:5b7b
+// - 1000:5ccf):
 bool ent_probe_tile_above_threshold(const GameState &state,
-                                    std::int16_t pixel_x,
-                                    std::int16_t pixel_y,
+                                    std::int16_t pixel_x, std::int16_t pixel_y,
                                     std::uint16_t threshold);
 
-bool ent_probe_tile_range_solid(const GameState &state,
-                                std::int16_t pixel_x,
-                                std::int16_t pixel_y,
-                                std::int16_t span,
+bool ent_probe_tile_range_solid(const GameState &state, std::int16_t pixel_x,
+                                std::int16_t pixel_y, std::int16_t span,
                                 std::uint16_t threshold);
 
 bool ent_probe_tile_range_in_viewport(const GameState &state,
                                       std::int16_t pixel_x,
-                                      std::int16_t pixel_y,
-                                      std::int16_t span,
+                                      std::int16_t pixel_y, std::int16_t span,
                                       std::uint16_t threshold);
 
 bool ent_probe_x_collision_range(const GameState &state,

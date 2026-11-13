@@ -20,7 +20,8 @@ inline constexpr std::uint16_t kBehaviorGravity = 0x0006;
 inline constexpr std::uint16_t kBehaviorShoot = 0x0007;
 inline constexpr std::uint16_t kBehaviorBoss = 0x0008;
 
-// Authentic 33-entry behavior jump table handlers from comic2.asm (0x4AE3, 1000:50E7 - 1000:59C9)
+// Authentic 33-entry behavior jump table handlers from comic2.asm (0x4AE3,
+// 1000:50E7 - 1000:59C9)
 inline constexpr std::uint16_t kBehaviorAsm01_LedgePatrol = 1;
 inline constexpr std::uint16_t kBehaviorAsm02_ProximityHopper = 2;
 inline constexpr std::uint16_t kBehaviorAsm03_OscillatingFloater = 3;

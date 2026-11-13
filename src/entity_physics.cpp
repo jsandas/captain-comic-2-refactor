@@ -149,8 +149,7 @@ EntityPhysicsContext make_physics_context(const GameState &state) {
 }
 
 bool ent_probe_tile_above_threshold(const GameState &state,
-                                    std::int16_t pixel_x,
-                                    std::int16_t pixel_y,
+                                    std::int16_t pixel_x, std::int16_t pixel_y,
                                     std::uint16_t threshold) {
   if (pixel_x < 0 || pixel_y < 0) {
     return true;
@@ -198,8 +197,7 @@ bool ent_probe_tile_range_solid(const GameState &state, std::int16_t pixel_x,
 
 bool ent_probe_tile_range_in_viewport(const GameState &state,
                                       std::int16_t pixel_x,
-                                      std::int16_t pixel_y,
-                                      std::int16_t span,
+                                      std::int16_t pixel_y, std::int16_t span,
                                       std::uint16_t threshold) {
   const std::int16_t cam_x = static_cast<std::int16_t>(state.camera_x);
   if (pixel_x < cam_x) {
@@ -237,7 +235,8 @@ bool ent_probe_y_collision_and_clamp(const GameState &state,
 
   if (slot.param_b >= 0) {
     const auto foot = static_cast<std::int16_t>(new_y + h);
-    const auto threshold = state.threshold_down != -1 ? state.threshold_down : 1;
+    const auto threshold =
+        state.threshold_down != -1 ? state.threshold_down : 1;
     const auto tile = get_tile_at_pixels(*grid, probe_x, foot);
     if (!tile.has_value() || static_cast<std::int16_t>(*tile) <= threshold) {
       slot.y = static_cast<std::int16_t>((foot & 0xFFF0) - h);

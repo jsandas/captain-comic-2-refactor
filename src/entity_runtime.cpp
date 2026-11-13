@@ -367,10 +367,10 @@ void update_enemy_projectiles(GameState &state) {
     const std::int16_t proj_w = 8;
     const std::int16_t proj_h = 8;
 
-    const bool x_overlap = (proj.x + proj_w > state.comic_x) &&
-                           (proj.x < state.comic_x + comic_w);
-    const bool y_overlap = (proj.y + proj_h > state.comic_y) &&
-                           (proj.y < state.comic_y + comic_h);
+    const bool x_overlap =
+        (proj.x + proj_w > state.comic_x) && (proj.x < state.comic_x + comic_w);
+    const bool y_overlap =
+        (proj.y + proj_h > state.comic_y) && (proj.y < state.comic_y + comic_h);
 
     if (x_overlap && y_overlap) {
       proj.active = false;
@@ -446,8 +446,8 @@ void handle_boss_behavior(GameState &state, RuntimeEntitySlot32 &slot) {
     }
     if (slot.anim_tick % 20 == 0) {
       const std::int16_t vx = (state.comic_x < slot.x) ? -4 : 4;
-      spawn_enemy_projectile(
-          state, slot.x, static_cast<std::int16_t>(slot.y + 4), vx, 0);
+      spawn_enemy_projectile(state, slot.x,
+                             static_cast<std::int16_t>(slot.y + 4), vx, 0);
     }
   } else if (phase == 2) {
     ent_move_x_and_bounce(ctx, slot, 6);
@@ -490,15 +490,18 @@ void ent_execute_authentic_asm_behavior(GameState &state,
     const std::int16_t dx = (slot.dir_toggle == 2) ? -speed : speed;
     slot.param_a = dx;
     const std::int16_t new_x = static_cast<std::int16_t>(slot.x + dx);
-    const std::int16_t probe_x = (slot.dir_toggle == 2)
-                                     ? new_x
-                                     : static_cast<std::int16_t>(new_x + slot.hitbox_w - 1);
+    const std::int16_t probe_x =
+        (slot.dir_toggle == 2)
+            ? new_x
+            : static_cast<std::int16_t>(new_x + slot.hitbox_w - 1);
     const bool blocked = ent_probe_x_collision_strict(state, slot, probe_x);
     if (!blocked) {
       const std::int16_t foot_y =
           static_cast<std::int16_t>(slot.y + slot.hitbox_h);
       const std::uint16_t thresh =
-          state.threshold_down != -1 ? static_cast<std::uint16_t>(state.threshold_down) : 1U;
+          state.threshold_down != -1
+              ? static_cast<std::uint16_t>(state.threshold_down)
+              : 1U;
       if (!ent_probe_tile_above_threshold(state, probe_x, foot_y, thresh)) {
         slot.x = new_x;
         return;
@@ -536,10 +539,12 @@ void ent_execute_authentic_asm_behavior(GameState &state,
     std::int16_t vy = slot.param_b;
     if (slot.unknown_1c == 0) {
       --vy;
-      if (vy < -4) vy = -4;
+      if (vy < -4)
+        vy = -4;
     } else {
       ++vy;
-      if (vy > 4) vy = 4;
+      if (vy > 4)
+        vy = 4;
     }
     slot.param_b = vy;
     if (ent_move_y_with_probe_and_bounce(state, slot)) {
@@ -589,7 +594,8 @@ void ent_execute_authentic_asm_behavior(GameState &state,
   }
   case 6: { // 1000:5273 - Behavior 6: Flying Homing Chaser
     std::int16_t vy = 2;
-    if (state.comic_y < slot.y) vy = -2;
+    if (state.comic_y < slot.y)
+      vy = -2;
     if (state.comic_y != slot.y) {
       slot.param_b = vy;
       ent_move_y_with_probe_and_bounce(state, slot);
@@ -696,15 +702,18 @@ void ent_execute_authentic_asm_behavior(GameState &state,
     const std::int16_t dx = (slot.dir_toggle == 2) ? -speed : speed;
     slot.param_a = dx;
     const std::int16_t new_x = static_cast<std::int16_t>(slot.x + dx);
-    const std::int16_t probe_x = (slot.dir_toggle == 2)
-                                     ? new_x
-                                     : static_cast<std::int16_t>(new_x + slot.hitbox_w - 1);
+    const std::int16_t probe_x =
+        (slot.dir_toggle == 2)
+            ? new_x
+            : static_cast<std::int16_t>(new_x + slot.hitbox_w - 1);
     const bool blocked = ent_probe_x_collision_strict(state, slot, probe_x);
     if (!blocked) {
       const std::int16_t foot_y =
           static_cast<std::int16_t>(slot.y + slot.hitbox_h);
       const std::uint16_t thresh =
-          state.threshold_down != -1 ? static_cast<std::uint16_t>(state.threshold_down) : 1U;
+          state.threshold_down != -1
+              ? static_cast<std::uint16_t>(state.threshold_down)
+              : 1U;
       if (!ent_probe_tile_above_threshold(state, probe_x, foot_y, thresh)) {
         slot.x = new_x;
         return;
@@ -829,7 +838,8 @@ void ent_execute_authentic_asm_behavior(GameState &state,
       slot.unknown_1c = 1;
     }
     if (slot.unknown_1c != 2) {
-      const std::int16_t target_y = static_cast<std::int16_t>(state.comic_y - 24);
+      const std::int16_t target_y =
+          static_cast<std::int16_t>(state.comic_y - 24);
       if (slot.y < target_y) {
         slot.param_b = 3;
         ent_apply_gravity_and_move_y(state, slot);
@@ -840,7 +850,8 @@ void ent_execute_authentic_asm_behavior(GameState &state,
       const std::uint16_t prev_dir = slot.dir_toggle;
       ent_move_x_and_bounce(ctx, slot, 8);
       ent_set_horizontal_chase_direction_to_comic(state, slot);
-      if (slot.dir_toggle != prev_dir && std::abs(slot.x - state.comic_x) >= 32) {
+      if (slot.dir_toggle != prev_dir &&
+          std::abs(slot.x - state.comic_x) >= 32) {
         slot.unknown_1c = 2;
       }
     } else {
@@ -950,8 +961,8 @@ void ent_execute_authentic_asm_behavior(GameState &state,
   case 31: { // 1000:596C - Behavior 31: Heavy Stalactite
     if (slot.unknown_1c == 0) {
       const std::int16_t dx = std::abs(state.comic_x - slot.x);
-      const std::int16_t dy = static_cast<std::int16_t>(
-          state.comic_y - slot.y - slot.hitbox_h);
+      const std::int16_t dy =
+          static_cast<std::int16_t>(state.comic_y - slot.y - slot.hitbox_h);
       if (dy < 0 || dx > dy) {
         slot.param_a = 4;
         return;
@@ -1073,7 +1084,8 @@ void ent_update_object_behaviors(GameState &state) {
       if (slot.unknown_1c >= 24) {
         slot.unknown_1c = 0;
         const std::int16_t vx = (state.comic_x < slot.x) ? -4 : 4;
-        spawn_enemy_projectile(state, slot.x, static_cast<std::int16_t>(slot.y + 4), vx, 0);
+        spawn_enemy_projectile(state, slot.x,
+                               static_cast<std::int16_t>(slot.y + 4), vx, 0);
       }
     } else if (behavior >= 1 && behavior <= 6) {
       const auto fn = kBehaviorTable[behavior];
@@ -1147,8 +1159,9 @@ ProjectileCombatResult apply_projectile_entity_collisions(RuntimeState &state) {
         break;
       }
 
-      const bool is_boss = (behavior == kBehaviorBoss || slot.behavior_state == 8 ||
-                            slot.behavior_state == 27 || slot.behavior_state == 28);
+      const bool is_boss =
+          (behavior == kBehaviorBoss || slot.behavior_state == 8 ||
+           slot.behavior_state == 27 || slot.behavior_state == 28);
       if (is_boss) {
         const std::uint8_t boss_invuln =
             static_cast<std::uint8_t>((slot.unknown_1c >> 8) & 0xFF);

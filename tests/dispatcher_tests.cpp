@@ -1551,7 +1551,8 @@ void test_authentic_33_assembly_behaviors() {
   slot.y = 64;
   slot.dir_toggle = 1;
   comic2::ent_execute_authentic_asm_behavior(state, slot, 1);
-  expect(slot.x > 100, "Behavior 1: advances forward when ground ahead is solid");
+  expect(slot.x > 100,
+         "Behavior 1: advances forward when ground ahead is solid");
 
   // Behavior 2: Proximity Hopper
   state.comic_x = 110;
@@ -1595,7 +1596,8 @@ void test_authentic_33_assembly_behaviors() {
   slot.x = 100;
   slot.y = 30;
   comic2::ent_execute_authentic_asm_behavior(state, slot, 6);
-  expect(slot.dir_toggle == 1 && slot.param_b == 2, "Behavior 6: homes in both axes");
+  expect(slot.dir_toggle == 1 && slot.param_b == 2,
+         "Behavior 6: homes in both axes");
 
   // Behavior 7: Static Sentry
   state.comic_x = 50;
@@ -1611,7 +1613,8 @@ void test_authentic_33_assembly_behaviors() {
   slot.x = 100;
   slot.unknown_1c = 1;
   comic2::ent_execute_authentic_asm_behavior(state, slot, 8);
-  expect(slot.param_a == 0, "Behavior 8: ambusher halts when comic is within 32px");
+  expect(slot.param_a == 0,
+         "Behavior 8: ambusher halts when comic is within 32px");
 
   // Behavior 9: Heavy Leaper
   slot.unknown_1c = 0;
@@ -1631,7 +1634,8 @@ void test_authentic_33_assembly_behaviors() {
   slot.x = 50;
   slot.y = 40;
   comic2::ent_execute_authentic_asm_behavior(state, slot, 11);
-  expect(slot.unknown_1c == 1, "Behavior 11: high bouncer arms initial impulse");
+  expect(slot.unknown_1c == 1,
+         "Behavior 11: high bouncer arms initial impulse");
 
   // Behavior 12: Ceiling Drop Hazard
   g.tile_data[1 * 16 + 6] = 0x01; // ceiling platform at (6, 1), y 16..31
@@ -1643,7 +1647,8 @@ void test_authentic_33_assembly_behaviors() {
   slot.param_b = 0;
   comic2::ent_execute_authentic_asm_behavior(state, slot, 12);
   expect(slot.y == 8 && slot.param_b == 7,
-         "Behavior 12: ceiling drop hazard initiates drop when comic is underneath");
+         "Behavior 12: ceiling drop hazard initiates drop when comic is "
+         "underneath");
 
   // Behavior 13: Fast Ledge Patrol
   slot.x = 100;
@@ -1657,14 +1662,16 @@ void test_authentic_33_assembly_behaviors() {
   slot.x = 100;
   slot.unknown_1c = 0;
   comic2::ent_execute_authentic_asm_behavior(state, slot, 14);
-  expect(slot.dir_toggle == 2 && slot.unknown_1c == 1, "Behavior 14: locks direction on spawn");
+  expect(slot.dir_toggle == 2 && slot.unknown_1c == 1,
+         "Behavior 14: locks direction on spawn");
 
   // Behavior 15: Ground Pounder
   state.comic_x = 100;
   slot.x = 100;
   slot.y = 64;
   comic2::ent_execute_authentic_asm_behavior(state, slot, 15);
-  expect(slot.param_b == -8, "Behavior 15: leaps upward when comic is directly underneath");
+  expect(slot.param_b == -8,
+         "Behavior 15: leaps upward when comic is directly underneath");
 
   // Behavior 16: Diagonal Bouncer
   slot.unknown_1c = 0;
@@ -1677,7 +1684,8 @@ void test_authentic_33_assembly_behaviors() {
   slot.y = 60;
   slot.param_b = 4;
   comic2::ent_execute_authentic_asm_behavior(state, slot, 17);
-  expect(slot.param_b == -12, "Behavior 17: triggers high bounce -12 on landing");
+  expect(slot.param_b == -12,
+         "Behavior 17: triggers high bounce -12 on landing");
 
   // Behavior 18: Wall Jumping Runner
   slot.x = 32;
@@ -1694,7 +1702,8 @@ void test_authentic_33_assembly_behaviors() {
   slot.y = 20;
   slot.unknown_1c = 0;
   comic2::ent_execute_authentic_asm_behavior(state, slot, 19);
-  expect(slot.unknown_1c == 1, "Behavior 19: triggers falling state when comic passes underneath");
+  expect(slot.unknown_1c == 1,
+         "Behavior 19: triggers falling state when comic passes underneath");
 
   // Behavior 20: Spike Drop Trap 2
   slot.unknown_1c = 0;
@@ -1723,7 +1732,8 @@ void test_authentic_33_assembly_behaviors() {
   slot.y = 64;
   slot.param_b = 0;
   comic2::ent_execute_authentic_asm_behavior(state, slot, 23);
-  expect(slot.param_b == -8, "Behavior 23: charges with hop when comic is near");
+  expect(slot.param_b == -8,
+         "Behavior 23: charges with hop when comic is near");
 
   // Behavior 24: Ceiling Drop Ghost
   state.comic_x = 100;
@@ -1733,7 +1743,8 @@ void test_authentic_33_assembly_behaviors() {
   slot.param_b = 0;
   slot.unknown_1c = 0;
   comic2::ent_execute_authentic_asm_behavior(state, slot, 24);
-  expect(slot.unknown_1c == 1 && slot.param_b == 1, "Behavior 24: drops ignoring world tiles");
+  expect(slot.unknown_1c == 1 && slot.param_b == 1,
+         "Behavior 24: drops ignoring world tiles");
 
   // Behavior 25: Inverted Ceiling Crawler
   slot.dir_toggle = 1;
@@ -1745,19 +1756,22 @@ void test_authentic_33_assembly_behaviors() {
   slot.x = 100;
   slot.param_b = 5;
   comic2::ent_execute_authentic_asm_behavior(state, slot, 26);
-  expect(slot.param_b == 0 && slot.param_a == 4, "Behavior 26: horizontal cruise");
+  expect(slot.param_b == 0 && slot.param_a == 4,
+         "Behavior 26: horizontal cruise");
 
   // Behavior 27: Boss Walker
   slot.unknown_1c = 0;
   slot.unknown_0e = 6;
   comic2::ent_execute_authentic_asm_behavior(state, slot, 27);
-  expect(slot.unknown_1c != 0, "Behavior 27: dispatches boss walker state machine");
+  expect(slot.unknown_1c != 0,
+         "Behavior 27: dispatches boss walker state machine");
 
   // Behavior 28: Boss Swooper
   slot.unknown_1c = 0;
   slot.unknown_0e = 6;
   comic2::ent_execute_authentic_asm_behavior(state, slot, 28);
-  expect(slot.unknown_1c != 0, "Behavior 28: dispatches boss swooper state machine");
+  expect(slot.unknown_1c != 0,
+         "Behavior 28: dispatches boss swooper state machine");
 
   // Behavior 29: Leftward Dart
   slot.mapped_object_ptr = 1;
@@ -1765,13 +1779,15 @@ void test_authentic_33_assembly_behaviors() {
   slot.y = 32;
   slot.dir_toggle = 1;
   comic2::ent_execute_authentic_asm_behavior(state, slot, 29);
-  expect(slot.dir_toggle == 2 && slot.param_a == -4, "Behavior 29: darts left at speed 4");
+  expect(slot.dir_toggle == 2 && slot.param_a == -4,
+         "Behavior 29: darts left at speed 4");
 
   // Behavior 30: Torpedo Sprinter
   state.comic_x = 110;
   slot.x = 100;
   comic2::ent_execute_authentic_asm_behavior(state, slot, 30);
-  expect(slot.param_a == 8, "Behavior 30: accelerates to speed 8 when comic approaches");
+  expect(slot.param_a == 8,
+         "Behavior 30: accelerates to speed 8 when comic approaches");
 
   // Behavior 31: Heavy Stalactite
   state.comic_x = 100;
@@ -1781,20 +1797,23 @@ void test_authentic_33_assembly_behaviors() {
   slot.hitbox_h = 16;
   slot.unknown_1c = 0;
   comic2::ent_execute_authentic_asm_behavior(state, slot, 31);
-  expect(slot.unknown_1c == 1, "Behavior 31: heavy stalactite drops when comic is below");
+  expect(slot.unknown_1c == 1,
+         "Behavior 31: heavy stalactite drops when comic is below");
 
   // Behavior 32: Left Swoop Diver
   slot.x = 100;
   slot.unknown_1c = 0;
   comic2::ent_execute_authentic_asm_behavior(state, slot, 32);
-  expect(slot.dir_toggle == 2 && slot.unknown_1c == 1, "Behavior 32: initiates left dive");
+  expect(slot.dir_toggle == 2 && slot.unknown_1c == 1,
+         "Behavior 32: initiates left dive");
 
   // Behavior 33: Right Swoop Diver
   state.comic_x = 200;
   slot.x = 100;
   slot.unknown_1c = 0;
   comic2::ent_execute_authentic_asm_behavior(state, slot, 33);
-  expect(slot.dir_toggle == 1 && slot.unknown_1c == 1, "Behavior 33: initiates right dive");
+  expect(slot.dir_toggle == 1 && slot.unknown_1c == 1,
+         "Behavior 33: initiates right dive");
 }
 
 void test_boss_encounter_phases_and_combat() {
@@ -1825,15 +1844,19 @@ void test_boss_encounter_phases_and_combat() {
   const auto res1 = comic2::apply_projectile_entity_collisions(state);
   expect(res1.projectiles_hit == 1, "Projectile should hit boss");
   expect(boss.unknown_0e == 5, "Boss HP should decrement to 5");
-  std::uint8_t invuln = static_cast<std::uint8_t>((boss.unknown_1c >> 8) & 0xFF);
-  expect(invuln == comic2::kBossInvulnerabilityTicks, "Boss invulnerability window started");
+  std::uint8_t invuln =
+      static_cast<std::uint8_t>((boss.unknown_1c >> 8) & 0xFF);
+  expect(invuln == comic2::kBossInvulnerabilityTicks,
+         "Boss invulnerability window started");
 
-  // 3. Rapid second projectile arrives during invulnerability window: absorbed without damage
+  // 3. Rapid second projectile arrives during invulnerability window: absorbed
+  // without damage
   proj.active = true;
   state.projectiles = {proj};
   const auto res2 = comic2::apply_projectile_entity_collisions(state);
   expect(res2.projectiles_hit == 1, "Projectile should still be consumed");
-  expect(boss.unknown_0e == 5, "Boss HP must not decrease during invulnerability window");
+  expect(boss.unknown_0e == 5,
+         "Boss HP must not decrease during invulnerability window");
 
   // 4. Tick boss through invulnerability window
   for (int t = 0; t < comic2::kBossInvulnerabilityTicks; ++t) {
@@ -1873,7 +1896,8 @@ void test_boss_encounter_phases_and_combat() {
   expect(res_fatal.entities_defeated == 1, "Boss defeat should register");
   expect(state.player.score >= 1000, "Boss defeat awards 1000 score bonus");
   expect(state.boss_victory, "Boss victory flag must be set upon boss defeat");
-  expect(!comic2::is_runtime_slot_active(boss), "Boss slot must be deactivated on defeat");
+  expect(!comic2::is_runtime_slot_active(boss),
+         "Boss slot must be deactivated on defeat");
 }
 
 void test_hostile_enemy_projectiles_and_player_damage() {
@@ -1894,12 +1918,14 @@ void test_hostile_enemy_projectiles_and_player_damage() {
   // 1. Spawning enemy projectile
   const bool spawned = comic2::spawn_enemy_projectile(state, 50, 84, 4, 0);
   expect(spawned, "spawning enemy projectile should succeed");
-  expect(state.enemy_projectiles[0].active, "spawned projectile must be active");
+  expect(state.enemy_projectiles[0].active,
+         "spawned projectile must be active");
 
   // 2. Viewport culling: off-screen right
   comic2::spawn_enemy_projectile(state, 238, 84, 4, 0);
   comic2::update_enemy_projectiles(state);
-  expect(!state.enemy_projectiles[1].active, "projectile exiting viewport must be deactivated");
+  expect(!state.enemy_projectiles[1].active,
+         "projectile exiting viewport must be deactivated");
 
   // 3. Shield absorption: projectile hits Comic with shield_power > 0
   state.enemy_projectiles[0].active = true;
@@ -1907,10 +1933,13 @@ void test_hostile_enemy_projectiles_and_player_damage() {
   state.enemy_projectiles[0].y = 84;
   state.enemy_projectiles[0].vx = 4;
   comic2::update_enemy_projectiles(state);
-  expect(!state.enemy_projectiles[0].active, "projectile consumed on comic contact");
-  expect(state.comic_shield == 1, "shield power should absorb damage and decrement");
+  expect(!state.enemy_projectiles[0].active,
+         "projectile consumed on comic contact");
+  expect(state.comic_shield == 1,
+         "shield power should absorb damage and decrement");
   expect(state.comic_hp == 8, "player hp must be preserved when shielded");
-  expect(state.comic_invulnerability_ticks == 12, "hit invulnerability ticks granted");
+  expect(state.comic_invulnerability_ticks == 12,
+         "hit invulnerability ticks granted");
 
   // 4. Damage without shield
   state.comic_shield = 0;
@@ -1920,7 +1949,8 @@ void test_hostile_enemy_projectiles_and_player_damage() {
   comic2::spawn_enemy_projectile(state, 98, 84, 4, 0);
   comic2::update_enemy_projectiles(state);
   expect(state.comic_hp == 7, "unshielded player takes direct HP damage");
-  expect(state.comic_invulnerability_ticks == 12, "damage grants invulnerability ticks");
+  expect(state.comic_invulnerability_ticks == 12,
+         "damage grants invulnerability ticks");
 
   // 5. Fatal damage triggers player death
   state.comic_hp = 1;
@@ -1930,7 +1960,8 @@ void test_hostile_enemy_projectiles_and_player_damage() {
   comic2::spawn_enemy_projectile(state, 98, 84, 4, 0);
   comic2::update_enemy_projectiles(state);
   expect(state.comic_hp == 0, "lethal projectile reduces player hp to 0");
-  expect(state.player.animation_state == static_cast<std::uint8_t>(comic2::PlayerAnimationState::Death),
+  expect(state.player.animation_state ==
+             static_cast<std::uint8_t>(comic2::PlayerAnimationState::Death),
          "death animation state must be triggered on lethal projectile damage");
 }
 
@@ -1945,7 +1976,8 @@ void test_descriptor_animation_cycling() {
   // Stationary cycling: anim_tick % anim_span
   for (std::uint16_t t = 0; t < 8; ++t) {
     const std::uint16_t frame = comic2::compute_entity_animation_frame(slot);
-    expect(frame == (t % 4), "stationary animation frame should cycle modulo anim_span");
+    expect(frame == (t % 4),
+           "stationary animation frame should cycle modulo anim_span");
     comic2::advance_entity_animation_tick(slot);
   }
 
@@ -1954,7 +1986,8 @@ void test_descriptor_animation_cycling() {
   slot.param_a = 4; // moving horizontally
   for (std::uint16_t t = 0; t < 12; ++t) {
     const std::uint16_t frame = comic2::compute_entity_animation_frame(slot);
-    expect(frame == (4 + (t % 6)), "moving animation frame should cycle anim_span + (anim_tick % anim_period)");
+    expect(frame == (4 + (t % 6)), "moving animation frame should cycle "
+                                   "anim_span + (anim_tick % anim_period)");
     comic2::advance_entity_animation_tick(slot);
   }
 }

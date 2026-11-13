@@ -292,7 +292,8 @@ void test_authentic_physics_probe_helpers() {
          "negative x must return true");
   expect(comic2::ent_probe_tile_above_threshold(state, 10, -1, 1),
          "negative y must return true");
-  // In grid row 5, tile is 0x01. If threshold is 1, tile_id (1) > thresh (1) is false.
+  // In grid row 5, tile is 0x01. If threshold is 1, tile_id (1) > thresh (1) is
+  // false.
   expect(!comic2::ent_probe_tile_above_threshold(state, 16, 80, 1),
          "tile <= threshold must return false");
   // If threshold is 0, tile_id (1) > thresh (0) is true.
@@ -306,10 +307,12 @@ void test_authentic_physics_probe_helpers() {
   expect(comic2::ent_probe_tile_range_in_viewport(state, 50 + 240, 10, 16, 1),
          "pixel_x >= camera_x + 240 must report blocked");
   state.camera_x = 0;
-  // Open tile area: (row 1, y 16..31) is open (0xFF). With threshold 1, 0xFF > 1 so not solid (false).
+  // Open tile area: (row 1, y 16..31) is open (0xFF). With threshold 1, 0xFF >
+  // 1 so not solid (false).
   expect(!comic2::ent_probe_tile_range_in_viewport(state, 32, 16, 16, 1),
          "open viewport region must not report solid");
-  // Solid floor tile area: row 5 (y 80..95) is 0x01. With threshold 1, 1 <= 1 so solid (true).
+  // Solid floor tile area: row 5 (y 80..95) is 0x01. With threshold 1, 1 <= 1
+  // so solid (true).
   expect(comic2::ent_probe_tile_range_in_viewport(state, 32, 70, 20, 1),
          "span hitting floor tile must report solid");
 
@@ -330,10 +333,12 @@ void test_authentic_physics_probe_helpers() {
   slot.x = 100;
   slot.y = 48;
   slot.dir_toggle = 1;
-  const bool bounced_x = comic2::ent_move_x_with_range_probe_and_bounce(state, slot, 2);
+  const bool bounced_x =
+      comic2::ent_move_x_with_range_probe_and_bounce(state, slot, 2);
   expect(!bounced_x && slot.x == 102, "unobstructed move x advances slot");
   slot.x = 126; // Next step with dx 2 hits 128
-  const bool hit_x = comic2::ent_move_x_with_range_probe_and_bounce(state, slot, 2);
+  const bool hit_x =
+      comic2::ent_move_x_with_range_probe_and_bounce(state, slot, 2);
   expect(hit_x, "hitting wall block must bounce");
   expect(slot.dir_toggle == 2, "bounce must invert dir_toggle");
   expect(slot.param_a == -2, "bounce must negate param_a");
@@ -348,7 +353,8 @@ void test_authentic_physics_probe_helpers() {
   slot.param_b = 4;
   const bool hit_y = comic2::ent_move_y_with_probe_and_bounce(state, slot);
   expect(hit_y, "floor collision must bounce");
-  expect(slot.y == 64 && slot.param_b == -4, "bounced y snapped and velocity negated");
+  expect(slot.y == 64 && slot.param_b == -4,
+         "bounced y snapped and velocity negated");
 
   // 6. ent_set_horizontal_chase_direction_to_comic
   state.comic_x = 80;
