@@ -10,6 +10,7 @@ namespace comic2 {
 struct RuntimeState;
 struct ProjectileState;
 
+inline constexpr std::uint16_t kBehaviorInactive = 0x0000;
 inline constexpr std::uint16_t kBehaviorChase = 0x0001;
 inline constexpr std::uint16_t kBehaviorBounce = 0x0002;
 inline constexpr std::uint16_t kBehaviorJump = 0x0003;
@@ -17,6 +18,42 @@ inline constexpr std::uint16_t kBehaviorGem = 0x0004;
 inline constexpr std::uint16_t kBehaviorPowerup = 0x0005;
 inline constexpr std::uint16_t kBehaviorGravity = 0x0006;
 inline constexpr std::uint16_t kBehaviorShoot = 0x0007;
+inline constexpr std::uint16_t kBehaviorBoss = 0x0008;
+
+// Authentic 33-entry behavior jump table handlers from comic2.asm (0x4AE3, 1000:50E7 - 1000:59C9)
+inline constexpr std::uint16_t kBehaviorAsm01_LedgePatrol = 1;
+inline constexpr std::uint16_t kBehaviorAsm02_ProximityHopper = 2;
+inline constexpr std::uint16_t kBehaviorAsm03_OscillatingFloater = 3;
+inline constexpr std::uint16_t kBehaviorAsm04_TimidFollower = 4;
+inline constexpr std::uint16_t kBehaviorAsm05_Swooper = 5;
+inline constexpr std::uint16_t kBehaviorAsm06_FlyingHomingChaser = 6;
+inline constexpr std::uint16_t kBehaviorAsm07_StaticSentry = 7;
+inline constexpr std::uint16_t kBehaviorAsm08_ProximitySentry = 8;
+inline constexpr std::uint16_t kBehaviorAsm09_HeavyLeaper = 9;
+inline constexpr std::uint16_t kBehaviorAsm10_GhostPhaser = 10;
+inline constexpr std::uint16_t kBehaviorAsm11_HighBouncer = 11;
+inline constexpr std::uint16_t kBehaviorAsm12_CeilingDropHazard = 12;
+inline constexpr std::uint16_t kBehaviorAsm13_FastLedgePatrol = 13;
+inline constexpr std::uint16_t kBehaviorAsm14_DirectionLockedWalker = 14;
+inline constexpr std::uint16_t kBehaviorAsm15_GroundPounder = 15;
+inline constexpr std::uint16_t kBehaviorAsm16_DiagonalBouncer = 16;
+inline constexpr std::uint16_t kBehaviorAsm17_TrampolineJumper = 17;
+inline constexpr std::uint16_t kBehaviorAsm18_WallJumpingRunner = 18;
+inline constexpr std::uint16_t kBehaviorAsm19_DropTrap1 = 19;
+inline constexpr std::uint16_t kBehaviorAsm20_SpikeDropTrap2 = 20;
+inline constexpr std::uint16_t kBehaviorAsm21_HovercraftOscillator = 21;
+inline constexpr std::uint16_t kBehaviorAsm22_TwoPhaseDrone = 22;
+inline constexpr std::uint16_t kBehaviorAsm23_FastRammer = 23;
+inline constexpr std::uint16_t kBehaviorAsm24_CeilingDropGhost = 24;
+inline constexpr std::uint16_t kBehaviorAsm25_InvertedCeilingCrawler = 25;
+inline constexpr std::uint16_t kBehaviorAsm26_StraightHorizCruiser = 26;
+inline constexpr std::uint16_t kBehaviorAsm27_BossWalker = 27;
+inline constexpr std::uint16_t kBehaviorAsm28_BossSwooper = 28;
+inline constexpr std::uint16_t kBehaviorAsm29_LeftwardDart = 29;
+inline constexpr std::uint16_t kBehaviorAsm30_TorpedoSprinter = 30;
+inline constexpr std::uint16_t kBehaviorAsm31_HeavyStalactite = 31;
+inline constexpr std::uint16_t kBehaviorAsm32_LeftSwoopDiver = 32;
+inline constexpr std::uint16_t kBehaviorAsm33_RightSwoopDiver = 33;
 
 inline constexpr std::uint16_t kEntityDropNone = 0x0000;
 inline constexpr std::uint16_t kEntityDropGem = 0x0010;
@@ -74,6 +111,27 @@ ProjectileCombatResult apply_projectile_entity_collisions(RuntimeState &state);
 
 bool spawn_item_drop(RuntimeState &state, std::int16_t x, std::int16_t y,
                      std::uint16_t item_behavior);
+
+// Authentic descriptor-driven animation cycling (comic2.asm loc_5090)
+std::uint16_t advance_entity_animation_tick(RuntimeEntitySlot32 &slot);
+std::uint16_t compute_entity_animation_frame(const RuntimeEntitySlot32 &slot);
+
+// Authentic 33-entry behavior execution and main entity update loop
+void ent_execute_authentic_asm_behavior(GameState &state,
+                                        RuntimeEntitySlot32 &slot,
+                                        std::uint16_t asm_handler_index);
+void ent_update_object_behaviors(GameState &state);
+
+// Hostile enemy projectile helpers
+bool spawn_enemy_projectile(GameState &state, std::int16_t x, std::int16_t y,
+                            std::int16_t vx, std::int16_t vy);
+void update_enemy_projectiles(GameState &state);
+void trigger_player_death(GameState &state);
+
+// Multi-phase boss state machine helpers
+inline constexpr std::uint8_t kDefaultBossHP = 6;
+inline constexpr std::uint8_t kBossInvulnerabilityTicks = 8;
+void handle_boss_behavior(GameState &state, RuntimeEntitySlot32 &slot);
 
 void update_entity_behaviors(RuntimeState &state);
 void apply_entity_combat(RuntimeState &state);

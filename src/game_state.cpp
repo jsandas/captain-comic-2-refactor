@@ -17,6 +17,11 @@ RuntimeState make_default_runtime_state() {
   state.player.gems = 0;
   state.player.lives = 3;
   state.player.invuln_ticks = 0;
+  state.comic_x = state.player.x;
+  state.comic_y = state.player.y;
+  state.comic_hp = state.player.hp;
+  state.comic_shield = state.player.shield_power;
+  state.comic_invulnerability_ticks = state.player.invuln_ticks;
   state.activation_toggle = 1;
   state.camera_x = 0;
   state.camera_y = 0;

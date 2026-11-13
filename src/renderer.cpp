@@ -291,9 +291,12 @@ map_runtime_entity_slot_to_sprite_index(const RuntimeState &state,
     return candidates.size() > 1U ? candidates[1] : candidates.front();
   }
 
+  const std::size_t frame_offset = compute_entity_animation_frame(slot);
+  const std::size_t dir_offset = (slot.dir_toggle == 2) ? 1U : 0U;
   const std::uint16_t mixed = static_cast<std::uint16_t>(
       slot.type_flags ^ slot.behavior_state ^ slot.mapped_object_ptr);
-  return candidates[static_cast<std::size_t>(mixed) % candidates.size()];
+  const std::size_t base_idx = static_cast<std::size_t>(mixed);
+  return candidates[(base_idx + dir_offset + frame_offset) % candidates.size()];
 }
 
 std::size_t map_projectile_to_sprite_index(const RuntimeState &state,

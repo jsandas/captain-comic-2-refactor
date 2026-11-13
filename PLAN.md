@@ -1564,10 +1564,10 @@ Complete the remaining assembly-parity gaps identified across `reference/comic2/
 ### Detailed Implementation Roadmap
 
 #### 16.1 Authentic Entity AI & Boss Encounter State Machines (`src/entity_runtime.cpp`, `src/entity_physics.cpp`)
-- [ ] Audit and implement full parity for all 16+ behavior handlers in `ent_update_object_behaviors` (`1000:3b25`, jump table `0x48ED` in `comic2_standalone.asm`), replacing simplified movement curves with exact per-handler velocity, bounce, and state transitions.
-- [ ] Implement multi-phase boss state machines (`kBehaviorBoss = 0x0003` and specialized boss handlers), including boss movement patterns, multi-hit damage thresholds, invulnerability windows, and boss death/victory triggers.
-- [ ] Implement hostile enemy projectile spawning (`kBehaviorShoot = 0x0002` and ranged enemy handlers) with player-targeted or directional trajectories and shield collision checks.
-- [ ] Replace fixed `slot_index % 2` sprite frame selection with authentic descriptor-driven animation indexing using `EntitySlot::anim_span`, `EntitySlot::anim_period`, and `EntitySlot::anim_tick`.
+- [x] Audit and implement full parity for all 16+ behavior handlers in `ent_update_object_behaviors` (`1000:3b25`, jump table `0x48ED` in `comic2_standalone.asm`), replacing simplified movement curves with exact per-handler velocity, bounce, and state transitions.
+- [x] Implement multi-phase boss state machines (`kBehaviorBoss = 0x0003` and specialized boss handlers), including boss movement patterns, multi-hit damage thresholds, invulnerability windows, and boss death/victory triggers.
+- [x] Implement hostile enemy projectile spawning (`kBehaviorShoot = 0x0002` and ranged enemy handlers) with player-targeted or directional trajectories and shield collision checks.
+- [x] Replace fixed `slot_index % 2` sprite frame selection with authentic descriptor-driven animation indexing using `EntitySlot::anim_span`, `EntitySlot::anim_period`, and `EntitySlot::anim_tick`.
 
 #### 16.2 Interactive `FR###.3` Script Execution & Dialog/Cutscene Text (`src/room_loader.cpp`, `src/default_handlers.cpp`, `src/ui.cpp`)
 - [ ] Load and cache the level's optional XOR-`0x25` decoded `FR###.3` script payload (`LevelResourceTuple::script_filename`) into `RuntimeState` during `try_load_level_tileset_for_root`.
@@ -1591,7 +1591,7 @@ Complete the remaining assembly-parity gaps identified across `reference/comic2/
 ---
 
 ### Phase 16 Validation Gates
-- [ ] **Gate 16-A (Entity & Boss AI Parity)**: All 16+ entity behavior handlers and boss state machines execute deterministic movement, projectile firing, animation frame cycling, and damage phases matching `comic2_standalone.asm`.
+- [x] **Gate 16-A (Entity & Boss AI Parity)**: All 16+ entity behavior handlers and boss state machines execute deterministic movement, projectile firing, animation frame cycling, and damage phases matching `comic2_standalone.asm`.
 - [ ] **Gate 16-B (Scripted Dialog & Text Rendering)**: `FR###.3` XOR-`0x25` message offsets resolve to decrypted strings and render readable 8x8 glyph text inside framed modal boxes on the EGA surface.
 - [ ] **Gate 16-C (HUD Mode Icons & Interactive Menu Persistence)**: Collected equipment icons render on the `FRPAK.001` bezel, and interactive menu/save prompts persist and reload `GAME.000..005` and `FR.CFG` / `KEYS.DEF`.
 - [ ] **Gate 16-D (Continuous PIT Sound Streams)**: Multi-note sound streams from `comic2_data.asm` advance at ~18.2 Hz through `SoundDriver::tick()` with exact divisor/duration stepping and priority preemption.
@@ -1601,11 +1601,11 @@ Complete the remaining assembly-parity gaps identified across `reference/comic2/
 
 ### Phase 16 PR-Sized Handoff Slices (Agent-Ready)
 
-#### PR 16-A1: Full Entity Behavior Dispatch, Enemy Projectiles & Boss State Machines [NEXT]
+#### PR 16-A1: Full Entity Behavior Dispatch, Enemy Projectiles & Boss State Machines [COMPLETED]
 **Objective**: Port all remaining behavior handlers from `ent_update_object_behaviors` (`1000:3b25`), enemy projectile attacks, boss multi-phase logic, and descriptor-driven sprite animation cycling.
 **Files**: `include/comic2/entity_runtime.hpp`, `src/entity_runtime.cpp`, `src/entity_physics.cpp`, `src/bootstrap.cpp`, `tests/dispatcher_tests.cpp`.
 
-#### PR 16-B1: `FR###.3` Script Text Resolution & Framed 8x8 Font Modal Rendering
+#### PR 16-B1: `FR###.3` Script Text Resolution & Framed 8x8 Font Modal Rendering [NEXT]
 **Objective**: Load `FR###.3` scripts per level, resolve interaction/proximity message offsets, and render decrypted text strings using 8x8 bitmap glyphs inside `ui_render_modal_prompt`.
 **Files**: `include/comic2/game_state.hpp`, `src/room_loader.cpp`, `src/default_handlers.cpp`, `src/ui.cpp`, `tests/ui_tests.cpp`.
 
