@@ -210,7 +210,7 @@ bool ent_probe_tile_range_in_viewport(const GameState &state,
 }
 
 bool ent_probe_x_collision_range(const GameState &state,
-                                 RuntimeEntitySlot32 &slot,
+                                 const RuntimeEntitySlot32 &slot,
                                  std::int16_t delta_x) {
   const std::int16_t probe_x =
       (delta_x >= 0)

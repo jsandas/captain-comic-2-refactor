@@ -1808,7 +1808,7 @@ void test_authentic_33_assembly_behaviors() {
          "Behavior 32: initiates left dive");
 
   // Behavior 33: Right Swoop Diver
-  state.comic_x = 200;
+  state.comic_x = 140;
   slot.x = 100;
   slot.unknown_1c = 0;
   comic2::ent_execute_authentic_asm_behavior(state, slot, 33);

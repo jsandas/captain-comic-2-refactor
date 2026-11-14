@@ -61,7 +61,7 @@ bool ent_probe_tile_range_in_viewport(const GameState &state,
                                       std::uint16_t threshold);
 
 bool ent_probe_x_collision_range(const GameState &state,
-                                 RuntimeEntitySlot32 &slot,
+                                 const RuntimeEntitySlot32 &slot,
                                  std::int16_t delta_x);
 
 bool ent_probe_y_collision_and_clamp(const GameState &state,

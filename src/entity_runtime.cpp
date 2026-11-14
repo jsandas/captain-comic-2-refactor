@@ -302,17 +302,18 @@ std::uint16_t compute_entity_animation_frame(const RuntimeEntitySlot32 &slot) {
 
 bool spawn_enemy_projectile(GameState &state, std::int16_t x, std::int16_t y,
                             std::int16_t vx, std::int16_t vy) {
-  for (auto &slot : state.enemy_projectiles) {
-    if (!slot.active) {
-      slot.active = true;
-      slot.x = x;
-      slot.y = y;
-      slot.vx = vx;
-      slot.vy = vy;
-      slot.anim_frame = 0;
-      slot.timer = 0;
-      return true;
-    }
+  auto it = std::find_if(
+      state.enemy_projectiles.begin(), state.enemy_projectiles.end(),
+      [](const EnemyProjectileSlot &slot) { return !slot.active; });
+  if (it != state.enemy_projectiles.end()) {
+    it->active = true;
+    it->x = x;
+    it->y = y;
+    it->vx = vx;
+    it->vy = vy;
+    it->anim_frame = 0;
+    it->timer = 0;
+    return true;
   }
   return false;
 }
@@ -1002,7 +1003,7 @@ void ent_execute_authentic_asm_behavior(GameState &state,
   case 33: { // 1000:59C9 - Behavior 33: Right Swoop Diver
     if (slot.unknown_1c == 0) {
       const std::int16_t dx = state.comic_x - slot.x;
-      if (dx < 0 || dx < 72) {
+      if (dx < 0 || dx >= 72) {
         slot.param_b = 1;
         return;
       }
@@ -1031,19 +1032,11 @@ void ent_execute_authentic_asm_behavior(GameState &state,
 }
 
 void ent_update_object_behaviors(GameState &state) {
-  if (state.comic_x == 0 && state.player.x != 0) {
-    state.comic_x = state.player.x;
-    state.comic_y = state.player.y;
-    state.comic_hp = state.player.hp;
-    state.comic_shield = state.player.shield_power;
-    state.comic_invulnerability_ticks = state.player.invuln_ticks;
-  } else {
-    state.comic_x = state.player.x;
-    state.comic_y = state.player.y;
-    state.comic_hp = state.player.hp;
-    state.comic_shield = state.player.shield_power;
-    state.comic_invulnerability_ticks = state.player.invuln_ticks;
-  }
+  state.comic_x = state.player.x;
+  state.comic_y = state.player.y;
+  state.comic_hp = state.player.hp;
+  state.comic_shield = state.player.shield_power;
+  state.comic_invulnerability_ticks = state.player.invuln_ticks;
 
   EntityPhysicsContext ctx;
   ctx.grid = state.grid != nullptr ? state.grid : &state.room_grid;
