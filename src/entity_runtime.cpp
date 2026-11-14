@@ -8,6 +8,7 @@
 #include "comic2/audio.hpp"
 #include "comic2/entity_physics.hpp"
 #include "comic2/game_state.hpp"
+#include "comic2/tile_collision.hpp"
 
 namespace comic2 {
 
@@ -162,6 +163,10 @@ void deactivate_runtime_slot(RuntimeEntitySlot32 &slot) {
   slot.type_flags = 0;
 }
 
+void ent_deactivate_runtime_slot(RuntimeEntitySlot32 &slot) {
+  deactivate_runtime_slot(slot);
+}
+
 void prune_inactive_runtime_slots(std::vector<RuntimeEntitySlot32> &slots) {
   slots.erase(std::remove_if(slots.begin(), slots.end(),
                              [](const RuntimeEntitySlot32 &slot) {
@@ -266,26 +271,796 @@ void ent_copy_descriptor_to_runtime_slot(const MappedObject12 &descriptor,
 }
 
 void update_entity_behaviors(RuntimeState &state) {
+  ent_update_object_behaviors(state);
+}
+
+std::uint16_t advance_entity_animation_tick(RuntimeEntitySlot32 &slot) {
+  if ((slot.param_a != 0 || slot.param_b != 0) && slot.anim_period > 0) {
+    slot.anim_tick =
+        static_cast<std::uint16_t>((slot.anim_tick + 1) % slot.anim_period);
+    return static_cast<std::uint16_t>(slot.anim_span + slot.anim_tick);
+  }
+  if (slot.anim_span > 0) {
+    slot.anim_tick =
+        static_cast<std::uint16_t>((slot.anim_tick + 1) % slot.anim_span);
+    return slot.anim_tick;
+  }
+  slot.anim_tick = static_cast<std::uint16_t>(slot.anim_tick + 1);
+  return 0;
+}
+
+std::uint16_t compute_entity_animation_frame(const RuntimeEntitySlot32 &slot) {
+  if ((slot.param_a != 0 || slot.param_b != 0) && slot.anim_period > 0) {
+    return static_cast<std::uint16_t>(slot.anim_span +
+                                      (slot.anim_tick % slot.anim_period));
+  }
+  if (slot.anim_span > 0) {
+    return static_cast<std::uint16_t>(slot.anim_tick % slot.anim_span);
+  }
+  return 0;
+}
+
+bool spawn_enemy_projectile(GameState &state, std::int16_t x, std::int16_t y,
+                            std::int16_t vx, std::int16_t vy) {
+  auto it = std::find_if(
+      state.enemy_projectiles.begin(), state.enemy_projectiles.end(),
+      [](const EnemyProjectileSlot &slot) { return !slot.active; });
+  if (it != state.enemy_projectiles.end()) {
+    it->active = true;
+    it->x = x;
+    it->y = y;
+    it->vx = vx;
+    it->vy = vy;
+    it->anim_frame = 0;
+    it->timer = 0;
+    return true;
+  }
+  return false;
+}
+
+void trigger_player_death(GameState &state) {
+  state.comic_hp = 0;
+  state.player.hp = 0;
+  state.player.death_timer_ticks = 3;
+  state.player.animation_state =
+      static_cast<std::uint8_t>(PlayerAnimationState::Death);
+  state.player.is_animation_active = true;
+  state.transition_state.player_frozen = true;
+  queue_audio_event(state, AudioEvent::Death);
+  state.flags.player_special_state_active = true;
+}
+
+void update_enemy_projectiles(GameState &state) {
+  const auto *grid = state.grid != nullptr ? state.grid : &state.room_grid;
+  const std::int16_t cam_x = static_cast<std::int16_t>(state.camera_x);
+  constexpr std::int16_t kViewW = 240;
+  constexpr std::int16_t kViewH = 160;
+  constexpr std::uint8_t kDefaultInvulnTicks = 12;
+
+  for (auto &proj : state.enemy_projectiles) {
+    if (!proj.active) {
+      continue;
+    }
+
+    proj.x = static_cast<std::int16_t>(proj.x + proj.vx);
+    proj.y = static_cast<std::int16_t>(proj.y + proj.vy);
+    ++proj.timer;
+    proj.anim_frame = static_cast<std::uint8_t>(proj.timer & 1);
+
+    if (proj.x < cam_x || proj.x >= cam_x + kViewW || proj.y < 0 ||
+        proj.y >= kViewH) {
+      proj.active = false;
+      continue;
+    }
+
+    if (grid != nullptr && grid->tile_w > 0) {
+      const auto tile = get_tile_at_pixels(*grid, proj.x, proj.y);
+      const std::int16_t thresh =
+          state.threshold_up != -1 ? state.threshold_up : 1;
+      if (!tile.has_value() || static_cast<std::int16_t>(*tile) <= thresh) {
+        proj.active = false;
+        continue;
+      }
+    }
+
+    const std::int16_t comic_w = 16;
+    const std::int16_t comic_h = 32;
+    const std::int16_t proj_w = 8;
+    const std::int16_t proj_h = 8;
+
+    const bool x_overlap =
+        (proj.x + proj_w > state.comic_x) && (proj.x < state.comic_x + comic_w);
+    const bool y_overlap =
+        (proj.y + proj_h > state.comic_y) && (proj.y < state.comic_y + comic_h);
+
+    if (x_overlap && y_overlap) {
+      proj.active = false;
+
+      if (state.comic_invulnerability_ticks > 0 ||
+          state.player.invuln_ticks > 0) {
+        continue;
+      }
+
+      if (state.comic_shield > 0 || state.player.shield_power > 0) {
+        if (state.comic_shield > 0) {
+          --state.comic_shield;
+        }
+        if (state.player.shield_power > 0) {
+          --state.player.shield_power;
+        }
+        state.comic_invulnerability_ticks = kDefaultInvulnTicks;
+        state.player.invuln_ticks = kDefaultInvulnTicks;
+        queue_audio_event(state, AudioEvent::Hit);
+      } else {
+        if (state.comic_hp > 0) {
+          --state.comic_hp;
+          state.player.hp = state.comic_hp;
+        }
+        state.comic_invulnerability_ticks = kDefaultInvulnTicks;
+        state.player.invuln_ticks = kDefaultInvulnTicks;
+        if (state.comic_hp == 0) {
+          trigger_player_death(state);
+        } else {
+          queue_audio_event(state, AudioEvent::Hit);
+        }
+      }
+    }
+  }
+}
+
+void handle_boss_behavior(GameState &state, RuntimeEntitySlot32 &slot) {
+  if (slot.unknown_0e == 0) {
+    slot.unknown_0e = kDefaultBossHP;
+  }
+  const std::uint8_t hp = static_cast<std::uint8_t>(slot.unknown_0e);
+
+  std::uint8_t invuln =
+      static_cast<std::uint8_t>((slot.unknown_1c >> 8) & 0xFF);
+  if (invuln > 0) {
+    --invuln;
+  }
+
+  std::uint8_t phase = 1;
+  if (hp <= 2) {
+    phase = 3;
+  } else if (hp <= 4) {
+    phase = 2;
+  }
+  slot.unknown_1c = static_cast<std::uint16_t>(
+      phase | (static_cast<std::uint16_t>(invuln) << 8));
+
+  ++slot.anim_tick;
+
   EntityPhysicsContext ctx;
-  ctx.grid = &state.room_grid;
+  ctx.grid = state.grid != nullptr ? state.grid : &state.room_grid;
+  ctx.threshold_up = state.threshold_up != -1 ? state.threshold_up : 1;
+  ctx.threshold_down = state.threshold_down != -1 ? state.threshold_down : 1;
+  ctx.threshold_range = state.threshold_range;
+  ctx.camera_x = static_cast<std::int16_t>(state.camera_x);
+  ctx.camera_y = static_cast<std::int16_t>(state.camera_y);
+
+  if (phase == 1) {
+    ent_move_x_and_bounce(ctx, slot, 4);
+    const bool landed = ent_apply_gravity_and_move_y(ctx, slot);
+    if (landed && (slot.anim_tick % 16 == 0)) {
+      slot.param_b = -4;
+    }
+    if (slot.anim_tick % 20 == 0) {
+      const std::int16_t vx = (state.comic_x < slot.x) ? -4 : 4;
+      spawn_enemy_projectile(state, slot.x,
+                             static_cast<std::int16_t>(slot.y + 4), vx, 0);
+    }
+  } else if (phase == 2) {
+    ent_move_x_and_bounce(ctx, slot, 6);
+    const bool landed = ent_apply_gravity_and_move_y(ctx, slot);
+    if (landed && (slot.anim_tick % 12 == 0)) {
+      slot.param_b = -9;
+    }
+    if (slot.anim_tick % 16 == 0) {
+      const std::int16_t vx = (state.comic_x < slot.x) ? -5 : 5;
+      spawn_enemy_projectile(state, slot.x, slot.y, vx, -2);
+    }
+  } else {
+    ent_move_x_and_bounce(ctx, slot, 8);
+    const bool landed = ent_apply_gravity_and_move_y(ctx, slot);
+    if (landed && (slot.anim_tick % 8 == 0)) {
+      slot.param_b = -12;
+    }
+    if (slot.anim_tick % 10 == 0) {
+      const std::int16_t vx = (state.comic_x < slot.x) ? -6 : 6;
+      spawn_enemy_projectile(state, slot.x, slot.y, vx, 0);
+      spawn_enemy_projectile(state, slot.x, slot.y, vx, -3);
+    }
+  }
+}
+
+void ent_execute_authentic_asm_behavior(GameState &state,
+                                        RuntimeEntitySlot32 &slot,
+                                        std::uint16_t asm_handler_index) {
+  EntityPhysicsContext ctx;
+  ctx.grid = state.grid != nullptr ? state.grid : &state.room_grid;
+  ctx.threshold_up = state.threshold_up != -1 ? state.threshold_up : 1;
+  ctx.threshold_down = state.threshold_down != -1 ? state.threshold_down : 1;
+  ctx.threshold_range = state.threshold_range;
+  ctx.camera_x = static_cast<std::int16_t>(state.camera_x);
+  ctx.camera_y = static_cast<std::int16_t>(state.camera_y);
+
+  switch (asm_handler_index) {
+  case 1: { // 1000:50E7 - Behavior 1: Ledge Patrol Walker
+    const std::int16_t speed = 4;
+    const std::int16_t dx = (slot.dir_toggle == 2) ? -speed : speed;
+    slot.param_a = dx;
+    const std::int16_t new_x = static_cast<std::int16_t>(slot.x + dx);
+    const std::int16_t probe_x =
+        (slot.dir_toggle == 2)
+            ? new_x
+            : static_cast<std::int16_t>(new_x + slot.hitbox_w - 1);
+    const bool blocked = ent_probe_x_collision_strict(state, slot, probe_x);
+    if (!blocked) {
+      const std::int16_t foot_y =
+          static_cast<std::int16_t>(slot.y + slot.hitbox_h);
+      const std::uint16_t thresh =
+          state.threshold_down != -1
+              ? static_cast<std::uint16_t>(state.threshold_down)
+              : 1U;
+      if (!ent_probe_tile_above_threshold(state, probe_x, foot_y, thresh)) {
+        slot.x = new_x;
+        return;
+      }
+    }
+    slot.dir_toggle = (slot.dir_toggle == 2) ? 1 : 2;
+    slot.param_a = static_cast<std::int16_t>(-slot.param_a);
+    break;
+  }
+  case 2: { // 1000:5149 - Behavior 2: Proximity Hopper
+    const bool landed = ent_apply_gravity_and_move_y(state, slot);
+    if (!landed || slot.param_b != 0) {
+      const std::int16_t speed =
+          slot.unknown_1c != 0 ? static_cast<std::int16_t>(slot.unknown_1c) : 2;
+      ent_move_x_and_bounce(ctx, slot, speed);
+    } else {
+      const std::int16_t dx = static_cast<std::int16_t>(slot.x - state.comic_x);
+      if (std::abs(dx) <= 32) {
+        slot.param_b = -9;
+        if (dx >= 0) {
+          slot.unknown_1c = (slot.dir_toggle == 2) ? 1 : 2;
+          slot.dir_toggle = 2;
+        } else {
+          slot.unknown_1c = (slot.dir_toggle == 1) ? 1 : 2;
+          slot.dir_toggle = 1;
+        }
+      } else {
+        slot.param_a = 0;
+        slot.param_b = 0;
+      }
+    }
+    break;
+  }
+  case 3: { // 1000:51BD - Behavior 3: Oscillating Floater
+    std::int16_t vy = slot.param_b;
+    if (slot.unknown_1c == 0) {
+      --vy;
+      if (vy < -4)
+        vy = -4;
+    } else {
+      ++vy;
+      if (vy > 4)
+        vy = 4;
+    }
+    slot.param_b = vy;
+    if (ent_move_y_with_probe_and_bounce(state, slot)) {
+      slot.unknown_1c ^= 1;
+      slot.param_b = 0;
+    }
+    ent_move_x_with_range_probe_and_bounce(state, slot, 4);
+    break;
+  }
+  case 4: { // 1000:51F9 - Behavior 4: Timid Follower
+    const bool landed = ent_apply_gravity_and_move_y(state, slot);
+    if (!landed || slot.param_b != 0) {
+      ent_move_x_and_bounce(ctx, slot, 4);
+    } else {
+      const std::int16_t dx = static_cast<std::int16_t>(slot.x - state.comic_x);
+      if (dx > 0) {
+        slot.dir_toggle = 2;
+        if (!state.player.facing_right) {
+          if (ent_move_x_and_bounce(ctx, slot, 4)) {
+            slot.param_b = -9;
+          }
+        } else {
+          slot.param_a = 0;
+        }
+      } else if (dx < 0) {
+        slot.dir_toggle = 1;
+        if (state.player.facing_right) {
+          if (ent_move_x_and_bounce(ctx, slot, 4)) {
+            slot.param_b = -9;
+          }
+        } else {
+          slot.param_a = 0;
+        }
+      } else {
+        slot.param_a = 0;
+      }
+    }
+    break;
+  }
+  case 5: { // 1000:5259 - Behavior 5: Swooper
+    std::int16_t speed = 4;
+    if (std::abs(state.comic_y - slot.y) <= 8) {
+      speed = 8;
+    }
+    ent_move_x_with_range_probe_and_bounce(state, slot, speed);
+    break;
+  }
+  case 6: { // 1000:5273 - Behavior 6: Flying Homing Chaser
+    std::int16_t vy = 2;
+    if (state.comic_y < slot.y)
+      vy = -2;
+    if (state.comic_y != slot.y) {
+      slot.param_b = vy;
+      ent_move_y_with_probe_and_bounce(state, slot);
+    }
+    if (slot.x != state.comic_x) {
+      slot.dir_toggle = (slot.x > state.comic_x) ? 2 : 1;
+      ent_move_x_with_range_probe_and_bounce(state, slot, 4);
+    }
+    break;
+  }
+  case 7: { // 1000:52BF - Behavior 7: Static Sentry
+    slot.param_a = 0;
+    slot.param_b = 0;
+    ent_set_horizontal_chase_direction_to_comic(state, slot);
+    break;
+  }
+  case 8: { // 1000:52CF - Behavior 8: Proximity Sentry
+    if (slot.unknown_1c == 0) {
+      slot.unknown_1c = slot.dir_toggle;
+    }
+    if (std::abs(slot.x - state.comic_x) <= 32) {
+      slot.param_a = 0;
+      slot.dir_toggle = slot.unknown_1c;
+    } else {
+      ent_execute_authentic_asm_behavior(state, slot, 1);
+    }
+    break;
+  }
+  case 9: { // 1000:5361 - Behavior 9: Heavy Leaper
+    std::int16_t timer = static_cast<std::int16_t>(slot.unknown_1c);
+    if (timer <= 0) {
+      if (timer == 0) {
+        slot.unknown_1c = 12;
+        return;
+      }
+      ++timer;
+      slot.unknown_1c = static_cast<std::uint16_t>(timer);
+      slot.param_a = 0;
+      slot.param_b = 0;
+      return;
+    }
+    if (timer > 1 && slot.y <= state.comic_y) {
+      slot.param_b = 7;
+      ent_apply_gravity_and_move_y(state, slot);
+      --slot.unknown_1c;
+    } else {
+      slot.param_b = -9;
+      const bool landed = ent_apply_gravity_and_move_y(state, slot);
+      if (landed && slot.unknown_1c == 1) {
+        slot.param_a = 0;
+        slot.param_b = 0;
+        slot.unknown_1c = static_cast<std::uint16_t>(-3);
+        return;
+      }
+    }
+    slot.dir_toggle = (slot.x > state.comic_x) ? 2 : 1;
+    if (slot.x != state.comic_x) {
+      ent_move_x_and_bounce(ctx, slot, 4);
+    }
+    break;
+  }
+  case 10: { // 1000:53E9 - Behavior 10: Ghost Phaser
+    const std::int16_t dy = static_cast<std::int16_t>(slot.y - state.comic_y);
+    if (dy > 1) {
+      slot.param_b = -3;
+    } else if (dy < 0) {
+      slot.param_b = 1;
+    }
+    slot.y = static_cast<std::int16_t>(slot.y + slot.param_b);
+    ent_set_horizontal_chase_direction_to_comic(state, slot);
+    if (slot.x != state.comic_x) {
+      const std::int16_t dx = (slot.dir_toggle == 1) ? 4 : -4;
+      slot.x = static_cast<std::int16_t>(slot.x + dx);
+    }
+    break;
+  }
+  case 11: { // 1000:5438 - Behavior 11: High Bouncer
+    if (slot.unknown_1c == 0) {
+      slot.unknown_1c = 1;
+      slot.param_b = -8;
+    }
+    ent_move_y_and_bounce(ctx, slot);
+    ent_move_x_and_bounce(ctx, slot, 8);
+    break;
+  }
+  case 12: { // 1000:5455 - Behavior 12: Ceiling Drop Hazard
+    const bool landed = ent_apply_gravity_and_move_y(state, slot);
+    if (landed) {
+      if (slot.y < state.comic_y && std::abs(slot.x - state.comic_x) <= 32) {
+        slot.y = static_cast<std::int16_t>(slot.y + 8);
+        slot.param_b = 7;
+        slot.param_a = 0;
+        return;
+      }
+      ent_execute_authentic_asm_behavior(state, slot, 1);
+      slot.param_a = 0;
+      return;
+    }
+    slot.param_a = 0;
+    break;
+  }
+  case 13: { // 1000:54EE - Behavior 13: Fast Ledge Patrol
+    const std::int16_t speed = 8;
+    const std::int16_t dx = (slot.dir_toggle == 2) ? -speed : speed;
+    slot.param_a = dx;
+    const std::int16_t new_x = static_cast<std::int16_t>(slot.x + dx);
+    const std::int16_t probe_x =
+        (slot.dir_toggle == 2)
+            ? new_x
+            : static_cast<std::int16_t>(new_x + slot.hitbox_w - 1);
+    const bool blocked = ent_probe_x_collision_strict(state, slot, probe_x);
+    if (!blocked) {
+      const std::int16_t foot_y =
+          static_cast<std::int16_t>(slot.y + slot.hitbox_h);
+      const std::uint16_t thresh =
+          state.threshold_down != -1
+              ? static_cast<std::uint16_t>(state.threshold_down)
+              : 1U;
+      if (!ent_probe_tile_above_threshold(state, probe_x, foot_y, thresh)) {
+        slot.x = new_x;
+        return;
+      }
+    }
+    slot.dir_toggle = (slot.dir_toggle == 2) ? 1 : 2;
+    slot.param_a = static_cast<std::int16_t>(-slot.param_a);
+    break;
+  }
+  case 14: { // 1000:5550 - Behavior 14: Direction Locked Walker
+    if (slot.unknown_1c == 0) {
+      slot.unknown_1c = 1;
+      ent_set_horizontal_chase_direction_to_comic(state, slot);
+    }
+    slot.param_b = 0;
+    ent_apply_gravity_and_move_y(state, slot);
+    ent_move_x_and_bounce(ctx, slot, 4);
+    break;
+  }
+  case 15: { // 1000:5570 - Behavior 15: Ground Pounder
+    slot.param_a = 0;
+    if (std::abs(slot.x - state.comic_x) <= 8) {
+      slot.param_b = -9;
+    }
+    ent_apply_gravity_and_move_y(state, slot);
+    break;
+  }
+  case 16: { // 1000:5591 - Behavior 16: Diagonal Bouncer
+    if (slot.unknown_1c == 0) {
+      slot.unknown_1c = 1;
+      slot.param_b = (slot.dir_toggle == 2) ? 4 : -4;
+    }
+    ent_move_y_and_bounce(ctx, slot);
+    ent_move_x_and_bounce(ctx, slot, 4);
+    break;
+  }
+  case 17: { // 1000:55B9 - Behavior 17: Trampoline Jumper
+    ++slot.param_b;
+    const bool landed = ent_apply_gravity_and_move_y(state, slot);
+    if (landed) {
+      if (slot.param_b >= 0) {
+        slot.param_b = -12;
+        ent_set_horizontal_chase_direction_to_comic(state, slot);
+      }
+    } else {
+      ent_move_x_and_bounce(ctx, slot, 4);
+    }
+    break;
+  }
+  case 18: { // 1000:55DA - Behavior 18: Wall Jumping Runner
+    const bool landed = ent_apply_gravity_and_move_y(state, slot);
+    if (!landed || slot.param_b != 0) {
+      ent_move_x_and_bounce(ctx, slot, 4);
+    } else {
+      ent_set_horizontal_chase_direction_to_comic(state, slot);
+      if (slot.x != state.comic_x) {
+        const bool blocked = ent_move_x_and_bounce(ctx, slot, 4);
+        if (blocked) {
+          slot.param_b = -9;
+        }
+      } else {
+        slot.param_a = 0;
+      }
+    }
+    break;
+  }
+  case 19: { // 1000:561B - Behavior 19: Drop Trap 1
+    if (slot.unknown_1c == 0) {
+      const std::int16_t dx = std::abs(state.comic_x - slot.x);
+      const std::int16_t dy = static_cast<std::int16_t>(state.comic_y - slot.y);
+      if (dy < 0 || dx > dy) {
+        slot.param_a = 4;
+        return;
+      }
+      slot.unknown_1c = 1;
+    }
+    slot.param_a = 0;
+    if (slot.unknown_1c == 2) {
+      ent_deactivate_runtime_slot(slot);
+      return;
+    }
+    ++slot.param_b;
+    if (ent_apply_gravity_and_move_y(state, slot)) {
+      slot.unknown_1c = 2;
+    }
+    break;
+  }
+  case 20: { // 1000:566A - Behavior 20: Spike Drop Trap 2
+    slot.param_a = 0;
+    if (slot.unknown_1c == 2) {
+      ent_deactivate_runtime_slot(slot);
+      return;
+    }
+    ++slot.param_b;
+    if (ent_apply_gravity_and_move_y(state, slot)) {
+      slot.unknown_1c = 2;
+    }
+    break;
+  }
+  case 21: { // 1000:568C - Behavior 21: Sine Oscillator Hovercraft
+    slot.dir_toggle = 2;
+    const bool hit = ent_move_x_and_bounce(ctx, slot, 8);
+    if (hit) {
+      if (slot.x - state.camera_x > 8) {
+        slot.x -= 8;
+      }
+      slot.param_b = -9;
+    } else {
+      if ((slot.x & 4) != 0) {
+        slot.param_b -= 3;
+      }
+      if (slot.param_b < 2) {
+        slot.param_b = 1;
+      }
+    }
+    ent_apply_gravity_and_move_y(state, slot);
+    break;
+  }
+  case 22: { // 1000:56D3 - Behavior 22: Two-Phase Drone
+    if (slot.unknown_1c == 0) {
+      ent_set_horizontal_chase_direction_to_comic(state, slot);
+      slot.unknown_1c = 1;
+    }
+    if (slot.unknown_1c != 2) {
+      const std::int16_t target_y =
+          static_cast<std::int16_t>(state.comic_y - 24);
+      if (slot.y < target_y) {
+        slot.param_b = 3;
+        ent_apply_gravity_and_move_y(state, slot);
+      } else if (slot.y - target_y >= 4) {
+        slot.param_b = -5;
+        ent_apply_gravity_and_move_y(state, slot);
+      }
+      const std::uint16_t prev_dir = slot.dir_toggle;
+      ent_move_x_and_bounce(ctx, slot, 8);
+      ent_set_horizontal_chase_direction_to_comic(state, slot);
+      if (slot.dir_toggle != prev_dir &&
+          std::abs(slot.x - state.comic_x) >= 32) {
+        slot.unknown_1c = 2;
+      }
+    } else {
+      if (slot.y < state.comic_y) {
+        slot.param_b = 7;
+        ent_apply_gravity_and_move_y(state, slot);
+      } else if (slot.y - state.comic_y >= 8) {
+        slot.param_b = -9;
+        ent_apply_gravity_and_move_y(state, slot);
+      }
+      ent_set_horizontal_chase_direction_to_comic(state, slot);
+      if (std::abs(slot.x - state.comic_x) >= 8) {
+        ent_move_x_and_bounce(ctx, slot, 8);
+      }
+    }
+    break;
+  }
+  case 23: { // 1000:576D - Behavior 23: Fast Rammer
+    const bool landed = ent_apply_gravity_and_move_y(state, slot);
+    if (!landed || slot.param_b != 0) {
+      ent_move_x_and_bounce(ctx, slot, 8);
+    } else {
+      ent_set_horizontal_chase_direction_to_comic(state, slot);
+      if (slot.x != state.comic_x) {
+        if (std::abs(slot.x - state.comic_x) <= 32) {
+          slot.param_b = -8;
+        }
+        const bool blocked = ent_move_x_and_bounce(ctx, slot, 8);
+        if (blocked) {
+          slot.param_b = -9;
+        }
+      } else {
+        slot.param_a = 0;
+      }
+    }
+    break;
+  }
+  case 24: { // 1000:57C3 - Behavior 24: Ceiling Drop Ghost
+    slot.param_a = 0;
+    if (slot.unknown_1c == 0) {
+      const std::int16_t dx = std::abs(state.comic_x - slot.x);
+      const std::int16_t dy = static_cast<std::int16_t>(state.comic_y - slot.y);
+      if (dy < 0 || dx > dy) {
+        return;
+      }
+      slot.unknown_1c = 1;
+    }
+    ++slot.param_b;
+    slot.y = static_cast<std::int16_t>(slot.y + slot.param_b);
+    break;
+  }
+  case 25: { // 1000:5814 - Behavior 25: Inverted Ceiling Crawler
+    slot.param_b = 4;
+    slot.unknown_1c = 1;
+    if (slot.dir_toggle != 2) {
+      slot.unknown_1c = 2;
+      slot.param_b = -4;
+    }
+    if (ent_move_y_and_bounce(ctx, slot)) {
+      slot.dir_toggle = slot.unknown_1c;
+    }
+    break;
+  }
+  case 26: { // 1000:583F - Behavior 26: Straight Horiz Cruiser
+    slot.param_b = 0;
+    slot.param_a = 4;
+    ent_move_x_and_bounce(ctx, slot, 4);
+    break;
+  }
+  case 27: { // 1000:5852 - Behavior 27: Boss Walker
+    handle_boss_behavior(state, slot);
+    break;
+  }
+  case 28: { // 1000:58AD - Behavior 28: Boss Swooper
+    handle_boss_behavior(state, slot);
+    break;
+  }
+  case 29: { // 1000:5901 - Behavior 29: Leftward Dart
+    slot.dir_toggle = 2;
+    slot.param_b = 0;
+    slot.param_a = 4;
+    if (ent_move_x_and_bounce(ctx, slot, 4)) {
+      ent_deactivate_runtime_slot(slot);
+    }
+    break;
+  }
+  case 30: { // 1000:5920 - Behavior 30: Torpedo Sprinter
+    slot.param_a = 0;
+    slot.param_b = 0;
+    ent_set_horizontal_chase_direction_to_comic(state, slot);
+    const std::int16_t dx = std::abs(slot.x - state.comic_x);
+    if (slot.unknown_1c == 1 || dx <= 16) {
+      slot.unknown_1c = 1;
+      if (dx <= 48) {
+        slot.dir_toggle = 1;
+        slot.param_b = 0;
+        slot.param_a = 8;
+        if (ent_move_x_and_bounce(ctx, slot, 8)) {
+          ent_deactivate_runtime_slot(slot);
+        }
+        return;
+      }
+    }
+    slot.unknown_1c = 0;
+    break;
+  }
+  case 31: { // 1000:596C - Behavior 31: Heavy Stalactite
+    if (slot.unknown_1c == 0) {
+      const std::int16_t dx = std::abs(state.comic_x - slot.x);
+      const std::int16_t dy =
+          static_cast<std::int16_t>(state.comic_y - slot.y - slot.hitbox_h);
+      if (dy < 0 || dx > dy) {
+        slot.param_a = 4;
+        return;
+      }
+      slot.unknown_1c = 1;
+    }
+    slot.param_a = 0;
+    if (slot.unknown_1c == 2) {
+      ent_deactivate_runtime_slot(slot);
+      return;
+    }
+    ++slot.param_b;
+    if (ent_apply_gravity_and_move_y(state, slot)) {
+      slot.unknown_1c = 2;
+    }
+    break;
+  }
+  case 32: { // 1000:59C1 - Behavior 32: Left Swoop Diver
+    slot.dir_toggle = 2;
+    if (slot.unknown_1c != 2) {
+      slot.unknown_1c = 1;
+      if (ent_move_x_and_bounce(ctx, slot, 12)) {
+        ent_deactivate_runtime_slot(slot);
+        return;
+      }
+      slot.param_b = 12;
+      if (ent_apply_gravity_and_move_y(state, slot)) {
+        slot.unknown_1c = 2;
+        slot.param_b = 0;
+        slot.param_a = 0;
+      }
+    } else {
+      ent_deactivate_runtime_slot(slot);
+    }
+    break;
+  }
+  case 33: { // 1000:59C9 - Behavior 33: Right Swoop Diver
+    if (slot.unknown_1c == 0) {
+      const std::int16_t dx = state.comic_x - slot.x;
+      if (dx < 0 || dx >= 72) {
+        slot.param_b = 1;
+        return;
+      }
+    }
+    slot.dir_toggle = 1;
+    if (slot.unknown_1c != 2) {
+      slot.unknown_1c = 1;
+      if (ent_move_x_and_bounce(ctx, slot, 12)) {
+        ent_deactivate_runtime_slot(slot);
+        return;
+      }
+      slot.param_b = 12;
+      if (ent_apply_gravity_and_move_y(state, slot)) {
+        slot.unknown_1c = 2;
+        slot.param_b = 0;
+        slot.param_a = 0;
+      }
+    } else {
+      ent_deactivate_runtime_slot(slot);
+    }
+    break;
+  }
+  default:
+    break;
+  }
+}
+
+void ent_update_object_behaviors(GameState &state) {
+  state.comic_x = state.player.x;
+  state.comic_y = state.player.y;
+  state.comic_hp = state.player.hp;
+  state.comic_shield = state.player.shield_power;
+  state.comic_invulnerability_ticks = state.player.invuln_ticks;
+
+  EntityPhysicsContext ctx;
+  ctx.grid = state.grid != nullptr ? state.grid : &state.room_grid;
   ctx.threshold_up =
       state.tile_hazard_bounds[0] != 0
           ? static_cast<std::int16_t>(state.tile_hazard_bounds[0])
-          : 1;
+          : (state.threshold_up != -1 ? state.threshold_up : 1);
   ctx.threshold_down =
       state.tile_hazard_bounds[1] != 0
           ? static_cast<std::int16_t>(state.tile_hazard_bounds[1])
-          : 1;
-  ctx.threshold_range = -1;
-  ctx.camera_x = state.camera_x;
-  ctx.camera_y = state.camera_y;
+          : (state.threshold_down != -1 ? state.threshold_down : 1);
+  ctx.threshold_range = state.threshold_range;
+  ctx.camera_x = static_cast<std::int16_t>(state.camera_x);
+  ctx.camera_y = static_cast<std::int16_t>(state.camera_y);
+
+  state.threshold_up = ctx.threshold_up;
+  state.threshold_down = ctx.threshold_down;
 
   for (auto &slot : state.runtime_slots) {
     if (!is_runtime_slot_active(slot)) {
       continue;
     }
 
-    auto behavior = slot.behavior_state & 0x000F;
+    auto behavior = slot.behavior_state;
     if (behavior == 0 && slot.type_flags != 0) {
       if (slot.type_flags <= 3) {
         behavior = kBehaviorJump;
@@ -294,13 +1069,36 @@ void update_entity_behaviors(RuntimeState &state) {
       }
     }
 
-    if (behavior < static_cast<std::uint16_t>(kBehaviorTable.size())) {
+    if (behavior == kBehaviorBoss || behavior == 27 || behavior == 28) {
+      handle_boss_behavior(state, slot);
+    } else if (behavior == kBehaviorShoot) {
+      apply_shoot_behavior(slot, state, ctx);
+      ++slot.unknown_1c;
+      if (slot.unknown_1c >= 24) {
+        slot.unknown_1c = 0;
+        const std::int16_t vx = (state.comic_x < slot.x) ? -4 : 4;
+        spawn_enemy_projectile(state, slot.x,
+                               static_cast<std::int16_t>(slot.y + 4), vx, 0);
+      }
+    } else if (behavior >= 1 && behavior <= 6) {
       const auto fn = kBehaviorTable[behavior];
       if (fn != nullptr) {
         fn(slot, state, ctx);
       }
+    } else if (behavior >= 9 && behavior <= 33) {
+      ent_execute_authentic_asm_behavior(state, slot, behavior);
     }
+
+    advance_entity_animation_tick(slot);
   }
+
+  update_enemy_projectiles(state);
+
+  state.player.x = state.comic_x;
+  state.player.y = state.comic_y;
+  state.player.hp = state.comic_hp;
+  state.player.shield_power = state.comic_shield;
+  state.player.invuln_ticks = state.comic_invulnerability_ticks;
 }
 
 bool collides_with_projectile(const RuntimeEntitySlot32 &slot,
@@ -351,6 +1149,47 @@ ProjectileCombatResult apply_projectile_entity_collisions(RuntimeState &state) {
       ++result.projectiles_hit;
 
       if ((slot.type_flags & kEntityInvulnerable) != 0) {
+        break;
+      }
+
+      const bool is_boss =
+          (behavior == kBehaviorBoss || slot.behavior_state == 8 ||
+           slot.behavior_state == 27 || slot.behavior_state == 28);
+      if (is_boss) {
+        const std::uint8_t boss_invuln =
+            static_cast<std::uint8_t>((slot.unknown_1c >> 8) & 0xFF);
+        if (boss_invuln > 0) {
+          break;
+        }
+
+        if (slot.unknown_0e == 0) {
+          slot.unknown_0e = kDefaultBossHP;
+        }
+
+        --slot.unknown_0e;
+        slot.unknown_1c =
+            (slot.unknown_1c & 0x00FF) |
+            (static_cast<std::uint16_t>(kBossInvulnerabilityTicks) << 8);
+
+        if (slot.unknown_0e > 0) {
+          ++result.entities_damaged;
+          state.player.score =
+              static_cast<std::uint16_t>(state.player.score + 200U);
+          queue_audio_event(state, AudioEvent::Hit);
+        } else {
+          ++result.entities_damaged;
+          ++result.entities_defeated;
+          state.player.score =
+              static_cast<std::uint16_t>(state.player.score + 1000U);
+          queue_audio_event(state, AudioEvent::Death);
+          state.boss_victory = true;
+          state.level_complete = true;
+          state.ui.level_complete_modal = true;
+          if (slot.mapped_object_ptr < state.mapped_objects.size()) {
+            state.mapped_objects[slot.mapped_object_ptr].state_flags = 2;
+          }
+          deactivate_runtime_slot(slot);
+        }
         break;
       }
 
@@ -458,6 +1297,7 @@ bool spawn_item_drop(RuntimeState &state, std::int16_t x, std::int16_t y,
 
 void apply_entity_combat(RuntimeState &state) {
   apply_projectile_entity_collisions(state);
+  update_enemy_projectiles(state);
 
   const bool mode_invulnerability_active =
       state.player.active_mode_effect == 0x02U &&

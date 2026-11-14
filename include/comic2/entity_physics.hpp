@@ -45,4 +45,49 @@ bool ent_apply_gravity_and_move_y(const EntityPhysicsContext &ctx,
 bool ent_move_y_and_bounce(const EntityPhysicsContext &ctx,
                            RuntimeEntitySlot32 &slot);
 
+// Authentic entity physics helpers from reference/comic2/comic2.asm (1000:5b7b
+// - 1000:5ccf):
+bool ent_probe_tile_above_threshold(const GameState &state,
+                                    std::int16_t pixel_x, std::int16_t pixel_y,
+                                    std::uint16_t threshold);
+
+bool ent_probe_tile_range_solid(const GameState &state, std::int16_t pixel_x,
+                                std::int16_t pixel_y, std::int16_t span,
+                                std::uint16_t threshold);
+
+bool ent_probe_tile_range_in_viewport(const GameState &state,
+                                      std::int16_t pixel_x,
+                                      std::int16_t pixel_y, std::int16_t span,
+                                      std::uint16_t threshold);
+
+bool ent_probe_x_collision_range(const GameState &state,
+                                 const RuntimeEntitySlot32 &slot,
+                                 std::int16_t delta_x);
+
+bool ent_probe_y_collision_and_clamp(const GameState &state,
+                                     RuntimeEntitySlot32 &slot);
+
+bool ent_move_y_with_probe_and_bounce(const GameState &state,
+                                      RuntimeEntitySlot32 &slot);
+
+bool ent_move_x_with_range_probe_and_bounce(const GameState &state,
+                                            RuntimeEntitySlot32 &slot,
+                                            std::int16_t speed);
+
+void ent_set_horizontal_chase_direction_to_comic(const GameState &state,
+                                                 RuntimeEntitySlot32 &slot);
+
+// GameState overloads for existing physics helpers
+bool ent_probe_x_collision_strict(const GameState &state,
+                                  const RuntimeEntitySlot32 &slot,
+                                  std::int16_t pixel_x);
+
+bool ent_move_x_and_bounce(const GameState &state, RuntimeEntitySlot32 &slot,
+                           std::int16_t dx);
+
+bool ent_apply_gravity_and_move_y(const GameState &state,
+                                  RuntimeEntitySlot32 &slot);
+
+bool ent_move_y_and_bounce(const GameState &state, RuntimeEntitySlot32 &slot);
+
 } // namespace comic2
