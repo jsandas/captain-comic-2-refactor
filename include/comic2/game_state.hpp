@@ -270,6 +270,20 @@ struct RuntimeState {
   std::vector<ProjectileState> projectiles;
   AudioDispatchState audio;
 
+  // Authentic entity physics & combat fields
+  const RoomTileGrid *grid = nullptr;
+  std::int16_t comic_x = 0;
+  std::int16_t comic_y = 0;
+  std::uint8_t comic_hp = 12;
+  std::uint8_t comic_shield = 5;
+  std::uint8_t comic_invulnerability_ticks = 0;
+  std::int16_t threshold_up = -1;
+  std::int16_t threshold_down = -1;
+  std::int16_t threshold_range = -1;
+
+  std::array<EnemyProjectileSlot, 8> enemy_projectiles{};
+  bool boss_victory = false;
+
   DosKeyBindings key_bindings{};
   DosConfig dos_config{};
   std::vector<std::uint8_t> savegame_mapped_objects_raw;

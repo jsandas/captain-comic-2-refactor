@@ -278,6 +278,94 @@ void test_extracted_level_data() {
          "transition zone query for out-of-range room 8 returns nullopt");
 }
 
+void test_authentic_physics_probe_helpers() {
+  const auto g = make_grid();
+  comic2::GameState state;
+  state.room_grid = g;
+  state.camera_x = 0;
+  state.camera_y = 0;
+  state.threshold_up = 1;
+  state.threshold_down = 1;
+
+  // 1. ent_probe_tile_above_threshold
+  expect(comic2::ent_probe_tile_above_threshold(state, -1, 10, 1),
+         "negative x must return true");
+  expect(comic2::ent_probe_tile_above_threshold(state, 10, -1, 1),
+         "negative y must return true");
+  // In grid row 5, tile is 0x01. If threshold is 1, tile_id (1) > thresh (1) is
+  // false.
+  expect(!comic2::ent_probe_tile_above_threshold(state, 16, 80, 1),
+         "tile <= threshold must return false");
+  // If threshold is 0, tile_id (1) > thresh (0) is true.
+  expect(comic2::ent_probe_tile_above_threshold(state, 16, 80, 0),
+         "tile > threshold must return true");
+
+  // 2. ent_probe_tile_range_in_viewport
+  state.camera_x = 50;
+  expect(comic2::ent_probe_tile_range_in_viewport(state, 49, 10, 16, 1),
+         "pixel_x < camera_x must report blocked");
+  expect(comic2::ent_probe_tile_range_in_viewport(state, 50 + 240, 10, 16, 1),
+         "pixel_x >= camera_x + 240 must report blocked");
+  state.camera_x = 0;
+  // Open tile area: (row 1, y 16..31) is open (0xFF). With threshold 1, 0xFF >
+  // 1 so not solid (false).
+  expect(!comic2::ent_probe_tile_range_in_viewport(state, 32, 16, 16, 1),
+         "open viewport region must not report solid");
+  // Solid floor tile area: row 5 (y 80..95) is 0x01. With threshold 1, 1 <= 1
+  // so solid (true).
+  expect(comic2::ent_probe_tile_range_in_viewport(state, 32, 70, 20, 1),
+         "span hitting floor tile must report solid");
+
+  // 3. ent_probe_x_collision_range
+  comic2::RuntimeEntitySlot32 slot{};
+  slot.hitbox_w = 16;
+  slot.hitbox_h = 16;
+  slot.x = 100;
+  slot.y = 48; // Wall is at col 8 (x 128..143, y 48..63)
+  slot.dir_toggle = 1;
+  expect(!comic2::ent_probe_x_collision_range(state, slot, 2),
+         "moving right in open air should not collide");
+  // Probe with delta_x that reaches x = 128
+  expect(comic2::ent_probe_x_collision_range(state, slot, 28),
+         "probing into wall block must report collision");
+
+  // 4. ent_move_x_with_range_probe_and_bounce
+  slot.x = 100;
+  slot.y = 48;
+  slot.dir_toggle = 1;
+  const bool bounced_x =
+      comic2::ent_move_x_with_range_probe_and_bounce(state, slot, 2);
+  expect(!bounced_x && slot.x == 102, "unobstructed move x advances slot");
+  slot.x = 126; // Next step with dx 2 hits 128
+  const bool hit_x =
+      comic2::ent_move_x_with_range_probe_and_bounce(state, slot, 2);
+  expect(hit_x, "hitting wall block must bounce");
+  expect(slot.dir_toggle == 2, "bounce must invert dir_toggle");
+  expect(slot.param_a == -2, "bounce must negate param_a");
+
+  // 5. ent_move_y_with_probe_and_bounce
+  slot.x = 32;
+  slot.y = 40;
+  slot.param_b = 4;
+  const bool move_y_ok = comic2::ent_move_y_with_probe_and_bounce(state, slot);
+  expect(!move_y_ok && slot.y == 44, "unobstructed falling advances y");
+  slot.y = 60; // Foot at 60 + 16 + 4 = 80 (hits row 5 floor)
+  slot.param_b = 4;
+  const bool hit_y = comic2::ent_move_y_with_probe_and_bounce(state, slot);
+  expect(hit_y, "floor collision must bounce");
+  expect(slot.y == 64 && slot.param_b == -4,
+         "bounced y snapped and velocity negated");
+
+  // 6. ent_set_horizontal_chase_direction_to_comic
+  state.comic_x = 80;
+  slot.x = 100;
+  comic2::ent_set_horizontal_chase_direction_to_comic(state, slot);
+  expect(slot.dir_toggle == 2, "comic to left must set dir_toggle = 2");
+  state.comic_x = 120;
+  comic2::ent_set_horizontal_chase_direction_to_comic(state, slot);
+  expect(slot.dir_toggle == 1, "comic to right must set dir_toggle = 1");
+}
+
 } // namespace
 
 void run_entity_physics_tests() {
@@ -289,4 +377,5 @@ void run_entity_physics_tests() {
   test_ent_probe_x_viewport_edges();
   test_move_y_bounce_reflects_velocity();
   test_move_y_threshold_range_fallback();
+  test_authentic_physics_probe_helpers();
 }

@@ -7,6 +7,9 @@
 
 namespace comic2 {
 
+struct RuntimeState;
+using GameState = RuntimeState;
+
 #pragma pack(push, 1)
 
 struct MappedObject12 {
@@ -18,6 +21,18 @@ struct MappedObject12 {
   std::uint16_t world_y;
 
   bool operator==(const MappedObject12 &) const = default;
+};
+
+struct EnemyProjectileSlot {
+  bool active = false;
+  std::int16_t x = 0;
+  std::int16_t y = 0;
+  std::int16_t vx = 0;
+  std::int16_t vy = 0;
+  std::uint8_t anim_frame = 0;
+  std::uint8_t timer = 0;
+
+  bool operator==(const EnemyProjectileSlot &) const = default;
 };
 
 struct ActiveEntity8 {
