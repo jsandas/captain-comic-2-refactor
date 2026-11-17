@@ -1565,7 +1565,7 @@ Complete the remaining assembly-parity gaps identified across `reference/comic2/
 
 #### 16.1 Authentic Entity AI & Boss Encounter State Machines (`src/entity_runtime.cpp`, `src/entity_physics.cpp`)
 - [x] Audit and implement full parity for all 16+ behavior handlers in `ent_update_object_behaviors` (`1000:3b25`, jump table `0x48ED` in `comic2_standalone.asm`), replacing simplified movement curves with exact per-handler velocity, bounce, and state transitions.
-- [x] Implement multi-phase boss state machines (`kBehaviorBoss = 0x0003` and specialized boss handlers), including boss movement patterns, multi-hit damage thresholds, invulnerability windows, and boss death/victory triggers.
+- [x] Implement multi-phase boss state machines (`kBehaviorBoss = 0x0008` and specialized boss handlers), including boss movement patterns, multi-hit damage thresholds, invulnerability windows, and boss death/victory triggers.
 - [x] Implement hostile enemy projectile spawning (`kBehaviorShoot = 0x0002` and ranged enemy handlers) with player-targeted or directional trajectories and shield collision checks.
 - [x] Replace fixed `slot_index % 2` sprite frame selection with authentic descriptor-driven animation indexing using `EntitySlot::anim_span`, `EntitySlot::anim_period`, and `EntitySlot::anim_tick`.
 

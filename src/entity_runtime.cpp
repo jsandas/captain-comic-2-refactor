@@ -347,8 +347,9 @@ void update_enemy_projectiles(GameState &state) {
     ++proj.timer;
     proj.anim_frame = static_cast<std::uint8_t>(proj.timer & 1);
 
-    if (proj.x < cam_x || proj.x >= cam_x + kViewW || proj.y < 0 ||
-        proj.y >= kViewH) {
+    const std::int16_t cam_y = static_cast<std::int16_t>(state.camera_y);
+    if (proj.x < cam_x || proj.x >= cam_x + kViewW || proj.y < cam_y ||
+        proj.y >= cam_y + kViewH) {
       proj.active = false;
       continue;
     }

@@ -162,8 +162,8 @@ bool ent_probe_tile_above_threshold(const GameState &state,
   if (!tile.has_value()) {
     return true;
   }
-  const auto tile_id = static_cast<std::int8_t>(*tile);
-  const auto thresh = static_cast<std::int8_t>(threshold & 0xFF);
+  const auto tile_id = static_cast<std::int16_t>(*tile);
+  const auto thresh = static_cast<std::int16_t>(threshold & 0xFF);
   return tile_id > thresh;
 }
 
