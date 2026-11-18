@@ -275,31 +275,43 @@ bool KeyboardInputHandler::poll_events(InputState &input) {
       case SDL_KEYDOWN:
         if (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
           impl_->quit_requested = true;
+        } else if (custom_left != SDL_SCANCODE_UNKNOWN &&
+                   event.key.keysym.scancode == custom_left) {
+          input.left_pressed = true;
+        } else if (custom_right != SDL_SCANCODE_UNKNOWN &&
+                   event.key.keysym.scancode == custom_right) {
+          input.right_pressed = true;
+        } else if (custom_jump != SDL_SCANCODE_UNKNOWN &&
+                   event.key.keysym.scancode == custom_jump) {
+          input.jump_pressed = true;
+        } else if (custom_down != SDL_SCANCODE_UNKNOWN &&
+                   event.key.keysym.scancode == custom_down) {
+          input.down_pressed = true;
+        } else if (custom_fire != SDL_SCANCODE_UNKNOWN &&
+                   event.key.keysym.scancode == custom_fire) {
+          input.fire_pressed = true;
+        } else if (custom_up != SDL_SCANCODE_UNKNOWN &&
+                   event.key.keysym.scancode == custom_up) {
+          input.mode_activate_pressed = true;
         } else if (event.key.keysym.scancode == SDL_SCANCODE_LEFT ||
-                   event.key.keysym.scancode == custom_left ||
                    event.key.keysym.sym == SDLK_a) {
           input.left_pressed = true;
         } else if (event.key.keysym.scancode == SDL_SCANCODE_RIGHT ||
-                   event.key.keysym.scancode == custom_right ||
                    event.key.keysym.sym == SDLK_d) {
           input.right_pressed = true;
         } else if (event.key.keysym.scancode == SDL_SCANCODE_SPACE ||
-                   event.key.keysym.scancode == custom_jump ||
                    event.key.keysym.sym == SDLK_UP ||
                    event.key.keysym.scancode == SDL_SCANCODE_W) {
           input.jump_pressed = true;
         } else if (event.key.keysym.scancode == SDL_SCANCODE_DOWN ||
-                   event.key.keysym.scancode == custom_down ||
                    event.key.keysym.sym == SDLK_s) {
           input.down_pressed = true;
         } else if (event.key.keysym.scancode == SDL_SCANCODE_LCTRL ||
                    event.key.keysym.scancode == SDL_SCANCODE_RCTRL ||
-                   event.key.keysym.scancode == custom_fire ||
                    event.key.keysym.sym == SDLK_f ||
                    event.key.keysym.sym == SDLK_j) {
           input.fire_pressed = true;
         } else if (event.key.keysym.scancode == SDL_SCANCODE_RETURN ||
-                   event.key.keysym.scancode == custom_up ||
                    event.key.keysym.sym == SDLK_e) {
           input.mode_activate_pressed = true;
         } else if (event.key.keysym.scancode == SDL_SCANCODE_T ||
@@ -317,26 +329,44 @@ bool KeyboardInputHandler::poll_events(InputState &input) {
     }
 
     const Uint8 *keys = SDL_GetKeyboardState(nullptr);
-    input.left_pressed = keys[SDL_SCANCODE_LEFT] || keys[SDL_SCANCODE_A] ||
-                         (custom_left != SDL_SCANCODE_UNKNOWN &&
-                          keys[custom_left]);
-    input.right_pressed = keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D] ||
-                          (custom_right != SDL_SCANCODE_UNKNOWN &&
-                           keys[custom_right]);
-    input.down_pressed = keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S] ||
-                         (custom_down != SDL_SCANCODE_UNKNOWN &&
-                          keys[custom_down]);
-    input.jump_pressed = keys[SDL_SCANCODE_SPACE] || keys[SDL_SCANCODE_UP] ||
-                         keys[SDL_SCANCODE_W] ||
-                         (custom_jump != SDL_SCANCODE_UNKNOWN &&
-                          keys[custom_jump]);
-    input.fire_pressed = keys[SDL_SCANCODE_LCTRL] || keys[SDL_SCANCODE_RCTRL] ||
-                         keys[SDL_SCANCODE_F] || keys[SDL_SCANCODE_J] ||
-                         (custom_fire != SDL_SCANCODE_UNKNOWN &&
-                          keys[custom_fire]);
+    auto is_bound_to_other = [&](SDL_Scancode sc, SDL_Scancode own) {
+      if (sc == own) {
+        return false;
+      }
+      return sc == custom_left || sc == custom_right || sc == custom_up ||
+             sc == custom_down || sc == custom_jump || sc == custom_fire;
+    };
+    auto fallback_active = [&](SDL_Scancode sc, SDL_Scancode own) {
+      return !is_bound_to_other(sc, own) && keys[sc] != 0;
+    };
+
+    input.left_pressed =
+        (custom_left != SDL_SCANCODE_UNKNOWN && keys[custom_left]) ||
+        fallback_active(SDL_SCANCODE_LEFT, custom_left) ||
+        fallback_active(SDL_SCANCODE_A, custom_left);
+    input.right_pressed =
+        (custom_right != SDL_SCANCODE_UNKNOWN && keys[custom_right]) ||
+        fallback_active(SDL_SCANCODE_RIGHT, custom_right) ||
+        fallback_active(SDL_SCANCODE_D, custom_right);
+    input.down_pressed =
+        (custom_down != SDL_SCANCODE_UNKNOWN && keys[custom_down]) ||
+        fallback_active(SDL_SCANCODE_DOWN, custom_down) ||
+        fallback_active(SDL_SCANCODE_S, custom_down);
+    input.jump_pressed =
+        (custom_jump != SDL_SCANCODE_UNKNOWN && keys[custom_jump]) ||
+        fallback_active(SDL_SCANCODE_SPACE, custom_jump) ||
+        fallback_active(SDL_SCANCODE_UP, custom_jump) ||
+        fallback_active(SDL_SCANCODE_W, custom_jump);
+    input.fire_pressed =
+        (custom_fire != SDL_SCANCODE_UNKNOWN && keys[custom_fire]) ||
+        fallback_active(SDL_SCANCODE_LCTRL, custom_fire) ||
+        fallback_active(SDL_SCANCODE_RCTRL, custom_fire) ||
+        fallback_active(SDL_SCANCODE_F, custom_fire) ||
+        fallback_active(SDL_SCANCODE_J, custom_fire);
     input.mode_activate_pressed =
-        keys[SDL_SCANCODE_RETURN] || keys[SDL_SCANCODE_E] ||
-        (custom_up != SDL_SCANCODE_UNKNOWN && keys[custom_up]);
+        (custom_up != SDL_SCANCODE_UNKNOWN && keys[custom_up]) ||
+        fallback_active(SDL_SCANCODE_RETURN, custom_up) ||
+        fallback_active(SDL_SCANCODE_E, custom_up);
     input.teleport_pressed = keys[SDL_SCANCODE_T];
 
     return !impl_->quit_requested;

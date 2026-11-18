@@ -222,13 +222,24 @@ void cfg_save_options(const RuntimeState &state,
     write_u16_at(bytes, 82 + i * 2, source_records[i]);
   }
 
+  const bool has_any_player_data =
+      state.dos_config.player_count != 0 ||
+      std::any_of(state.dos_config.player_names.begin(),
+                  state.dos_config.player_names.end(),
+                  [](const std::string &n) { return !n.empty(); }) ||
+      std::any_of(state.dos_config.player_awards.begin(),
+                  state.dos_config.player_awards.end(),
+                  [](std::uint16_t a) { return a != 0; });
+
   for (std::size_t slot = 0; slot < 5; ++slot) {
-    if (state.dos_config.player_awards[slot] != 0 ||
-        !state.dos_config.player_names[slot].empty()) {
-      const std::uint16_t awards = state.dos_config.player_awards[slot] != 0
-                                       ? state.dos_config.player_awards[slot]
-                                       : state.dos_config.records[4 + slot];
-      write_u16_at(bytes, 82 + (4 + slot) * 2, awards);
+    if (state.dos_config.player_awards[slot] != 0) {
+      write_u16_at(bytes, 82 + (4 + slot) * 2,
+                   state.dos_config.player_awards[slot]);
+    } else if (!state.dos_config.player_names[slot].empty()) {
+      write_u16_at(bytes, 82 + (4 + slot) * 2,
+                   state.dos_config.records[4 + slot]);
+    } else if (has_any_player_data) {
+      write_u16_at(bytes, 82 + (4 + slot) * 2, 0U);
     }
   }
 

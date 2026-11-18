@@ -443,40 +443,43 @@ void hud_update_mode_icons(EgaPlanarSurface &surface,
       (state.progression.mode_inventory_mask & 0x08U) != 0U;
 
   if (corkscrew_collected) {
-    const auto img = make_16x16_hud_icon_image(kHudCorkscrewIconPlanes);
-    if (can_blit_opaque_image(surface, kIconX, kRowY[0], img)) {
-      gfx_rle_blit_opaque_4plane(surface, kIconX, kRowY[0], img);
+    static const auto kCorkscrewImg =
+        make_16x16_hud_icon_image(kHudCorkscrewIconPlanes);
+    if (can_blit_opaque_image(surface, kIconX, kRowY[0], kCorkscrewImg)) {
+      gfx_rle_blit_opaque_4plane(surface, kIconX, kRowY[0], kCorkscrewImg);
     }
   }
   if (boots_collected) {
-    const auto img = make_16x16_hud_icon_image(kHudBootsIconPlanes);
-    if (can_blit_opaque_image(surface, kIconX, kRowY[1], img)) {
-      gfx_rle_blit_opaque_4plane(surface, kIconX, kRowY[1], img);
+    static const auto kBootsImg =
+        make_16x16_hud_icon_image(kHudBootsIconPlanes);
+    if (can_blit_opaque_image(surface, kIconX, kRowY[1], kBootsImg)) {
+      gfx_rle_blit_opaque_4plane(surface, kIconX, kRowY[1], kBootsImg);
     }
   }
   if (lantern_collected) {
-    const auto img = make_16x16_hud_icon_image(kHudLanternIconPlanes);
-    if (can_blit_opaque_image(surface, kIconX, kRowY[2], img)) {
-      gfx_rle_blit_opaque_4plane(surface, kIconX, kRowY[2], img);
+    static const auto kLanternImg =
+        make_16x16_hud_icon_image(kHudLanternIconPlanes);
+    if (can_blit_opaque_image(surface, kIconX, kRowY[2], kLanternImg)) {
+      gfx_rle_blit_opaque_4plane(surface, kIconX, kRowY[2], kLanternImg);
     }
   }
   if (wand_collected) {
-    const auto img = make_16x16_hud_icon_image(kHudWandIconPlanes);
-    if (can_blit_opaque_image(surface, kIconX, kRowY[3], img)) {
-      gfx_rle_blit_opaque_4plane(surface, kIconX, kRowY[3], img);
+    static const auto kWandImg = make_16x16_hud_icon_image(kHudWandIconPlanes);
+    if (can_blit_opaque_image(surface, kIconX, kRowY[3], kWandImg)) {
+      gfx_rle_blit_opaque_4plane(surface, kIconX, kRowY[3], kWandImg);
     }
   }
 
   // Render active/inactive 8x15 mode indicator bars (seg_5E:0x98EA / 0x992A)
   // when a mode selection mask or effect is active.
   if (state.ui.active_mode_mask != 0U || state.player.active_mode_effect != 0U) {
-    const auto selected_bar = make_8x15_mode_bar_image(true);
-    const auto unselected_bar = make_8x15_mode_bar_image(false);
+    static const auto kSelectedBar = make_8x15_mode_bar_image(true);
+    static const auto kUnselectedBar = make_8x15_mode_bar_image(false);
     for (std::size_t row = 0; row < 4U; ++row) {
       const bool row_selected =
           ((state.ui.active_mode_mask & (1U << row)) != 0U) ||
           (state.player.active_mode_effect == static_cast<std::uint8_t>(row + 1U));
-      const auto &bar = row_selected ? selected_bar : unselected_bar;
+      const auto &bar = row_selected ? kSelectedBar : kUnselectedBar;
       if (can_blit_opaque_image(surface, kBarX, kRowY[row], bar)) {
         gfx_rle_blit_opaque_4plane(surface, kBarX, kRowY[row], bar);
       }
@@ -926,7 +929,9 @@ bool ui_enter_new_player(RuntimeState &state, const std::string &player_name) {
     cfg_save_options_file(state, state.ui.persistence_dir / "FR.CFG");
     savegame_write_slot_file(state, state.ui.persistence_dir,
                              state.ui.active_player_slot);
-    savegame_write_slot_file(state, state.ui.persistence_dir, target_slot);
+    if (!std::filesystem::exists(state.ui.persistence_dir / "GAME.000")) {
+      savegame_write_slot_file(state, state.ui.persistence_dir, 0U);
+    }
   }
   return true;
 }
@@ -1355,7 +1360,7 @@ bool update_game_lifecycle(RuntimeState &state, const InputState &input,
             !state.dos_config.player_names[state.ui.selected_option_index]
                  .empty()) {
           state.ui.active_player_slot =
-              static_cast<std::uint8_t>(state.ui.selected_option_index);
+              static_cast<std::uint8_t>(state.ui.selected_option_index + 1U);
           state.ui.player_slot_menu_active = false;
           state.ui.menu_state = MenuState::GameSelect;
           state.ui.option_labels = {"NATURE", "MAGIC",  "TIME",
