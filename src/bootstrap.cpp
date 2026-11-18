@@ -1081,6 +1081,7 @@ FrameLoopSummary run_render_loop(RuntimeState &state,
       const bool will_dispatch_tick =
           was_gameplay &&
           !(state.flags.room_event_triggered ||
+            state.ui.room_event_modal_active ||
             state.ui.pending_event_message == "Room Event Triggered" ||
             (state.ui.modal_active &&
              state.ui.modal_prompt == "Room Event Triggered") ||

@@ -130,6 +130,19 @@ bool try_load_level_tileset_for_root(RuntimeState &state,
     }
   }
 
+  state.level_script_bytes.clear();
+  if (!tuple->script_filename.empty()) {
+    const auto script_path = root / tuple->script_filename;
+    if (const auto script_bytes = load_file_bytes(script_path);
+        script_bytes.has_value()) {
+      if (const auto decoded_script = decode_level_script_payload(
+              std::span<const std::uint8_t>(*script_bytes));
+          decoded_script.has_value()) {
+        state.level_script_bytes = *decoded_script;
+      }
+    }
+  }
+
   return true;
 }
 
@@ -334,9 +347,11 @@ void load_room_effect_script_and_trigger_ranges(RuntimeState &state) {
   state.room_event_anchor = RoomEventAnchorState{};
   state.room_event_script = RoomEventScriptState{};
 
-  state.room_event_script.loaded = !state.room_resource_bytes.empty();
+  state.room_event_script.loaded =
+      !state.room_resource_bytes.empty() || !state.level_script_bytes.empty();
   state.room_event_script.raw_script_bytes = state.room_resource_bytes;
   state.room_event_script.raw_trigger_bytes = state.room_resource_bytes;
+  state.room_event_script.decoded_script_bytes = state.level_script_bytes;
 
   if (state.mapped_objects.empty()) {
     return;
@@ -356,6 +371,7 @@ void load_room_effect_script_and_trigger_ranges(RuntimeState &state) {
   state.room_event_anchor.active = true;
   state.room_event_anchor.x = static_cast<std::int16_t>(anchor_source->world_x);
   state.room_event_anchor.y = static_cast<std::int16_t>(anchor_source->world_y);
+  state.room_event_anchor.descriptor_ptr = anchor_source->descriptor_ptr;
   state.room_event_anchor.velocity_x =
       static_cast<std::int16_t>((state.current_room % 2U) == 0U ? 1 : -1);
   state.room_event_anchor.velocity_y =
@@ -539,6 +555,64 @@ level_script_offset(std::span<const std::uint8_t> decoded, std::size_t index) {
     return std::nullopt;
   }
   return static_cast<std::uint16_t>(decoded[at] | (decoded[at + 1] << 8));
+}
+
+std::optional<ScriptDialogMessage>
+extract_level_script_message(std::span<const std::uint8_t> decoded_script,
+                             std::size_t message_index) {
+  const auto first_off_opt = level_script_offset(decoded_script, 0);
+  if (!first_off_opt.has_value()) {
+    return std::nullopt;
+  }
+  const std::size_t first_off = *first_off_opt;
+  if (first_off < 2 || first_off > decoded_script.size() ||
+      (first_off % 2) != 0) {
+    return std::nullopt;
+  }
+  const std::size_t max_messages = first_off / 2;
+  if (message_index >= max_messages) {
+    return std::nullopt;
+  }
+
+  const auto msg_off_opt = level_script_offset(decoded_script, message_index);
+  if (!msg_off_opt.has_value()) {
+    return std::nullopt;
+  }
+  const std::size_t msg_off = *msg_off_opt;
+  if (msg_off < first_off || msg_off + 2 > decoded_script.size()) {
+    return std::nullopt;
+  }
+
+  const std::uint8_t w = decoded_script[msg_off];
+  const std::uint8_t h = decoded_script[msg_off + 1];
+  if (w < 3 || h < 3 || w > 40 || h > 25) {
+    return std::nullopt;
+  }
+
+  const std::size_t inner_w = static_cast<std::size_t>(w - 2);
+  const std::size_t inner_h = static_cast<std::size_t>(h - 2);
+  const std::size_t char_count = inner_w * inner_h;
+  if (msg_off + 2 + char_count > decoded_script.size()) {
+    return std::nullopt;
+  }
+
+  ScriptDialogMessage msg{};
+  msg.width_cells = w;
+  msg.height_cells = h;
+  msg.lines.reserve(inner_h);
+
+  const auto chars = decoded_script.subspan(msg_off + 2, char_count);
+  for (std::size_t r = 0; r < inner_h; ++r) {
+    const auto row_span = chars.subspan(r * inner_w, inner_w);
+    std::string line(reinterpret_cast<const char *>(row_span.data()), inner_w);
+    msg.lines.push_back(line);
+    if (r > 0) {
+      msg.text.push_back('\n');
+    }
+    msg.text.append(line);
+  }
+
+  return msg;
 }
 
 std::optional<TileTriggerRange>

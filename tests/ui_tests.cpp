@@ -10,6 +10,7 @@
 #include "comic2/persistence.hpp"
 #include "comic2/renderer.hpp"
 #include "comic2/resource_loader.hpp"
+#include "comic2/room_loader.hpp"
 #include "comic2/ui.hpp"
 
 namespace {
@@ -713,6 +714,168 @@ void test_ui_render_game_selection_panel_rejects_oversized_or_malformed_bezel() 
          "exceeds destination bounds");
 }
 
+std::uint8_t read_surface_pixel_color(const comic2::EgaPlanarSurface &surface,
+                                      std::size_t x, std::size_t y) {
+  const std::size_t x_byte = x / 8U;
+  const std::uint8_t bit = static_cast<std::uint8_t>(7U - (x % 8U));
+  std::uint8_t color = 0U;
+  for (std::size_t plane = 0; plane < comic2::EgaPlanarSurface::kPlaneCount;
+       ++plane) {
+    if ((surface.get_plane_byte(plane, x_byte, y) &
+         static_cast<std::uint8_t>(1U << bit)) != 0U) {
+      color |= static_cast<std::uint8_t>(1U << plane);
+    }
+  }
+  return color;
+}
+
+void test_phase16_fr_script_loading_and_message_extraction() {
+  const auto dir = find_reference_original_dir();
+  if (dir.empty()) {
+    return;
+  }
+
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  expect(comic2::load_room_tilemap_from_asset_root(state, dir, 1, 1),
+         "Level 1 Room 1 must load from original assets");
+  expect(state.level_script_bytes.size() == comic2::kLevelScriptBlockSize,
+         "try_load_level_tileset_for_root must cache 3072-byte decoded FR001.3 "
+         "script");
+
+  const auto msg0 =
+      comic2::extract_level_script_message(state.level_script_bytes, 0);
+  expect(msg0.has_value(), "FR001.3 message 0 must decode");
+  expect(msg0->width_cells == 26 && msg0->height_cells == 13,
+         "FR001.3 message 0 dimensions must be 26x13 cells");
+  expect(msg0->lines.size() == 11,
+         "FR001.3 message 0 must have 11 interior text lines");
+  expect(msg0->lines[0] == "THANK YOU FOR ANSWERING ",
+         "FR001.3 message 0 line 0 must match decrypted string");
+  expect(msg0->lines[10] == "OF THESE STAIRS.        ",
+         "FR001.3 message 0 line 10 must match decrypted string");
+}
+
+void test_phase16_ent_process_interaction_script_and_multi_step_dialog() {
+  const auto dir = find_reference_original_dir();
+  if (dir.empty()) {
+    return;
+  }
+
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  expect(comic2::load_room_tilemap_from_asset_root(state, dir, 1, 1),
+         "Level 1 Room 1 must load from original assets");
+
+  // Place player overlapping NPC 0x8976 as an interactive object (state_flags
+  // 0x0002)
+  state.player.x = 100;
+  state.player.y = 100;
+  state.mapped_objects.clear();
+  state.mapped_objects.push_back(comic2::MappedObject12{
+      .room_x = 1,
+      .room_y = 1,
+      .descriptor_ptr = 0x8976,
+      .state_flags = 0x0002,
+      .world_x = 100,
+      .world_y = 100,
+  });
+
+  // Step 0 of 0x8976 -> message index 0
+  comic2::handle_input_fallback(state);
+  expect(state.ui.modal_active, "NPC interaction must activate modal prompt");
+  expect(state.ui.modal_width_cells == 26 && state.ui.modal_height_cells == 13,
+         "Modal dimensions must match FR001.3 message 0 (26x13)");
+  expect(state.ui.modal_prompt.find("THANK YOU FOR ANSWERING ") == 0,
+         "First interaction with 0x8976 must display message 0");
+
+  // Dismiss modal and interact again -> Step 1 of 0x8976 -> message index 9
+  state.ui.modal_active = false;
+  state.ui.modal_prompt.clear();
+  comic2::handle_input_fallback(state);
+  expect(state.ui.modal_active,
+         "Second NPC interaction must activate modal prompt");
+  expect(state.story_script_progress == 1,
+         "Second interaction with 0x8976 must advance story_script_progress to "
+         "1");
+  expect(state.ui.modal_prompt.find("OH, AND BE CAREFUL WITH ") == 0,
+         "Second interaction with 0x8976 must display message 9");
+
+  // Interact with leader 0x8C50 across 3 pages (messages 3, 4, 5)
+  state.mapped_objects[0].descriptor_ptr = 0x8C50;
+  state.ui.modal_active = false;
+  state.ui.modal_prompt.clear();
+  comic2::handle_input_fallback(state);
+  expect(state.ui.modal_prompt.find("WELCOME CAPTAIN, WE ARE ") == 0,
+         "Leader 0x8C50 step 0 must display message 3");
+
+  state.ui.modal_active = false;
+  state.ui.modal_prompt.clear();
+  comic2::handle_input_fallback(state);
+  expect(state.ui.modal_prompt.find("OUR TROUBLES HOWEVER,   ") == 0,
+         "Leader 0x8C50 step 1 must display message 4");
+
+  state.ui.modal_active = false;
+  state.ui.modal_prompt.clear();
+  comic2::handle_input_fallback(state);
+  expect(state.ui.modal_prompt.find("IT IS UP TO YOU CAPTAIN,") == 0,
+         "Leader 0x8C50 step 2 must display message 5");
+  expect(state.story_script_progress == 2,
+         "Leader 0x8C50 step 2 must advance story_script_progress to 2");
+
+  // Interact with pickaxe giver 0x8ABE -> awards corkscrew/pickaxe and shows
+  // message 6
+  state.mapped_objects[0].descriptor_ptr = 0x8ABE;
+  state.ui.modal_active = false;
+  state.ui.modal_prompt.clear();
+  comic2::handle_input_fallback(state);
+  expect(state.player.corkscrew_equipped &&
+             state.progression.corkscrew_acquired,
+         "0x8ABE interaction at story_script_progress >= 2 must award "
+         "corkscrew/pickaxe");
+  expect(state.ui.modal_prompt.find("HERE IS YOUR PICK AXE.") == 0,
+         "0x8ABE interaction must display message 6");
+}
+
+void test_phase16_framed_8x8_font_modal_rendering() {
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  state.ui.modal_active = true;
+  state.ui.modal_prompt = "HELLO CAPTAIN\nSECOND LINE!";
+  state.ui.modal_width_cells = 15; // 13 inner + 2 border
+  state.ui.modal_height_cells = 4; // 2 inner + 2 border
+  state.ui.modal_game_over = false;
+
+  comic2::EgaPlanarSurface surface(320, 200);
+  surface.clear(0x00);
+  comic2::ui_render_modal_prompt(surface, state);
+
+  // Box dimensions: 15 * 8 = 120 px wide, 4 * 8 = 32 px high
+  // x0 = (((208 - 120) >> 1) & ~7) + 8 = (44 & ~7) + 8 = 40 + 8 = 48
+  // y0 = (((160 - 32) >> 1) & ~7) + 8 = (64 & ~7) + 8 = 64 + 8 = 72
+  expect(read_surface_pixel_color(surface, 48, 72) == 0x09U,
+         "Top-left border corner must be drawn in light blue (0x09)");
+
+  // Interior text row 0 is at y = 80..87, x = 56..159
+  // Verify at least one pixel in 'H' (x = 56..63, y = 80..87) and row 1 'S'
+  // (x = 56..63, y = 88..95) is drawn in text color 0x07
+  bool saw_row0_text = false;
+  bool saw_row1_text = false;
+  for (std::size_t y = 80; y < 88; ++y) {
+    for (std::size_t x = 56; x < 160; ++x) {
+      if (read_surface_pixel_color(surface, x, y) == 0x07U) {
+        saw_row0_text = true;
+      }
+    }
+  }
+  for (std::size_t y = 88; y < 96; ++y) {
+    for (std::size_t x = 56; x < 160; ++x) {
+      if (read_surface_pixel_color(surface, x, y) == 0x07U) {
+        saw_row1_text = true;
+      }
+    }
+  }
+  expect(saw_row0_text, "First line of modal text must render 0x07 glyphs");
+  expect(saw_row1_text, "Second line of modal text must render 0x07 glyphs");
+}
+
 } // namespace
 
 void run_ui_tests() {
@@ -735,4 +898,7 @@ void run_ui_tests() {
   test_game_lifecycle_gameplay_to_save_via_anchor_trigger();
   test_game_lifecycle_gameplay_renders_scene_and_menu_navigation();
   test_ui_render_game_selection_panel_rejects_oversized_or_malformed_bezel();
+  test_phase16_fr_script_loading_and_message_extraction();
+  test_phase16_ent_process_interaction_script_and_multi_step_dialog();
+  test_phase16_framed_8x8_font_modal_rendering();
 }

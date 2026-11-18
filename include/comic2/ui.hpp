@@ -13,6 +13,12 @@ std::uint8_t bcd_increment(std::uint8_t value);
 std::uint8_t bcd_decrement(std::uint8_t value);
 
 void hud_render_overlay(EgaPlanarSurface &surface, const RuntimeState &state);
+void ui_draw_framed_text_box_and_text(EgaPlanarSurface &surface,
+                                      const std::vector<std::string> &lines,
+                                      std::uint8_t width_cells = 0,
+                                      std::uint8_t height_cells = 0,
+                                      std::uint8_t border_color = 0x09U,
+                                      std::uint8_t text_color = 0x07U);
 void ui_render_modal_prompt(EgaPlanarSurface &surface,
                             const RuntimeState &state);
 void ui_render_option_list(EgaPlanarSurface &surface,

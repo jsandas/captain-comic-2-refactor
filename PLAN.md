@@ -1570,9 +1570,9 @@ Complete the remaining assembly-parity gaps identified across `reference/comic2/
 - [x] Replace fixed `slot_index % 2` sprite frame selection with authentic descriptor-driven animation indexing using `EntitySlot::anim_span`, `EntitySlot::anim_period`, and `EntitySlot::anim_tick`.
 
 #### 16.2 Interactive `FR###.3` Script Execution & Dialog/Cutscene Text (`src/room_loader.cpp`, `src/default_handlers.cpp`, `src/ui.cpp`)
-- [ ] Load and cache the level's optional XOR-`0x25` decoded `FR###.3` script payload (`LevelResourceTuple::script_filename`) into `RuntimeState` during `try_load_level_tileset_for_root`.
-- [ ] Wire `ent_process_interaction_script_and_queue_message` (`1000:1a9f`) into `handle_mapped_object_interaction` and `detect_proximity_room_event_trigger` so interacting with NPCs, signs, and scripted room anchors resolves message offsets via `level_script_offset` and extracts the decrypted text/commands from `FR###.3`.
-- [ ] Render actual multi-line dialog and prompt text inside `ui_render_modal_prompt` (`ui_draw_framed_text_box_and_text` at `1000:1272`) using 8x8 `font_glyphs_start` character blitting (`blit_string` / `blit_char`) instead of solid color placeholder rectangles.
+- [x] Load and cache the level's optional XOR-`0x25` decoded `FR###.3` script payload (`LevelResourceTuple::script_filename`) into `RuntimeState` during `try_load_level_tileset_for_root`.
+- [x] Wire `ent_process_interaction_script_and_queue_message` (`1000:1a9f`) into `handle_mapped_object_interaction` and `detect_proximity_room_event_trigger` so interacting with NPCs, signs, and scripted room anchors resolves message offsets via `level_script_offset` and extracts the decrypted text/commands from `FR###.3`.
+- [x] Render actual multi-line dialog and prompt text inside `ui_render_modal_prompt` (`ui_draw_framed_text_box_and_text` at `1000:1272`) using 8x8 `font_glyphs_start` character blitting (`blit_string` / `blit_char`) instead of solid color placeholder rectangles.
 
 #### 16.3 Authentic HUD Mode Icons, Text Modal Prompts & Key Rebinding UI (`src/ui.cpp`, `src/input_handler.cpp`, `src/persistence.cpp`)
 - [ ] Implement `hud_update_mode_icons` to blit the collected status icons for High-Jump Gravity Boots (`DS:0x08ae`), Cavern Lantern (`DS:0x08b0`), Drainage Corkscrew (`DS:0x08b2`), and Teleportation Wand (`DS:0x08b4`) onto the right-hand `FRPAK.001` bezel panel.
@@ -1592,7 +1592,7 @@ Complete the remaining assembly-parity gaps identified across `reference/comic2/
 
 ### Phase 16 Validation Gates
 - [x] **Gate 16-A (Entity & Boss AI Parity)**: All 16+ entity behavior handlers and boss state machines execute deterministic movement, projectile firing, animation frame cycling, and damage phases matching `comic2_standalone.asm`.
-- [ ] **Gate 16-B (Scripted Dialog & Text Rendering)**: `FR###.3` XOR-`0x25` message offsets resolve to decrypted strings and render readable 8x8 glyph text inside framed modal boxes on the EGA surface.
+- [x] **Gate 16-B (Scripted Dialog & Text Rendering)**: `FR###.3` XOR-`0x25` message offsets resolve to decrypted strings and render readable 8x8 glyph text inside framed modal boxes on the EGA surface.
 - [ ] **Gate 16-C (HUD Mode Icons & Interactive Menu Persistence)**: Collected equipment icons render on the `FRPAK.001` bezel, and interactive menu/save prompts persist and reload `GAME.000..005` and `FR.CFG` / `KEYS.DEF`.
 - [ ] **Gate 16-D (Continuous PIT Sound Streams)**: Multi-note sound streams from `comic2_data.asm` advance at ~18.2 Hz through `SoundDriver::tick()` with exact divisor/duration stepping and priority preemption.
 - [ ] **Gate 16-E (15-Level Catalog & Room Verification)**: All rooms across all 15 levels (`FR000`–`FR014`) load without out-of-bounds tile indices or malformed entity/script payloads.
@@ -1605,11 +1605,11 @@ Complete the remaining assembly-parity gaps identified across `reference/comic2/
 **Objective**: Port all remaining behavior handlers from `ent_update_object_behaviors` (`1000:3b25`), enemy projectile attacks, boss multi-phase logic, and descriptor-driven sprite animation cycling.
 **Files**: `include/comic2/entity_runtime.hpp`, `src/entity_runtime.cpp`, `src/entity_physics.cpp`, `src/bootstrap.cpp`, `tests/dispatcher_tests.cpp`.
 
-#### PR 16-B1: `FR###.3` Script Text Resolution & Framed 8x8 Font Modal Rendering [NEXT]
+#### PR 16-B1: `FR###.3` Script Text Resolution & Framed 8x8 Font Modal Rendering [COMPLETED]
 **Objective**: Load `FR###.3` scripts per level, resolve interaction/proximity message offsets, and render decrypted text strings using 8x8 bitmap glyphs inside `ui_render_modal_prompt`.
 **Files**: `include/comic2/game_state.hpp`, `src/room_loader.cpp`, `src/default_handlers.cpp`, `src/ui.cpp`, `tests/ui_tests.cpp`.
 
-#### PR 16-C1: HUD Equipment Mode Icons, Menu Text & Save/Config Slot Wiring
+#### PR 16-C1: HUD Equipment Mode Icons, Menu Text & Save/Config Slot Wiring [NEXT]
 **Objective**: Render Boots/Lantern/Corkscrew/Wand icons on the bezel HUD and wire interactive save/load slots (`GAME.000..005`) and key rebinding (`FR.CFG` / `KEYS.DEF`) into the frontend menu.
 **Files**: `src/ui.cpp`, `src/persistence.cpp`, `src/input_handler.cpp`, `tests/ui_tests.cpp`, `tests/persistence_tests.cpp`.
 

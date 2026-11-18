@@ -1,5 +1,6 @@
 #include <array>
 #include <cstdint>
+#include <cstdlib>
 #include <exception>
 #include <iostream>
 #include <stdexcept>
@@ -230,6 +231,10 @@ void test_default_runtime_state_factory() {
 } // namespace
 
 int main() {
+#ifndef _WIN32
+  setenv("SDL_VIDEODRIVER", "dummy", 0);
+  setenv("SDL_AUDIODRIVER", "dummy", 0);
+#endif
   try {
     test_signed_rle_decode();
     test_ega_4plane_decode();

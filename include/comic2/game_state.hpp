@@ -158,6 +158,7 @@ struct RoomEventAnchorState {
   std::int16_t y = 0;
   std::int16_t velocity_x = 0;
   std::int16_t velocity_y = 0;
+  std::uint16_t descriptor_ptr = 0;
 
   bool operator==(const RoomEventAnchorState &) const = default;
 };
@@ -166,6 +167,7 @@ struct RoomEventScriptState {
   bool loaded = false;
   std::vector<std::uint8_t> raw_script_bytes;
   std::vector<std::uint8_t> raw_trigger_bytes;
+  std::vector<std::uint8_t> decoded_script_bytes;
 
   bool operator==(const RoomEventScriptState &) const = default;
 };
@@ -211,7 +213,11 @@ struct UiState {
   std::uint8_t awaited_key = 0;
   std::string modal_prompt;
   std::string pending_event_message;
+  std::uint8_t modal_width_cells = 0;
+  std::uint8_t modal_height_cells = 0;
+  std::vector<std::string> modal_lines;
   bool room_event_consumed = false;
+  bool room_event_modal_active = false;
   bool modal_confirmed = false;
   bool modal_game_over = false;
   bool game_over = false;
@@ -230,6 +236,7 @@ struct RuntimeState {
   std::array<std::uint16_t, 2> tile_hazard_bounds{0, 0};
   std::vector<Ega4PlaneImage> level_tileset;
   std::vector<MaskedSpriteRecord> level_sprites;
+  std::vector<std::uint8_t> level_script_bytes;
   std::vector<std::uint8_t> room_resource_bytes;
   std::vector<std::uint8_t> level_metadata_bytes;
   FrpakCatalog frpak_catalog;
@@ -260,6 +267,10 @@ struct RuntimeState {
   RoomTransitionState transition_state;
   RoomEventAnchorState room_event_anchor;
   RoomEventScriptState room_event_script;
+  std::uint8_t story_script_progress = 0;
+  std::uint16_t script_dialog_step = 0;
+  std::uint16_t last_interacted_descriptor = 0;
+  std::uint16_t triggered_event_descriptor = 0;
 
   std::vector<MappedObject12> mapped_objects;
   std::vector<ActiveEntity8> active_entities;
