@@ -195,21 +195,110 @@ std::uint8_t bcd_decrement(std::uint8_t value) {
   return static_cast<std::uint8_t>(value - 0x10U);
 }
 
+void ui_draw_framed_text_box_and_text(EgaPlanarSurface &surface,
+                                      const std::vector<std::string> &lines,
+                                      std::uint8_t width_cells,
+                                      std::uint8_t height_cells,
+                                      std::uint8_t border_color,
+                                      std::uint8_t text_color) {
+  if (lines.empty()) {
+    return;
+  }
+
+  const auto longest_it =
+      std::max_element(lines.begin(), lines.end(),
+                       [](const std::string &a, const std::string &b) {
+                         return a.size() < b.size();
+                       });
+  const std::size_t max_line_len =
+      longest_it != lines.end() ? longest_it->size() : 0U;
+
+  std::size_t inner_w = std::clamp<std::size_t>(max_line_len, 1U, 38U);
+  std::size_t inner_h = std::clamp<std::size_t>(lines.size(), 1U, 23U);
+  if (width_cells >= 3U && height_cells >= 3U && width_cells <= 40U &&
+      height_cells <= 25U &&
+      static_cast<std::size_t>(height_cells - 2U) == lines.size() &&
+      static_cast<std::size_t>(width_cells - 2U) >= max_line_len) {
+    inner_w = static_cast<std::size_t>(width_cells - 2U);
+    inner_h = static_cast<std::size_t>(height_cells - 2U);
+  }
+
+  const std::size_t w_cells = inner_w + 2U;
+  const std::size_t h_cells = inner_h + 2U;
+  const std::size_t box_w_px = w_cells * 8U;
+  const std::size_t box_h_px = h_cells * 8U;
+
+  // Authentic DOS centering formula from ui_draw_window_box (1000:4206):
+  const std::int32_t x0 =
+      (box_w_px <= 0xD0U)
+          ? static_cast<std::int32_t>((((0xD0U - box_w_px) >> 1U) & ~7U) + 8U)
+          : 0;
+  const std::int32_t y0 =
+      (box_h_px <= 0xA0U)
+          ? static_cast<std::int32_t>((((0xA0U - box_h_px) >> 1U) & ~7U) + 8U)
+          : 0;
+
+  draw_rect(surface, static_cast<std::size_t>(x0), static_cast<std::size_t>(y0),
+            box_w_px, box_h_px, 0x00U);
+
+  // Top border row: '"' (0x22), '#' (0x23) * inner_w, '$' (0x24)
+  blit_char(surface, x0, y0, '"', border_color);
+  for (std::size_t col = 0U; col < inner_w; ++col) {
+    blit_char(surface, x0 + static_cast<std::int32_t>((col + 1U) * 8U), y0, '#',
+              border_color);
+  }
+  blit_char(surface, x0 + static_cast<std::int32_t>((inner_w + 1U) * 8U), y0,
+            '$', border_color);
+
+  // Interior text rows: '%' (0x25), text chars, '&' (0x26)
+  for (std::size_t row = 0U; row < inner_h; ++row) {
+    const std::int32_t y = y0 + static_cast<std::int32_t>((row + 1U) * 8U);
+    blit_char(surface, x0, y, '%', border_color);
+    for (std::size_t col = 0U; col < inner_w; ++col) {
+      const char ch = (row < lines.size() && col < lines[row].size())
+                          ? lines[row][col]
+                          : ' ';
+      blit_char(surface, x0 + static_cast<std::int32_t>((col + 1U) * 8U), y, ch,
+                text_color);
+    }
+    blit_char(surface, x0 + static_cast<std::int32_t>((inner_w + 1U) * 8U), y,
+              '&', border_color);
+  }
+
+  // Bottom border row: ':' (0x3A), ';' (0x3B) * inner_w, '<' (0x3C)
+  const std::int32_t bottom_y =
+      y0 + static_cast<std::int32_t>((inner_h + 1U) * 8U);
+  blit_char(surface, x0, bottom_y, ':', border_color);
+  for (std::size_t col = 0U; col < inner_w; ++col) {
+    blit_char(surface, x0 + static_cast<std::int32_t>((col + 1U) * 8U),
+              bottom_y, ';', border_color);
+  }
+  blit_char(surface, x0 + static_cast<std::int32_t>((inner_w + 1U) * 8U),
+            bottom_y, '<', border_color);
+}
+
 void ui_render_modal_prompt(EgaPlanarSurface &surface,
                             const RuntimeState &state) {
   if (!state.ui.modal_active || state.ui.modal_prompt.empty()) {
     return;
   }
 
-  draw_rect(surface, 48, 72, 224, 56, 0x04);
-  draw_rect(surface, 56, 80, 208, 40, 0x0F);
-  draw_rect(surface, 64, 92, 192, 8, 0x0E);
-
-  if (state.ui.modal_game_over) {
-    draw_rect(surface, 64, 104, 192, 8, 0x0C);
-  } else {
-    draw_rect(surface, 64, 104, 192, 8, 0x0E);
+  std::vector<std::string> lines;
+  std::size_t start = 0U;
+  while (start <= state.ui.modal_prompt.size()) {
+    const std::size_t nl = state.ui.modal_prompt.find('\n', start);
+    if (nl == std::string::npos) {
+      lines.push_back(state.ui.modal_prompt.substr(start));
+      break;
+    }
+    lines.push_back(state.ui.modal_prompt.substr(start, nl - start));
+    start = nl + 1U;
   }
+
+  const std::uint8_t text_color = state.ui.modal_game_over ? 0x0CU : 0x07U;
+  ui_draw_framed_text_box_and_text(surface, lines, state.ui.modal_width_cells,
+                                   state.ui.modal_height_cells, 0x09U,
+                                   text_color);
 }
 
 void hud_render_overlay(EgaPlanarSurface &surface, const RuntimeState &state) {
@@ -581,9 +670,14 @@ bool transition_game_lifecycle(RuntimeState &state,
       load_room_tilemap_from_asset_root(
           state, state.assets_root, state.current_level, state.current_room);
     }
-    if (state.ui.modal_prompt == "Room Event Triggered") {
+    if (state.ui.modal_prompt == "Room Event Triggered" ||
+        state.ui.room_event_modal_active) {
       state.ui.modal_active = false;
       state.ui.modal_prompt.clear();
+      state.ui.modal_lines.clear();
+      state.ui.modal_width_cells = 0;
+      state.ui.modal_height_cells = 0;
+      state.ui.room_event_modal_active = false;
       state.transition_state.player_frozen = false;
     }
     state.flags.room_event_triggered = false;
@@ -595,10 +689,12 @@ bool transition_game_lifecycle(RuntimeState &state,
       state.ui.modal_active = true;
       state.ui.modal_prompt = state.ui.pending_event_message;
       state.ui.pending_event_message.clear();
+      state.ui.room_event_modal_active = true;
       state.transition_state.player_frozen = true;
     } else if (!state.ui.modal_active || state.ui.modal_prompt.empty()) {
       state.ui.modal_active = true;
       state.ui.modal_prompt = "Room Event Triggered";
+      state.ui.room_event_modal_active = true;
       state.transition_state.player_frozen = true;
     }
     state.flags.room_event_triggered = false;
@@ -670,7 +766,7 @@ bool update_game_lifecycle(RuntimeState &state, const InputState &input,
 
   case GameLifecycleState::Gameplay: {
     auto should_transition_to_save = [](const RuntimeState &s) {
-      return s.flags.room_event_triggered ||
+      return s.flags.room_event_triggered || s.ui.room_event_modal_active ||
              s.ui.pending_event_message == "Room Event Triggered" ||
              (s.ui.modal_active && s.ui.modal_prompt == "Room Event Triggered");
     };

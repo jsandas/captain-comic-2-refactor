@@ -17,6 +17,11 @@ void handle_distance_interaction(RuntimeState &state);
 bool check_comic_near_room_event_anchor(const RuntimeState &state);
 void update_room_event_anchor_motion(RuntimeState &state);
 void update_room_event_anchor_sprite(RuntimeState &state);
+std::optional<std::size_t>
+resolve_interaction_script_message_index(RuntimeState &state,
+                                         std::uint16_t descriptor_ptr);
+bool ent_process_interaction_script_and_queue_message(
+    RuntimeState &state, std::uint16_t descriptor_ptr);
 void handle_tile_hazard(RuntimeState &state);
 void handle_player_special_state(RuntimeState &state);
 void reset_player_respawn_state(RuntimeState &state);

@@ -163,6 +163,10 @@ std::array<std::uint8_t, 8> get_font_glyph_8x8(char c);
 // Blits an 8x8 character glyph onto the surface at pixel coords (x, y).
 void blit_font_glyph(EgaPlanarSurface &surface, std::int32_t x, std::int32_t y,
                      char c, std::uint8_t color_index);
+inline void blit_char(EgaPlanarSurface &surface, std::int32_t x, std::int32_t y,
+                      char c, std::uint8_t color_index) {
+  blit_font_glyph(surface, x, y, c, color_index);
+}
 
 // Blits a null-terminated string of 8x8 glyphs, advancing x by 8 per char.
 void blit_string(EgaPlanarSurface &surface, std::int32_t x, std::int32_t y,

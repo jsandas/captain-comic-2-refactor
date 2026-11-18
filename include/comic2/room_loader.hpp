@@ -74,6 +74,21 @@ decode_level_script_payload(std::span<const std::uint8_t> payload);
 std::optional<std::uint16_t>
 level_script_offset(std::span<const std::uint8_t> decoded, std::size_t index);
 
+// Decoded FR###.3 message record ([width_cells][height_cells][inner text
+// rows]).
+struct ScriptDialogMessage {
+  std::uint8_t width_cells = 0;
+  std::uint8_t height_cells = 0;
+  std::vector<std::string> lines;
+  std::string text;
+
+  bool operator==(const ScriptDialogMessage &) const = default;
+};
+
+std::optional<ScriptDialogMessage>
+extract_level_script_message(std::span<const std::uint8_t> decoded_script,
+                             std::size_t message_index);
+
 // Per-level tile-ID trigger range (load_room_effect_script_and_trigger_ranges,
 // 1000:1990). Layout: [min_tile][max_tile][max-min+1 spawn-type bytes].
 // Three tables exist per level: touch (byte_256AA), projectile impact

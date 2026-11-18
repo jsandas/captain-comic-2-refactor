@@ -2492,6 +2492,58 @@ void test_gate_15c_end_to_end_game_flow() {
          "Gate 15-C: state must return smoothly to Menu");
 }
 
+void test_gate_16b_scripted_dialog_and_text_rendering() {
+  const auto original_root = find_reference_original_assets_root();
+  if (original_root.empty()) {
+    return;
+  }
+
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  expect(comic2::load_room_tilemap_from_asset_root(state, original_root, 1, 1),
+         "Gate 16-B: Level 1 Room 1 must load with FR001.3 script");
+  expect(state.level_script_bytes.size() == comic2::kLevelScriptBlockSize,
+         "Gate 16-B: decoded FR001.3 script must be cached in RuntimeState");
+
+  state.player.x = 64;
+  state.player.y = 64;
+  state.mapped_objects.clear();
+  state.mapped_objects.push_back(comic2::MappedObject12{
+      .room_x = 1,
+      .room_y = 1,
+      .descriptor_ptr = 0x8976,
+      .state_flags = 0x0002,
+      .world_x = 64,
+      .world_y = 64,
+  });
+
+  comic2::handle_input_fallback(state);
+  expect(state.ui.modal_active,
+         "Gate 16-B: interacting with scripted NPC must activate modal box");
+  expect(state.ui.modal_prompt.find("THANK YOU FOR ANSWERING ") == 0,
+         "Gate 16-B: FR001.3 offset 0 must resolve to decrypted dialog text");
+
+  comic2::EgaPlanarSurface surface(320, 200);
+  surface.clear(0x00);
+  comic2::ui_render_modal_prompt(surface, state);
+
+  bool saw_border_color = false;
+  bool saw_text_color = false;
+  for (std::size_t y = 0; y < 200; ++y) {
+    for (std::size_t x = 0; x < 320; ++x) {
+      const auto color = read_gate11_color(surface, x, y);
+      if (color == 0x09U) {
+        saw_border_color = true;
+      } else if (color == 0x07U) {
+        saw_text_color = true;
+      }
+    }
+  }
+  expect(saw_border_color,
+         "Gate 16-B: modal box must render 8x8 border glyphs in color 0x09");
+  expect(saw_text_color,
+         "Gate 16-B: modal box must render 8x8 text glyphs in color 0x07");
+}
+
 } // namespace
 
 void run_integration_gate_tests() {
@@ -2557,4 +2609,7 @@ void run_integration_gate_tests() {
 
   // Gate 15-C: End-to-End Game Flow Lifecycle.
   test_gate_15c_end_to_end_game_flow();
+
+  // Gate 16-B: Scripted Dialog & Text Rendering.
+  test_gate_16b_scripted_dialog_and_text_rendering();
 }

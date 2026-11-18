@@ -223,6 +223,7 @@ void detect_proximity_room_event_trigger(RuntimeState &state) {
         (object_right > player_left) && (object_left < player_right) &&
         (object_bottom > player_top) && (object_top < player_bottom);
     if (overlaps) {
+      state.triggered_event_descriptor = mapped_object.descriptor_ptr;
       state.flags.room_event_triggered = true;
       return;
     }
@@ -245,7 +246,11 @@ void queue_room_event_message(RuntimeState &state) {
   }
 
   state.ui.room_event_consumed = true;
-  state.ui.pending_event_message = "Room Event Triggered";
+  state.ui.room_event_modal_active = true;
+  if (!ent_process_interaction_script_and_queue_message(
+          state, state.triggered_event_descriptor)) {
+    state.ui.pending_event_message = "Room Event Triggered";
+  }
 }
 
 std::string interaction_message_for_descriptor(std::uint16_t descriptor_ptr) {
@@ -290,8 +295,11 @@ void handle_mapped_object_interaction(RuntimeState &state) {
         (object_bottom > player_top) && (object_top < player_bottom);
     if (overlaps) {
       if (state.ui.pending_event_message.empty()) {
-        state.ui.pending_event_message =
-            interaction_message_for_descriptor(mapped_object.descriptor_ptr);
+        if (!ent_process_interaction_script_and_queue_message(
+                state, mapped_object.descriptor_ptr)) {
+          state.ui.pending_event_message =
+              interaction_message_for_descriptor(mapped_object.descriptor_ptr);
+        }
       }
       return;
     }
@@ -390,12 +398,16 @@ void reset_player_state_for_level_entry(RuntimeState &state) {
   state.pending_room_transition.reset();
   state.ui.modal_active = false;
   state.ui.modal_prompt.clear();
+  state.ui.modal_lines.clear();
+  state.ui.modal_width_cells = 0;
+  state.ui.modal_height_cells = 0;
   state.ui.modal_confirmed = false;
   state.ui.modal_game_over = false;
   state.ui.game_over = false;
   state.ui.level_complete_modal = false;
   state.ui.pending_event_message.clear();
   state.ui.room_event_consumed = false;
+  state.ui.room_event_modal_active = false;
   state.level_complete = false;
   state.level_completion_gems_required = 0;
   state.projectiles.clear();
@@ -436,10 +448,14 @@ void reset_player_respawn_state(RuntimeState &state) {
   state.transition_state.player_frozen = false;
   state.ui.modal_active = false;
   state.ui.modal_prompt.clear();
+  state.ui.modal_lines.clear();
+  state.ui.modal_width_cells = 0;
+  state.ui.modal_height_cells = 0;
   state.ui.modal_game_over = false;
   state.ui.game_over = false;
   state.ui.level_complete_modal = false;
   state.ui.pending_event_message.clear();
+  state.ui.room_event_modal_active = false;
   state.level_complete = false;
   state.level_completion_gems_required = 0;
   state.flags.player_special_state_active = false;
@@ -657,6 +673,200 @@ void update_room_event_anchor_sprite(RuntimeState &state) {
     const std::int16_t next_y = static_cast<std::int16_t>(anchor.y - 8);
     anchor.y = std::max(lower, std::min(upper, next_y));
   }
+}
+
+std::optional<std::size_t>
+resolve_interaction_script_message_index(RuntimeState &state,
+                                         std::uint16_t descriptor_ptr) {
+  if (state.last_interacted_descriptor != descriptor_ptr) {
+    state.last_interacted_descriptor = descriptor_ptr;
+    state.script_dialog_step = 0;
+  }
+
+  switch (descriptor_ptr) {
+  case 0x8976:
+    if (state.story_script_progress == 0) {
+      if (state.script_dialog_step == 0) {
+        state.script_dialog_step = 1;
+        return 0U;
+      }
+      if (state.script_dialog_step == 1) {
+        state.story_script_progress = 1;
+        state.script_dialog_step = 2;
+        return 9U;
+      }
+      return 1U;
+    }
+    return 1U;
+  case 0x8ABE:
+  case 0x8ACA:
+  case 0x8AD6:
+    if (state.story_script_progress < 2) {
+      return 2U;
+    }
+    if (!state.player.corkscrew_equipped &&
+        !state.progression.corkscrew_acquired) {
+      state.player.corkscrew_equipped = true;
+      state.progression.corkscrew_acquired = true;
+      return 6U;
+    }
+    return 7U;
+  case 0x8C50:
+    if (state.story_script_progress >= 2) {
+      return 8U;
+    }
+    if (state.script_dialog_step == 0) {
+      state.script_dialog_step = 1;
+      return 3U;
+    }
+    if (state.script_dialog_step == 1) {
+      state.script_dialog_step = 2;
+      return 4U;
+    }
+    state.story_script_progress = 2;
+    state.script_dialog_step = 3;
+    return 5U;
+  case 0x921B:
+    if (state.story_script_progress >= 3) {
+      return 5U;
+    }
+    if (state.script_dialog_step == 0) {
+      state.script_dialog_step = 1;
+      return 0U;
+    }
+    if (state.script_dialog_step == 1) {
+      state.script_dialog_step = 2;
+      return 1U;
+    }
+    if (state.script_dialog_step == 2) {
+      state.script_dialog_step = 3;
+      return 2U;
+    }
+    if (state.script_dialog_step == 3) {
+      state.script_dialog_step = 4;
+      return 3U;
+    }
+    state.story_script_progress = 3;
+    state.script_dialog_step = 5;
+    return 4U;
+  case 0x930A:
+    return 0U;
+  case 0x980D:
+    if (state.story_script_progress < 4) {
+      state.story_script_progress = 4;
+      return 0U;
+    }
+    if (state.story_script_progress < 5) {
+      return 1U;
+    }
+    return 2U;
+  case 0x9B42:
+    return 0U;
+  case 0x9B80:
+    return 1U;
+  case 0x9B98:
+    return 2U;
+  case 0x9B8C:
+    return 3U;
+  case 0x9BA6:
+    return 4U;
+  case 0xB37F:
+    return 5U;
+  case 0xB38D:
+    return 6U;
+  case 0xB399:
+    return 7U;
+  case 0xB3A5:
+    return 8U;
+  case 0xB98E:
+    return 9U;
+  case 0xC75C:
+    return 0U;
+  case 0xC8EA:
+    return 1U;
+  case 0xCAA6:
+    return 2U;
+  case 0xD227:
+    if (state.script_dialog_step == 0) {
+      state.script_dialog_step = 1;
+      return 3U;
+    }
+    state.script_dialog_step = 2;
+    return 4U;
+  case 0xD2DD:
+    return 5U;
+  case 0xD2E9:
+    return 6U;
+  case 0xD393:
+    return 7U;
+  case 0xD3A1:
+    return 8U;
+  case 0xD3AD:
+    return 9U;
+  case 0xD59D:
+    return 10U;
+  case 0xD5C3:
+    return 11U;
+  case 0x8507:
+    return 1U;
+  case 0x8513:
+    return 2U;
+  case 0x851F:
+    return 3U;
+  case 0x8537:
+    if (state.script_dialog_step == 0) {
+      state.script_dialog_step = 1;
+      return 4U;
+    }
+    state.script_dialog_step = 2;
+    return 5U;
+  case 0x931A:
+    if (state.script_dialog_step == 0) {
+      state.script_dialog_step = 1;
+      return 6U;
+    }
+    state.script_dialog_step = 2;
+    return 7U;
+  default:
+    if (descriptor_ptr < 32U) {
+      return static_cast<std::size_t>(descriptor_ptr);
+    }
+    return 0U;
+  }
+}
+
+bool ent_process_interaction_script_and_queue_message(
+    RuntimeState &state, std::uint16_t descriptor_ptr) {
+  const auto &script_bytes = !state.level_script_bytes.empty()
+                                 ? state.level_script_bytes
+                                 : state.room_event_script.decoded_script_bytes;
+  if (script_bytes.empty()) {
+    state.ui.modal_width_cells = 0;
+    state.ui.modal_height_cells = 0;
+    state.ui.modal_lines.clear();
+    return false;
+  }
+
+  const auto msg_index =
+      resolve_interaction_script_message_index(state, descriptor_ptr);
+  if (!msg_index.has_value()) {
+    return false;
+  }
+
+  const auto msg = extract_level_script_message(
+      std::span<const std::uint8_t>(script_bytes), *msg_index);
+  if (!msg.has_value() || msg->text.empty()) {
+    state.ui.modal_width_cells = 0;
+    state.ui.modal_height_cells = 0;
+    state.ui.modal_lines.clear();
+    return false;
+  }
+
+  state.ui.pending_event_message = msg->text;
+  state.ui.modal_width_cells = msg->width_cells;
+  state.ui.modal_height_cells = msg->height_cells;
+  state.ui.modal_lines = msg->lines;
+  return true;
 }
 
 void handle_tile_hazard(RuntimeState &state) {
@@ -948,6 +1158,7 @@ void handle_input_fallback(RuntimeState &state) {
   update_room_event_anchor_motion(state);
   update_room_event_anchor_sprite(state);
   if (check_comic_near_room_event_anchor(state)) {
+    state.triggered_event_descriptor = state.room_event_anchor.descriptor_ptr;
     state.flags.room_event_triggered = true;
   }
 
@@ -962,7 +1173,8 @@ void handle_input_fallback(RuntimeState &state) {
   show_pending_room_event_message(state);
   if (state.ui.modal_active && !state.ui.modal_prompt.empty() &&
       state.ui.pending_event_message.empty() &&
-      state.ui.modal_prompt == "Room Event Triggered") {
+      (state.ui.modal_prompt == "Room Event Triggered" ||
+       state.ui.room_event_modal_active)) {
     return;
   }
 
