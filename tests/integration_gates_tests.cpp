@@ -2544,6 +2544,96 @@ void test_gate_16b_scripted_dialog_and_text_rendering() {
          "Gate 16-B: modal box must render 8x8 text glyphs in color 0x07");
 }
 
+void test_gate_16c_hud_mode_icons_and_interactive_menu_persistence() {
+  const auto temp_dir =
+      std::filesystem::temp_directory_path() / "test_comic2_gate_16c";
+  std::filesystem::remove_all(temp_dir);
+  std::filesystem::create_directories(temp_dir);
+
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  state.ui.persistence_dir = temp_dir;
+
+  const auto original_root = find_reference_original_assets_root();
+  if (!original_root.empty()) {
+    comic2::load_initial_bootstrap_resources(state, original_root);
+  } else {
+    state.bezel_frame = make_gate11_bezel_with_sentinel(0x05U, 0x00U);
+  }
+
+  // 1. Collect all 4 equipment items and verify they render on the FRPAK.001
+  // bezel right-hand panel via hud_update_mode_icons / hud_render_overlay
+  state.player.corkscrew_equipped = true;
+  state.player.boots_equipped = true;
+  state.player.lantern_equipped = true;
+  state.player.wand_equipped = true;
+
+  comic2::EgaPlanarSurface surface(320, 200);
+  surface.clear(0x00);
+  comic2::hud_update_mode_icons(surface, state);
+
+  for (std::size_t row_y : {0x5EU, 0x77U, 0x90U, 0xA9U}) {
+    bool found_icon_pixel = false;
+    for (std::size_t y = row_y; y < row_y + 16U && !found_icon_pixel; ++y) {
+      for (std::size_t x = 288U; x < 304U && !found_icon_pixel; ++x) {
+        if (read_gate11_color(surface, x, y) != 0x00U) {
+          found_icon_pixel = true;
+        }
+      }
+    }
+    expect(found_icon_pixel,
+           "Gate 16-C: collected equipment icon must render on bezel panel");
+  }
+
+  // 2. Interactive player slot creation, key rebinding, and Save lifecycle
+  // persistence of GAME.000..005, FR.CFG, and KEYS.DEF
+  expect(comic2::ui_enter_new_player(state, "COMIC"),
+         "Gate 16-C: ui_enter_new_player must succeed");
+  comic2::ui_begin_key_rebinding(state);
+  for (std::uint8_t sc :
+       {std::uint8_t(0x1E), std::uint8_t(0x20), std::uint8_t(0x11),
+        std::uint8_t(0x1F), std::uint8_t(0x39), std::uint8_t(0x2A)}) {
+    expect(comic2::ui_submit_key_rebinding_scancode(state, sc),
+           "Gate 16-C: key rebinding step must succeed");
+  }
+
+  state.ui.lifecycle_state = comic2::GameLifecycleState::Gameplay;
+  state.ui.active_player_slot = 2U;
+  state.player.x = 352;
+  state.player.y = 96;
+  state.player.score = 6543;
+  state.flags.room_event_triggered = true;
+  expect(comic2::update_game_lifecycle(state, comic2::InputState{}),
+         "Gate 16-C: Gameplay -> Save lifecycle transition must succeed");
+  expect(state.ui.lifecycle_state == comic2::GameLifecycleState::Save,
+         "Gate 16-C: state must be Save");
+  expect(std::filesystem::exists(temp_dir / "GAME.002") &&
+             std::filesystem::exists(temp_dir / "FR.CFG") &&
+             std::filesystem::exists(temp_dir / "KEYS.DEF"),
+         "Gate 16-C: Save lifecycle must persist GAME.002, FR.CFG, and "
+         "KEYS.DEF");
+
+  // 3. Reload from Menu lifecycle into a fresh RuntimeState
+  comic2::RuntimeState reloaded = comic2::make_default_runtime_state();
+  reloaded.ui.persistence_dir = temp_dir;
+  comic2::transition_game_lifecycle(reloaded,
+                                    comic2::GameLifecycleState::Menu);
+  reloaded.ui.selected_option_index = 2U;
+  expect(comic2::update_game_lifecycle(
+             reloaded, comic2::InputState{.fire_pressed = true}),
+         "Gate 16-C: Menu slot 2 selection must transition to Gameplay");
+  expect(reloaded.player.score == 6543 && reloaded.player.x == 352 &&
+             reloaded.player.boots_equipped &&
+             reloaded.player.lantern_equipped &&
+             reloaded.player.corkscrew_equipped &&
+             reloaded.player.wand_equipped &&
+             reloaded.dos_config.player_names[0] == "COMIC" &&
+             reloaded.key_bindings.left == 0x1EU &&
+             reloaded.key_bindings.fire == 0x2AU,
+         "Gate 16-C: Menu reload must restore GAME.002, FR.CFG, and KEYS.DEF");
+
+  std::filesystem::remove_all(temp_dir);
+}
+
 } // namespace
 
 void run_integration_gate_tests() {
@@ -2612,4 +2702,7 @@ void run_integration_gate_tests() {
 
   // Gate 16-B: Scripted Dialog & Text Rendering.
   test_gate_16b_scripted_dialog_and_text_rendering();
+
+  // Gate 16-C: HUD Mode Icons & Interactive Menu Persistence.
+  test_gate_16c_hud_mode_icons_and_interactive_menu_persistence();
 }

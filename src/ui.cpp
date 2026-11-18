@@ -12,11 +12,120 @@
 
 #include "comic2/bootstrap.hpp"
 #include "comic2/dispatcher.hpp"
+#include "comic2/input_handler.hpp"
 #include "comic2/persistence.hpp"
 #include "comic2/room_loader.hpp"
 
 namespace comic2 {
 namespace {
+
+// Authentic 16x16 4-plane HUD mode icons from comic2_data.asm:
+// - Corkscrew / Mode 0 (0x128FA..0x12979, seg_5E:0x9E04)
+// - Boots / Mode 1     (0x129A0..0x12A1F, seg_5E:0x9EAA)
+// - Lantern / Mode 2   (0x12A46..0x12AC5, seg_5E:0x9F50)
+// - Wand / Mode 3      (0x12AEC..0x12B6B, seg_5E:0x9FF6)
+constexpr std::array<std::uint8_t, 128> kHudCorkscrewIconPlanes = {
+    // Plane 0
+    0x03, 0xc0, 0x07, 0x00, 0x06, 0x00, 0x06, 0x00, 0x03, 0xc0, 0x00, 0x00,
+    0x03, 0xc0, 0x03, 0xc0, 0x03, 0x40, 0x03, 0x40, 0x03, 0xc0, 0x07, 0xe0,
+    0x06, 0x60, 0x06, 0x60, 0x00, 0x00, 0x00, 0x00,
+    // Plane 1
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x01, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x80,
+    0x0c, 0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // Plane 2
+    0x00, 0x00, 0x00, 0xe0, 0x01, 0xe0, 0x01, 0xe0, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x04, 0x20, 0x0c, 0xb0, 0x0c, 0xb0, 0x0c, 0x30, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x06, 0x60, 0x0e, 0x70,
+    // Plane 3
+    0x03, 0xc0, 0x07, 0x20, 0x06, 0x20, 0x06, 0x20, 0x03, 0xc0, 0x01, 0x80,
+    0x00, 0x00, 0x06, 0x60, 0x0f, 0xf0, 0x0f, 0xf0, 0x0f, 0xf0, 0x07, 0xe0,
+    0x06, 0x60, 0x06, 0x60, 0x06, 0x60, 0x0e, 0x70,
+};
+
+constexpr std::array<std::uint8_t, 128> kHudBootsIconPlanes = {
+    // Plane 0
+    0x00, 0x00, 0x07, 0x00, 0x01, 0xc0, 0x00, 0x70, 0x00, 0x38, 0x00, 0x18,
+    0x00, 0x0c, 0x00, 0x04, 0x00, 0x06, 0x00, 0x02, 0x00, 0x02, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // Plane 1
+    0x00, 0x00, 0x07, 0x00, 0x01, 0xc0, 0x00, 0x70, 0x00, 0x38, 0x00, 0x18,
+    0x00, 0x0c, 0x00, 0x04, 0x00, 0x06, 0x00, 0x02, 0x00, 0x02, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // Plane 2
+    0x00, 0x00, 0x07, 0x00, 0x01, 0xc0, 0x00, 0x70, 0x00, 0x38, 0x00, 0x78,
+    0x00, 0xec, 0x01, 0xc4, 0x03, 0x86, 0x07, 0x02, 0x0e, 0x02, 0x1c, 0x00,
+    0x38, 0x00, 0x70, 0x00, 0x60, 0x00, 0x00, 0x00,
+    // Plane 3
+    0x00, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00, 0x10, 0x00, 0x08, 0x00, 0x68,
+    0x00, 0xc4, 0x01, 0x84, 0x03, 0x02, 0x06, 0x02, 0x0c, 0x02, 0x18, 0x00,
+    0x30, 0x00, 0x60, 0x00, 0x40, 0x00, 0x00, 0x00,
+};
+
+constexpr std::array<std::uint8_t, 128> kHudLanternIconPlanes = {
+    // Plane 0
+    0x00, 0x00, 0x00, 0x00, 0x12, 0x08, 0x0f, 0x7c, 0x5f, 0x7e, 0xdf, 0x7f,
+    0xdf, 0x7f, 0xdf, 0x7f, 0x5f, 0x7e, 0x1f, 0x7c, 0x1f, 0x7c, 0x0f, 0x3c,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // Plane 1
+    0x00, 0x00, 0x00, 0x00, 0x12, 0x08, 0x0f, 0x7c, 0x1f, 0x7c, 0x1f, 0x7c,
+    0x1f, 0x7c, 0x1f, 0x7c, 0x1f, 0x7c, 0x1f, 0x7c, 0x1f, 0x7c, 0x0f, 0x3c,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // Plane 2
+    0x07, 0xe0, 0x0f, 0xf0, 0x0c, 0x30, 0x1e, 0x38, 0x0f, 0x7c, 0x1f, 0x7c,
+    0x1f, 0x7c, 0x1f, 0x7c, 0x1f, 0x7c, 0x1f, 0x7c, 0x1f, 0x7c, 0x0f, 0x3c,
+    0x0c, 0x30, 0x0c, 0x30, 0x1e, 0x78, 0x07, 0xe0,
+    // Plane 3
+    0x07, 0xe0, 0x00, 0x10, 0x04, 0x10, 0x16, 0x58, 0x33, 0x8c, 0x61, 0x86,
+    0xa1, 0x85, 0x61, 0x86, 0x21, 0x84, 0x21, 0x84, 0x21, 0x84, 0x21, 0x84,
+    0x31, 0xc4, 0x16, 0x58, 0x04, 0x10, 0x06, 0x18,
+};
+
+constexpr std::array<std::uint8_t, 128> kHudWandIconPlanes = {
+    // Plane 0
+    0x00, 0x00, 0x00, 0x0e, 0x00, 0x1e, 0x00, 0x3e, 0x00, 0x7c, 0x00, 0x78,
+    0x00, 0xf0, 0x01, 0xc0, 0x03, 0x80, 0x0f, 0x00, 0x1e, 0x00, 0x3e, 0x00,
+    0x3c, 0x00, 0x78, 0x00, 0x60, 0x00, 0x00, 0x00,
+    // Plane 1
+    0x00, 0x00, 0x00, 0x0e, 0x00, 0x1e, 0x00, 0x3e, 0x00, 0x3c, 0x00, 0x18,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // Plane 2
+    0x00, 0x00, 0x00, 0x0e, 0x00, 0x1e, 0x00, 0x3e, 0x00, 0x3c, 0x00, 0x18,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // Plane 3
+    0x00, 0x00, 0x00, 0x0a, 0x00, 0x14, 0x00, 0x2a, 0x00, 0x14, 0x00, 0x08,
+    0x00, 0x20, 0x00, 0x40, 0x00, 0x80, 0x01, 0x00, 0x04, 0x00, 0x0a, 0x00,
+    0x14, 0x00, 0x08, 0x00, 0x20, 0x00, 0x00, 0x00,
+};
+
+Ega4PlaneImage make_16x16_hud_icon_image(
+    const std::array<std::uint8_t, 128> &packed_planes) {
+  Ega4PlaneImage img{};
+  img.width_bytes = 2U;
+  img.height_rows = 16U;
+  img.row_span_bytes = 32U;
+  for (std::size_t p = 0; p < 4U; ++p) {
+    img.planes[p].assign(packed_planes.begin() + p * 32U,
+                         packed_planes.begin() + (p + 1U) * 32U);
+  }
+  return img;
+}
+
+Ega4PlaneImage make_8x15_mode_bar_image(bool selected) {
+  // Authentic 8x15 indicator sprite from comic2_data.asm (0x123BA / 0x123FA,
+  // seg_5E:0x98EA / 0x992A)
+  Ega4PlaneImage img{};
+  img.width_bytes = 1U;
+  img.height_rows = 15U;
+  img.row_span_bytes = 15U;
+  img.planes[0].assign(15U, 0x40U);
+  img.planes[1].assign(15U, 0x5FU);
+  img.planes[2].assign(15U, 0x40U);
+  img.planes[3].assign(15U, selected ? 0xBFU : 0xA0U);
+  return img;
+}
 
 void write_bcd_digit(EgaPlanarSurface &surface, std::size_t x, std::size_t y,
                      std::uint8_t value) {
@@ -121,7 +230,12 @@ bool should_draw_hud_overlay(const RuntimeState &state) {
          state.player.lives != 3 || state.ui.active_mode_mask != 0 ||
          state.ui.inventory_mask != 0 ||
          state.progression.mode_inventory_mask != 0 ||
-         state.ui.cinematic_frame != 0;
+         state.player.boots_equipped || state.player.lantern_equipped ||
+         state.player.corkscrew_equipped || state.player.wand_equipped ||
+         state.progression.boots_acquired ||
+         state.progression.lantern_acquired ||
+         state.progression.corkscrew_acquired ||
+         state.progression.wand_acquired || state.ui.cinematic_frame != 0;
 }
 
 bool can_blit_opaque_image(const EgaPlanarSurface &surface,
@@ -301,6 +415,75 @@ void ui_render_modal_prompt(EgaPlanarSurface &surface,
                                    text_color);
 }
 
+void hud_update_mode_icons(EgaPlanarSurface &surface,
+                           const RuntimeState &state) {
+  // Authentic Y positions from DS:0x9710 in comic2_standalone.asm
+  // (hud_draw_item_icon at 1000:3a17): 0x5E (94), 0x77 (119), 0x90 (144),
+  // 0xA9 (169).
+  // Blitted at x = 0x120 (288) on the right-hand FRPAK.001 bezel panel.
+  constexpr std::size_t kIconX = 0x120U; // 288
+  constexpr std::size_t kBarX = 280U;
+  constexpr std::array<std::size_t, 4> kRowY = {0x5EU, 0x77U, 0x90U, 0xA9U};
+
+  const bool corkscrew_collected =
+      state.player.corkscrew_equipped || state.progression.corkscrew_acquired ||
+      (state.ui.inventory_mask & 0x04U) != 0U ||
+      (state.progression.mode_inventory_mask & 0x04U) != 0U;
+  const bool boots_collected =
+      state.player.boots_equipped || state.progression.boots_acquired ||
+      (state.ui.inventory_mask & 0x01U) != 0U ||
+      (state.progression.mode_inventory_mask & 0x01U) != 0U;
+  const bool lantern_collected =
+      state.player.lantern_equipped || state.progression.lantern_acquired ||
+      (state.ui.inventory_mask & 0x02U) != 0U ||
+      (state.progression.mode_inventory_mask & 0x02U) != 0U;
+  const bool wand_collected =
+      state.player.wand_equipped || state.progression.wand_acquired ||
+      (state.ui.inventory_mask & 0x08U) != 0U ||
+      (state.progression.mode_inventory_mask & 0x08U) != 0U;
+
+  if (corkscrew_collected) {
+    const auto img = make_16x16_hud_icon_image(kHudCorkscrewIconPlanes);
+    if (can_blit_opaque_image(surface, kIconX, kRowY[0], img)) {
+      gfx_rle_blit_opaque_4plane(surface, kIconX, kRowY[0], img);
+    }
+  }
+  if (boots_collected) {
+    const auto img = make_16x16_hud_icon_image(kHudBootsIconPlanes);
+    if (can_blit_opaque_image(surface, kIconX, kRowY[1], img)) {
+      gfx_rle_blit_opaque_4plane(surface, kIconX, kRowY[1], img);
+    }
+  }
+  if (lantern_collected) {
+    const auto img = make_16x16_hud_icon_image(kHudLanternIconPlanes);
+    if (can_blit_opaque_image(surface, kIconX, kRowY[2], img)) {
+      gfx_rle_blit_opaque_4plane(surface, kIconX, kRowY[2], img);
+    }
+  }
+  if (wand_collected) {
+    const auto img = make_16x16_hud_icon_image(kHudWandIconPlanes);
+    if (can_blit_opaque_image(surface, kIconX, kRowY[3], img)) {
+      gfx_rle_blit_opaque_4plane(surface, kIconX, kRowY[3], img);
+    }
+  }
+
+  // Render active/inactive 8x15 mode indicator bars (seg_5E:0x98EA / 0x992A)
+  // when a mode selection mask or effect is active.
+  if (state.ui.active_mode_mask != 0U || state.player.active_mode_effect != 0U) {
+    const auto selected_bar = make_8x15_mode_bar_image(true);
+    const auto unselected_bar = make_8x15_mode_bar_image(false);
+    for (std::size_t row = 0; row < 4U; ++row) {
+      const bool row_selected =
+          ((state.ui.active_mode_mask & (1U << row)) != 0U) ||
+          (state.player.active_mode_effect == static_cast<std::uint8_t>(row + 1U));
+      const auto &bar = row_selected ? selected_bar : unselected_bar;
+      if (can_blit_opaque_image(surface, kBarX, kRowY[row], bar)) {
+        gfx_rle_blit_opaque_4plane(surface, kBarX, kRowY[row], bar);
+      }
+    }
+  }
+}
+
 void hud_render_overlay(EgaPlanarSurface &surface, const RuntimeState &state) {
   if (!should_draw_hud_overlay(state)) {
     return;
@@ -312,13 +495,13 @@ void hud_render_overlay(EgaPlanarSurface &surface, const RuntimeState &state) {
     constexpr std::int32_t kHudX = 258;
     constexpr std::uint8_t kHudColor = 0x0F; // bright white
 
-    // Shield energy bar (8 pips at y=0x5E=94)
+    // Shield energy bar (8 pips at y=0x5E=94, within x=258..273)
     {
       const auto pips = std::min<std::uint8_t>(8U, state.player.shield_power);
       for (std::uint8_t i = 0; i < 8U; ++i) {
         const std::uint8_t color = (i < pips) ? 0x0AU : 0x08U;
-        draw_rect_unaligned(surface, static_cast<std::size_t>(kHudX + i * 4),
-                            0x5EU, 3U, 6U, color);
+        draw_rect_unaligned(surface, static_cast<std::size_t>(kHudX + i * 2),
+                            0x5EU, 2U, 6U, color);
       }
     }
 
@@ -364,6 +547,7 @@ void hud_render_overlay(EgaPlanarSurface &surface, const RuntimeState &state) {
       blit_string(surface, kHudX + 8, 0x43, buf, kHudColor);
     }
 
+    hud_update_mode_icons(surface, state);
     return;
   }
 
@@ -389,26 +573,59 @@ void hud_render_overlay(EgaPlanarSurface &surface, const RuntimeState &state) {
   if ((state.ui.active_mode_mask & 0x08U) != 0U) {
     draw_rect(surface, 144, 188, 8, 8, 0x0C);
   }
-  if ((state.ui.inventory_mask & 0x01U) != 0U) {
+  if ((state.ui.inventory_mask & 0x01U) != 0U || state.player.boots_equipped ||
+      state.progression.boots_acquired) {
     draw_rect(surface, 152, 188, 8, 8, 0x0E);
   }
-  if ((state.ui.inventory_mask & 0x02U) != 0U) {
+  if ((state.ui.inventory_mask & 0x02U) != 0U || state.player.lantern_equipped ||
+      state.progression.lantern_acquired) {
     draw_rect(surface, 160, 188, 8, 8, 0x0C);
   }
   if (((state.ui.inventory_mask & 0x04U) != 0U) ||
-      state.progression.mode_inventory_mask != 0U) {
+      state.progression.mode_inventory_mask != 0U ||
+      state.player.corkscrew_equipped || state.player.wand_equipped ||
+      state.progression.corkscrew_acquired || state.progression.wand_acquired) {
     draw_rect(surface, 160, 188, 8, 8, 0x0C);
   }
+  hud_update_mode_icons(surface, state);
 }
 
 void ui_render_option_list(EgaPlanarSurface &surface,
                            const RuntimeState &state) {
-  draw_rect(surface, 40, 20, 240, 120, 0x04);
-  for (std::size_t i = 0; i < state.ui.option_labels.size(); ++i) {
+  draw_rect(surface, 40, 20, 240, 144, 0x04);
+  blit_string(surface, 48, 22, "CAPTAIN COMIC II", 0x0E);
+  blit_string(surface, 56, 32, "PLAYER         AWARDS", 0x07);
+
+  for (std::size_t i = 0; i < state.ui.option_labels.size() && i < 8U; ++i) {
     const bool is_selected = i == state.ui.selected_option_index;
-    const std::uint8_t color = is_selected ? 0x0F : 0x07;
-    draw_rect(surface, 56, 36 + static_cast<std::size_t>(i) * 20, 180, 10,
-              color);
+    const std::uint8_t color = is_selected ? 0x0AU : 0x07U;
+    const std::int32_t row_y = static_cast<std::int32_t>(44U + i * 14U);
+
+    if (is_selected) {
+      blit_char(surface, 48, row_y, '+', 0x0FU);
+    }
+
+    const std::string &label = state.ui.option_labels[i];
+    if (!label.empty()) {
+      blit_string(surface, 64, row_y, label.c_str(), color);
+    }
+
+    // Render high score / award entries from ds_high_scores_buffer (FR.CFG
+    // records[4..8] / player_awards[0..4]) for player slot rows 0..4
+    if (i < 5U) {
+      const std::uint16_t awards =
+          state.dos_config.player_awards[i] != 0U
+              ? state.dos_config.player_awards[i]
+              : (!state.dos_config.player_names[i].empty()
+                     ? state.dos_config.records[4U + i]
+                     : 0U);
+      if (awards > 0U || !state.dos_config.player_names[i].empty()) {
+        char award_buf[8];
+        std::snprintf(award_buf, sizeof(award_buf), "%02u",
+                      static_cast<unsigned>(awards % 100U));
+        blit_string(surface, 200, row_y, award_buf, 0x0EU);
+      }
+    }
   }
 }
 
@@ -418,6 +635,11 @@ void ui_render_game_selection_panel(EgaPlanarSurface &surface,
       can_blit_opaque_image(surface, 0, 0, *state.bezel_frame)) {
     gfx_rle_blit_opaque_4plane(surface, 0, 0, *state.bezel_frame);
   }
+
+  static constexpr std::array<const char *, 6> kWorldNames = {
+      "NATURE", "MAGIC", "TIME", "ICE", "TECHNO", "DREAMS",
+  };
+
   if (state.menu_panel.has_value() &&
       can_blit_opaque_image(surface, 8, 8, *state.menu_panel) &&
       state.menu_buttons.size() >= 2 &&
@@ -455,6 +677,13 @@ void ui_render_game_selection_panel(EgaPlanarSurface &surface,
       blit_string(surface, 136, 90,
                   kWorldButtons[state.ui.selected_option_index].name, 0x0F);
     }
+    if (state.ui.player_slot_menu_active) {
+      ui_render_option_list(surface, state);
+    }
+    if (state.ui.modal_active) {
+      ui_render_modal_prompt(surface, state);
+    }
+    hud_render_overlay(surface, state);
     return;
   }
 
@@ -463,9 +692,38 @@ void ui_render_game_selection_panel(EgaPlanarSurface &surface,
   if (state.ui.menu_state == MenuState::GameSelect) {
     draw_rect(surface, 80, 70, 160, 8, 0x0E);
   }
+  blit_string(surface, 48, 34, "GAME SELECTION", 0x01);
+  const std::size_t world_idx =
+      state.ui.selected_option_index < kWorldNames.size()
+          ? state.ui.selected_option_index
+          : 0U;
+  blit_string(surface, 136, 90, kWorldNames[world_idx], 0x0F);
+
+  // Render high score / player slot summary lines below world label
+  for (std::size_t slot = 0; slot < 5U; ++slot) {
+    if (!state.dos_config.player_names[slot].empty()) {
+      const std::int32_t y = static_cast<std::int32_t>(104U + slot * 10U);
+      blit_string(surface, 48, y, state.dos_config.player_names[slot].c_str(),
+                  0x07);
+      const std::uint16_t awards =
+          state.dos_config.player_awards[slot] != 0U
+              ? state.dos_config.player_awards[slot]
+              : state.dos_config.records[4U + slot];
+      char award_buf[8];
+      std::snprintf(award_buf, sizeof(award_buf), "%02u",
+                    static_cast<unsigned>(awards % 100U));
+      blit_string(surface, 200, y, award_buf, 0x0E);
+    }
+  }
+
+  if (state.ui.player_slot_menu_active) {
+    ui_render_option_list(surface, state);
+  }
+  if (state.ui.modal_active) {
+    ui_render_modal_prompt(surface, state);
+  }
 }
 
-// cppcheck-suppress unusedFunction ; reserved for Phase 10
 bool ui_show_modal_prompt_wait_key(RuntimeState &state,
                                    const std::string &prompt,
                                    std::uint8_t awaited_key) {
@@ -487,17 +745,82 @@ void ui_option_list_input_loop(RuntimeState &state, const InputState &input) {
     return;
   }
 
-  if (input.left_pressed || input.right_pressed) {
+  if (input.left_pressed) {
+    if (state.ui.player_slot_menu_active) {
+      ui_select_prev_valid_option(state);
+    } else {
+      ui_select_next_valid_option(state);
+    }
+  } else if (input.right_pressed || input.down_pressed) {
     ui_select_next_valid_option(state);
   }
 }
 
-// cppcheck-suppress unusedFunction ; reserved for Phase 10
 void ui_edit_selected_option_text(RuntimeState &state,
                                   const std::string &text) {
-  if (state.ui.selected_option_index < state.ui.option_labels.size()) {
-    state.ui.option_labels[state.ui.selected_option_index] = text;
+  std::string sanitized;
+  sanitized.reserve(15U);
+  for (char ch : text) {
+    if (sanitized.size() >= 15U) {
+      break;
+    }
+    const unsigned char uch = static_cast<unsigned char>(ch);
+    const char upper = static_cast<char>(std::toupper(uch));
+    if (upper == ' ' || (upper >= '0' && upper <= 'Z')) {
+      sanitized.push_back(upper);
+    }
   }
+  if (state.ui.selected_option_index < state.ui.option_labels.size()) {
+    state.ui.option_labels[state.ui.selected_option_index] = sanitized;
+  }
+  if (state.ui.selected_option_index < state.dos_config.player_names.size()) {
+    state.dos_config.player_names[state.ui.selected_option_index] = sanitized;
+  }
+}
+
+bool ui_is_option_selectable(const RuntimeState &state,
+                             std::size_t option_index) {
+  const std::size_t count =
+      !state.ui.option_labels.empty()
+          ? state.ui.option_labels.size()
+          : (state.ui.menu_state == MenuState::GameSelect ? 6U : 0U);
+  if (option_index >= count) {
+    return false;
+  }
+  if (!state.ui.player_slot_menu_active) {
+    if (!state.ui.option_labels.empty()) {
+      return !state.ui.option_labels[option_index].empty();
+    }
+    return true;
+  }
+
+  // Authentic DOS ui_is_option_selectable (1000:6030):
+  // Rows 0..4: selectable only if player slot is non-empty
+  // Row 5: blank separator (never selectable)
+  // Row 6: "ENTER A NEW PLAYER" selectable when !retire_player_mode &&
+  //        player_count < 5
+  // Row 7: "RETIRE A PLAYER" selectable when !retire_player_mode &&
+  //        player_count > 0; in retire_player_mode ("HIT (ESC) TO ABORT"),
+  //        selectable to abort.
+  if (option_index < 5U) {
+    return !state.dos_config.player_names[option_index].empty();
+  }
+  if (option_index == 5U) {
+    return false;
+  }
+  if (option_index == 6U) {
+    if (state.ui.retire_player_mode) {
+      return false;
+    }
+    return state.dos_config.player_count < 5U;
+  }
+  if (option_index == 7U) {
+    if (state.ui.retire_player_mode) {
+      return true;
+    }
+    return state.dos_config.player_count > 0U;
+  }
+  return false;
 }
 
 void ui_select_next_valid_option(RuntimeState &state) {
@@ -509,11 +832,13 @@ void ui_select_next_valid_option(RuntimeState &state) {
     return;
   }
 
-  std::size_t next = state.ui.selected_option_index + 1U;
-  if (next >= count) {
-    next = 0U;
+  for (std::size_t step = 1U; step <= count; ++step) {
+    const std::size_t candidate = (state.ui.selected_option_index + step) % count;
+    if (ui_is_option_selectable(state, candidate)) {
+      state.ui.selected_option_index = candidate;
+      return;
+    }
   }
-  state.ui.selected_option_index = next;
 }
 
 bool ui_select_prev_valid_option(RuntimeState &state) {
@@ -525,13 +850,225 @@ bool ui_select_prev_valid_option(RuntimeState &state) {
     return false;
   }
 
-  std::size_t prev = state.ui.selected_option_index;
-  if (prev == 0U) {
-    prev = count - 1U;
-  } else {
-    prev -= 1U;
+  for (std::size_t step = 1U; step <= count; ++step) {
+    const std::size_t candidate =
+        (state.ui.selected_option_index + count - step) % count;
+    if (ui_is_option_selectable(state, candidate)) {
+      state.ui.selected_option_index = candidate;
+      return true;
+    }
   }
-  state.ui.selected_option_index = prev;
+  return false;
+}
+
+void ui_init_player_slot_menu(RuntimeState &state) {
+  state.ui.player_slot_menu_active = true;
+  state.ui.menu_state = MenuState::Options;
+
+  std::uint16_t active_count = 0U;
+  for (const auto &name : state.dos_config.player_names) {
+    if (!name.empty()) {
+      ++active_count;
+    }
+  }
+  state.dos_config.player_count = active_count;
+
+  state.ui.option_labels.assign(8U, "");
+  for (std::size_t i = 0; i < 5U; ++i) {
+    state.ui.option_labels[i] = state.dos_config.player_names[i];
+  }
+  state.ui.option_labels[5] = "";
+  if (state.ui.retire_player_mode) {
+    state.ui.option_labels[6] = "ERASE WHICH PLAYER?";
+    state.ui.option_labels[7] = "HIT (ESC) TO ABORT";
+  } else {
+    state.ui.option_labels[6] = "ENTER A NEW PLAYER";
+    state.ui.option_labels[7] = "RETIRE A PLAYER";
+  }
+
+  for (std::size_t i = 0; i < state.ui.option_labels.size(); ++i) {
+    if (ui_is_option_selectable(state, i)) {
+      state.ui.selected_option_index = i;
+      break;
+    }
+  }
+}
+
+bool ui_enter_new_player(RuntimeState &state, const std::string &player_name) {
+  std::size_t target_slot = 5U;
+  for (std::size_t i = 0; i < 5U; ++i) {
+    if (state.dos_config.player_names[i].empty()) {
+      target_slot = i;
+      break;
+    }
+  }
+  if (target_slot >= 5U) {
+    return false;
+  }
+
+  state.ui.selected_option_index = target_slot;
+  ui_edit_selected_option_text(state, player_name);
+  if (state.dos_config.player_names[target_slot].empty()) {
+    return false;
+  }
+
+  state.dos_config.player_awards[target_slot] = 0U;
+  state.dos_config.records[4U + target_slot] = 0U;
+  state.ui.active_player_slot = static_cast<std::uint8_t>(target_slot + 1U);
+  state.ui.retire_player_mode = false;
+  state.ui.editing_player_name = false;
+  ui_init_player_slot_menu(state);
+  state.ui.selected_option_index = target_slot;
+
+  savegame_write_snapshot(state, state.saved_snapshot_bytes);
+  if (!state.ui.persistence_dir.empty()) {
+    std::filesystem::create_directories(state.ui.persistence_dir);
+    cfg_save_options_file(state, state.ui.persistence_dir / "FR.CFG");
+    savegame_write_slot_file(state, state.ui.persistence_dir,
+                             state.ui.active_player_slot);
+    savegame_write_slot_file(state, state.ui.persistence_dir, target_slot);
+  }
+  return true;
+}
+
+bool ui_retire_player(RuntimeState &state, std::size_t slot_index) {
+  if (slot_index >= 5U || state.dos_config.player_names[slot_index].empty()) {
+    return false;
+  }
+
+  state.dos_config.player_names[slot_index].clear();
+  state.dos_config.player_awards[slot_index] = 0U;
+  state.dos_config.records[4U + slot_index] = 0U;
+  state.ui.retire_player_mode = false;
+  ui_init_player_slot_menu(state);
+
+  if (!state.ui.persistence_dir.empty()) {
+    std::filesystem::create_directories(state.ui.persistence_dir);
+    cfg_save_options_file(state, state.ui.persistence_dir / "FR.CFG");
+  }
+  return true;
+}
+
+std::uint16_t world_selection_to_level(std::size_t world_index) {
+  // Authentic 6-world target level table from DS:0x0990 in comic2_data.asm
+  // (game_switch_room at 1000:2253):
+  // 0: NATURE (10), 1: MAGIC (6), 2: TIME (11), 3: ICE (9), 4: TECHNO (8),
+  // 5: DREAMS (13)
+  static constexpr std::array<std::uint16_t, 6> kWorldLevels = {
+      10U, 6U, 11U, 9U, 8U, 13U,
+  };
+  return kWorldLevels[world_index % kWorldLevels.size()];
+}
+
+bool ui_select_world_or_save_slot(RuntimeState &state, std::size_t slot_index) {
+  const std::size_t clamped = slot_index % 6U;
+  state.ui.selected_option_index = clamped;
+  state.ui.active_player_slot = static_cast<std::uint8_t>(clamped);
+
+  bool loaded_snapshot = false;
+  if (!state.ui.persistence_dir.empty()) {
+    cfg_load_options_file(state, state.ui.persistence_dir / "FR.CFG");
+    keys_load_file(state.key_bindings, state.ui.persistence_dir / "KEYS.DEF");
+    if (savegame_read_slot_file(state, state.ui.persistence_dir, clamped)) {
+      loaded_snapshot = true;
+    }
+  }
+
+  if (!loaded_snapshot && !state.assets_root.empty() && clamped > 0U) {
+    state.current_level = world_selection_to_level(clamped);
+    state.current_room = 0U;
+    load_room_tilemap_from_asset_root(state, state.assets_root,
+                                      state.current_level, state.current_room);
+  }
+  return loaded_snapshot;
+}
+
+void ui_begin_key_rebinding(RuntimeState &state) {
+  state.ui.key_rebinding_active = true;
+  state.ui.key_rebinding_step = 0U;
+  state.ui.pending_key_bindings = DosKeyBindings{0, 0, 0, 0, 0, 0};
+  state.ui.modal_active = true;
+  state.ui.modal_prompt = "DEFINE KEYS\nMOVE LEFT  : ";
+}
+
+bool ui_submit_key_rebinding_scancode(RuntimeState &state,
+                                      std::uint8_t dos_scancode) {
+  if (!state.ui.key_rebinding_active) {
+    return false;
+  }
+  if (dos_scancode == 0x01U) {
+    // ESC aborts key rebinding
+    state.ui.key_rebinding_active = false;
+    state.ui.key_rebinding_step = 0U;
+    state.ui.modal_active = false;
+    state.ui.modal_prompt.clear();
+    return false;
+  }
+  if (!is_valid_unique_dos_key_binding(dos_scancode,
+                                       state.ui.pending_key_bindings,
+                                       state.ui.key_rebinding_step)) {
+    return false;
+  }
+
+  switch (state.ui.key_rebinding_step) {
+  case 0U:
+    state.ui.pending_key_bindings.left = dos_scancode;
+    break;
+  case 1U:
+    state.ui.pending_key_bindings.right = dos_scancode;
+    break;
+  case 2U:
+    state.ui.pending_key_bindings.up = dos_scancode;
+    break;
+  case 3U:
+    state.ui.pending_key_bindings.down = dos_scancode;
+    break;
+  case 4U:
+    state.ui.pending_key_bindings.jump = dos_scancode;
+    break;
+  case 5U:
+    state.ui.pending_key_bindings.fire = dos_scancode;
+    break;
+  default:
+    return false;
+  }
+
+  ++state.ui.key_rebinding_step;
+
+  static constexpr std::array<const char *, 6> kActionPrompts = {
+      "MOVE LEFT  : ", "MOVE RIGHT : ", "MOVE UP    : ",
+      "MOVE DOWN  : ", "JUMP       : ", "TRIGGER    : ",
+  };
+  const std::array<std::uint8_t, 6> bound_codes = {
+      state.ui.pending_key_bindings.left, state.ui.pending_key_bindings.right,
+      state.ui.pending_key_bindings.up,   state.ui.pending_key_bindings.down,
+      state.ui.pending_key_bindings.jump, state.ui.pending_key_bindings.fire,
+  };
+
+  std::string prompt = "DEFINE KEYS";
+  const std::size_t visible_steps =
+      std::min<std::size_t>(state.ui.key_rebinding_step + 1U, 6U);
+  for (std::size_t i = 0; i < visible_steps; ++i) {
+    prompt += "\n";
+    prompt += kActionPrompts[i];
+    if (i < state.ui.key_rebinding_step) {
+      prompt += std::string(dos_scancode_name(bound_codes[i]));
+    }
+  }
+
+  if (state.ui.key_rebinding_step >= 6U) {
+    state.key_bindings = state.ui.pending_key_bindings;
+    state.ui.key_rebinding_active = false;
+    state.ui.modal_prompt = prompt + "\nSETUP SAVED";
+    if (!state.ui.persistence_dir.empty()) {
+      std::filesystem::create_directories(state.ui.persistence_dir);
+      keys_save_file(state.key_bindings, state.ui.persistence_dir / "KEYS.DEF");
+      cfg_save_options_file(state, state.ui.persistence_dir / "FR.CFG");
+    }
+    return true;
+  }
+
+  state.ui.modal_prompt = prompt;
   return true;
 }
 
@@ -565,7 +1102,7 @@ bool play_intro_cinematic(EgaPlanarSurface &surface, RuntimeState &state) {
   draw_rect(surface, 0, 0, 320, 200, 0x00);
   draw_rect(surface, 40, 50, 240, 100, 0x0F);
   state.ui.cinematic_frame =
-      static_cast<std::uint8_t>(state.ui.cinematic_frame + 1U);
+       static_cast<std::uint8_t>(state.ui.cinematic_frame + 1U);
   return state.ui.cinematic_frame >= 4U;
 }
 
@@ -658,13 +1195,20 @@ bool transition_game_lifecycle(RuntimeState &state,
   case GameLifecycleState::Menu:
     state.ui.menu_state = MenuState::GameSelect;
     state.ui.selected_option_index = 0;
-    if (state.ui.option_labels.empty()) {
+    if (!state.ui.persistence_dir.empty()) {
+      cfg_load_options_file(state, state.ui.persistence_dir / "FR.CFG");
+      keys_load_file(state.key_bindings, state.ui.persistence_dir / "KEYS.DEF");
+    }
+    if (state.ui.player_slot_menu_active) {
+      ui_init_player_slot_menu(state);
+    } else if (state.ui.option_labels.empty()) {
       state.ui.option_labels = {"NATURE", "MAGIC",  "TIME",
                                 "ICE",    "TECHNO", "DREAMS"};
     }
     break;
   case GameLifecycleState::Gameplay:
     state.ui.menu_state = MenuState::None;
+    state.ui.player_slot_menu_active = false;
     state.player.is_physics_active = true;
     if (state.room_grid.tile_data.empty() && !state.assets_root.empty()) {
       load_room_tilemap_from_asset_root(
@@ -683,8 +1227,27 @@ bool transition_game_lifecycle(RuntimeState &state,
     state.flags.room_event_triggered = false;
     break;
   case GameLifecycleState::Save: {
-    // Perform authentic snapshot serialization
+    // Perform authentic snapshot serialization and award computation
+    state.ui.save_option_index = 0U;
+    const std::size_t award_slot =
+        std::min<std::size_t>(state.ui.active_player_slot, 4U);
+    const std::uint16_t earned_awards = static_cast<std::uint16_t>(
+        1U + (state.player.boots_equipped ? 1U : 0U) +
+        (state.player.lantern_equipped ? 1U : 0U) +
+        (state.player.corkscrew_equipped ? 1U : 0U) +
+        (state.player.wand_equipped ? 1U : 0U) + state.current_level);
+    if (earned_awards > state.dos_config.player_awards[award_slot]) {
+      state.dos_config.player_awards[award_slot] = earned_awards;
+      state.dos_config.records[4U + award_slot] = earned_awards;
+    }
     savegame_write_snapshot(state, state.saved_snapshot_bytes);
+    if (!state.ui.persistence_dir.empty()) {
+      std::filesystem::create_directories(state.ui.persistence_dir);
+      savegame_write_slot_file(state, state.ui.persistence_dir,
+                               state.ui.active_player_slot);
+      cfg_save_options_file(state, state.ui.persistence_dir / "FR.CFG");
+      keys_save_file(state.key_bindings, state.ui.persistence_dir / "KEYS.DEF");
+    }
     if (!state.ui.pending_event_message.empty()) {
       state.ui.modal_active = true;
       state.ui.modal_prompt = state.ui.pending_event_message;
@@ -746,13 +1309,64 @@ bool update_game_lifecycle(RuntimeState &state, const InputState &input,
           static_cast<std::uint8_t>(state.ui.cinematic_frame + 1U);
       if (state.ui.cinematic_frame >= 4U ||
           (!state.intro_screens.empty() &&
-           state.ui.cinematic_frame >= state.intro_screens.size())) {
+            state.ui.cinematic_frame >= state.intro_screens.size())) {
         return transition_game_lifecycle(state, GameLifecycleState::Menu);
       }
     }
     return true;
 
   case GameLifecycleState::Menu:
+    if (state.ui.key_rebinding_active) {
+      if (input.pause_pressed) {
+        ui_submit_key_rebinding_scancode(state, 0x01U);
+      }
+      return true;
+    }
+    if (state.ui.player_slot_menu_active) {
+      if (input.left_pressed) {
+        ui_select_prev_valid_option(state);
+      }
+      if (input.right_pressed || input.down_pressed) {
+        ui_select_next_valid_option(state);
+      }
+      if (input.jump_pressed || input.fire_pressed) {
+        if (state.ui.retire_player_mode) {
+          if (state.ui.selected_option_index < 5U) {
+            ui_retire_player(state, state.ui.selected_option_index);
+          } else {
+            state.ui.retire_player_mode = false;
+            ui_init_player_slot_menu(state);
+          }
+          return true;
+        }
+        if (state.ui.selected_option_index == 6U) {
+          const std::string name = state.ui.pending_player_name_input.empty()
+                                       ? "CAPTAIN"
+                                       : state.ui.pending_player_name_input;
+          ui_enter_new_player(state, name);
+          return true;
+        }
+        if (state.ui.selected_option_index == 7U) {
+          state.ui.retire_player_mode = true;
+          ui_init_player_slot_menu(state);
+          return true;
+        }
+        if (state.ui.selected_option_index < 5U &&
+            !state.dos_config.player_names[state.ui.selected_option_index]
+                 .empty()) {
+          state.ui.active_player_slot =
+              static_cast<std::uint8_t>(state.ui.selected_option_index);
+          state.ui.player_slot_menu_active = false;
+          state.ui.menu_state = MenuState::GameSelect;
+          state.ui.option_labels = {"NATURE", "MAGIC",  "TIME",
+                                    "ICE",    "TECHNO", "DREAMS"};
+          ui_select_world_or_save_slot(state, state.ui.active_player_slot);
+          return transition_game_lifecycle(state, GameLifecycleState::Gameplay);
+        }
+      }
+      return true;
+    }
+
     if (input.left_pressed) {
       ui_select_prev_valid_option(state);
     }
@@ -760,6 +1374,7 @@ bool update_game_lifecycle(RuntimeState &state, const InputState &input,
       ui_select_next_valid_option(state);
     }
     if (input.jump_pressed || input.fire_pressed) {
+      ui_select_world_or_save_slot(state, state.ui.selected_option_index);
       return transition_game_lifecycle(state, GameLifecycleState::Gameplay);
     }
     return true;
@@ -797,7 +1412,21 @@ bool update_game_lifecycle(RuntimeState &state, const InputState &input,
   }
 
   case GameLifecycleState::Save:
+    if (input.left_pressed || input.right_pressed || input.down_pressed) {
+      state.ui.save_option_index = (state.ui.save_option_index == 0U) ? 1U : 0U;
+    }
     if (input.jump_pressed || input.fire_pressed || input.pause_pressed) {
+      if (state.ui.save_option_index == 0U) {
+        savegame_write_snapshot(state, state.saved_snapshot_bytes);
+        if (!state.ui.persistence_dir.empty()) {
+          std::filesystem::create_directories(state.ui.persistence_dir);
+          savegame_write_slot_file(state, state.ui.persistence_dir,
+                                   state.ui.active_player_slot);
+          cfg_save_options_file(state, state.ui.persistence_dir / "FR.CFG");
+          keys_save_file(state.key_bindings,
+                         state.ui.persistence_dir / "KEYS.DEF");
+        }
+      }
       if ((state.progression.flags & 0x80U) != 0U) {
         return transition_game_lifecycle(state, GameLifecycleState::Victory);
       }

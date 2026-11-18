@@ -381,6 +381,68 @@ void test_config_loader_stops_at_truncated_payload() {
          "display scale should remain default for truncated payload");
 }
 
+void test_savegame_slots_000_to_005_and_high_score_awards_roundtrip() {
+  const auto temp_dir =
+      std::filesystem::temp_directory_path() / "test_comic2_all_save_slots";
+  std::filesystem::remove_all(temp_dir);
+  std::filesystem::create_directories(temp_dir);
+
+  for (std::size_t slot = 0; slot <= 5U; ++slot) {
+    comic2::RuntimeState state = comic2::make_default_runtime_state();
+    state.player.x = static_cast<std::int16_t>(100 + slot * 32);
+    state.player.y = static_cast<std::int16_t>(64 + slot * 8);
+    state.player.score = static_cast<std::uint16_t>(1000 + slot * 250);
+    state.player.corkscrew_equipped = (slot % 2 == 0);
+    state.player.boots_equipped = (slot >= 1U);
+    state.player.lantern_equipped = (slot >= 2U);
+    state.player.wand_equipped = (slot >= 3U);
+    state.current_level = static_cast<std::uint16_t>(slot);
+    state.current_room = static_cast<std::uint16_t>(slot % 3U);
+
+    expect(comic2::savegame_write_slot_file(state, temp_dir, slot),
+           "savegame_write_slot_file must succeed for GAME.000..005");
+    const auto expected_file = temp_dir / comic2::savegame_slot_filename(slot);
+    expect(std::filesystem::exists(expected_file),
+           "GAME.000..005 slot file must exist on disk");
+
+    comic2::RuntimeState loaded = comic2::make_default_runtime_state();
+    expect(comic2::savegame_read_slot_file(loaded, temp_dir, slot),
+           "savegame_read_slot_file must succeed for GAME.000..005");
+    expect(loaded.player.x == state.player.x &&
+               loaded.player.y == state.player.y &&
+               loaded.player.score == state.player.score &&
+               loaded.player.corkscrew_equipped ==
+                   state.player.corkscrew_equipped &&
+               loaded.player.boots_equipped == state.player.boots_equipped &&
+               loaded.player.lantern_equipped ==
+                   state.player.lantern_equipped &&
+               loaded.player.wand_equipped == state.player.wand_equipped &&
+               loaded.current_level == state.current_level &&
+               loaded.current_room == state.current_room,
+           "GAME.000..005 slot roundtrip must preserve all player and "
+           "equipment fields");
+  }
+
+  // Verify FR.CFG player_awards (ds_high_scores_buffer records[4..8]) roundtrip
+  comic2::RuntimeState cfg_state = comic2::make_default_runtime_state();
+  cfg_state.dos_config.player_count = 2;
+  cfg_state.dos_config.player_names[0] = "COMIC";
+  cfg_state.dos_config.player_names[1] = "HERO";
+  cfg_state.dos_config.player_awards[0] = 14;
+  cfg_state.dos_config.player_awards[1] = 9;
+  expect(comic2::cfg_save_options_file(cfg_state, temp_dir / "FR.CFG"),
+         "cfg_save_options_file with awards must succeed");
+
+  comic2::RuntimeState loaded_cfg = comic2::make_default_runtime_state();
+  expect(comic2::cfg_load_options_file(loaded_cfg, temp_dir / "FR.CFG"),
+         "cfg_load_options_file with awards must succeed");
+  expect(loaded_cfg.dos_config.player_awards[0] == 14 &&
+             loaded_cfg.dos_config.player_awards[1] == 9,
+         "FR.CFG player_awards must roundtrip through records[4..8]");
+
+  std::filesystem::remove_all(temp_dir);
+}
+
 } // namespace
 
 void run_persistence_tests() {
@@ -395,4 +457,5 @@ void run_persistence_tests() {
   test_config_roundtrip_preserves_settings();
   test_snapshot_roundtrip_preserves_state();
   test_config_loader_stops_at_truncated_payload();
+  test_savegame_slots_000_to_005_and_high_score_awards_roundtrip();
 }
