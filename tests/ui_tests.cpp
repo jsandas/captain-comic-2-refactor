@@ -7,6 +7,7 @@
 #include "comic2/default_handlers.hpp"
 #include "comic2/dispatcher.hpp"
 #include "comic2/game_state.hpp"
+#include "comic2/input_handler.hpp"
 #include "comic2/persistence.hpp"
 #include "comic2/renderer.hpp"
 #include "comic2/resource_loader.hpp"
@@ -876,6 +877,266 @@ void test_phase16_framed_8x8_font_modal_rendering() {
   expect(saw_row1_text, "Second line of modal text must render 0x07 glyphs");
 }
 
+void test_phase16_hud_update_mode_icons_on_bezel() {
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  comic2::Ega4PlaneImage bezel{};
+  bezel.width_bytes = 40U;
+  bezel.height_rows = 200U;
+  bezel.row_span_bytes = 8000U;
+  for (auto &plane : bezel.planes) {
+    plane.assign(8000U, 0x00U);
+  }
+  state.bezel_frame = bezel;
+
+  comic2::EgaPlanarSurface surface(320, 200);
+  surface.clear(0x00);
+
+  // Initially no equipment icons collected -> region x=288..303 at rows
+  // 0x5E, 0x77, 0x90, 0xA9 should remain blank
+  comic2::hud_render_overlay(surface, state);
+  for (std::size_t row_y : {0x5EU, 0x77U, 0x90U, 0xA9U}) {
+    bool any_pixel = false;
+    for (std::size_t y = row_y; y < row_y + 16U; ++y) {
+      for (std::size_t x = 288U; x < 304U; ++x) {
+        if (read_surface_pixel_color(surface, x, y) != 0U) {
+          any_pixel = true;
+        }
+      }
+    }
+    expect(!any_pixel,
+           "Uncollected mode icon slot must remain blank on bezel panel");
+  }
+
+  // Equip all 4 items: Corkscrew (0x5E), Boots (0x77), Lantern (0x90), Wand
+  // (0xA9) and set active_mode_mask
+  state.player.corkscrew_equipped = true;
+  state.player.boots_equipped = true;
+  state.player.lantern_equipped = true;
+  state.player.wand_equipped = true;
+  state.ui.active_mode_mask = 0x02U;
+
+  surface.clear(0x00);
+  comic2::hud_render_overlay(surface, state);
+
+  for (std::size_t row_y : {0x5EU, 0x77U, 0x90U, 0xA9U}) {
+    bool saw_icon_pixel = false;
+    for (std::size_t y = row_y; y < row_y + 16U; ++y) {
+      for (std::size_t x = 288U; x < 304U; ++x) {
+        if (read_surface_pixel_color(surface, x, y) != 0U) {
+          saw_icon_pixel = true;
+          break;
+        }
+      }
+      if (saw_icon_pixel) {
+        break;
+      }
+    }
+    expect(saw_icon_pixel,
+           "Collected equipment icon must blit visible 16x16 graphic at x=288");
+  }
+
+  // Verify 8x15 mode indicator bar at x=280..287
+  bool saw_mode_bar = false;
+  for (std::size_t y = 0x77U; y < 0x77U + 15U; ++y) {
+    for (std::size_t x = 280U; x < 288U; ++x) {
+      if (read_surface_pixel_color(surface, x, y) != 0U) {
+        saw_mode_bar = true;
+        break;
+      }
+    }
+  }
+  expect(saw_mode_bar,
+         "Active mode selection bar must render at x=280 on bezel panel");
+}
+
+void test_phase16_option_list_and_menu_panel_render_8x8_text_and_high_scores() {
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  state.dos_config.player_count = 2;
+  state.dos_config.player_names[0] = "COMIC";
+  state.dos_config.player_names[1] = "HERO";
+  state.dos_config.player_awards[0] = 12;
+  state.dos_config.player_awards[1] = 5;
+  comic2::ui_init_player_slot_menu(state);
+
+  comic2::EgaPlanarSurface surface(320, 200);
+  surface.clear(0x00);
+  comic2::ui_render_option_list(surface, state);
+
+  // Verify row 0 ("COMIC" at x=64..104, y=44..51) has selected text color 0x0A
+  bool saw_player_text = false;
+  for (std::size_t y = 44U; y < 52U; ++y) {
+    for (std::size_t x = 64U; x < 104U; ++x) {
+      if (read_surface_pixel_color(surface, x, y) == 0x0AU) {
+        saw_player_text = true;
+      }
+    }
+  }
+  expect(saw_player_text,
+         "ui_render_option_list must render selected player name with 8x8 "
+         "glyphs");
+
+  // Verify awards column at x=200..216, y=44..51 has yellow (0x0E) digits
+  bool saw_awards_text = false;
+  for (std::size_t y = 44U; y < 52U; ++y) {
+    for (std::size_t x = 200U; x < 216U; ++x) {
+      if (read_surface_pixel_color(surface, x, y) == 0x0EU) {
+        saw_awards_text = true;
+      }
+    }
+  }
+  expect(saw_awards_text,
+         "ui_render_option_list must render player awards from "
+         "ds_high_scores_buffer");
+}
+
+void test_phase16_interactive_player_slot_management_and_world_save_loading() {
+  const auto temp_dir =
+      std::filesystem::temp_directory_path() / "test_comic2_phase16_slots";
+  std::filesystem::remove_all(temp_dir);
+  std::filesystem::create_directories(temp_dir);
+
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  state.ui.persistence_dir = temp_dir;
+  comic2::ui_init_player_slot_menu(state);
+
+  // Initially 0 players -> first selectable option is index 6 ("ENTER A NEW
+  // PLAYER")
+  expect(state.ui.selected_option_index == 6U,
+         "Empty player list must select 'ENTER A NEW PLAYER' (index 6)");
+  expect(!comic2::ui_is_option_selectable(state, 7U),
+         "'RETIRE A PLAYER' must not be selectable when player_count == 0");
+
+  // Enter two new players via live Menu lifecycle
+  state.ui.lifecycle_state = comic2::GameLifecycleState::Menu;
+  state.ui.pending_player_name_input = "comic one";
+  comic2::update_game_lifecycle(state,
+                                comic2::InputState{.fire_pressed = true});
+  expect(state.dos_config.player_count == 1U,
+         "Entering a new player must increment player_count to 1");
+  expect(state.dos_config.player_names[0] == "COMIC ONE",
+         "Player name must be uppercased and stored in slot 0");
+  expect(std::filesystem::exists(temp_dir / "FR.CFG"),
+         "Entering a new player must persist FR.CFG");
+  expect(std::filesystem::exists(temp_dir / "GAME.001"),
+         "Entering a new player must create initial GAME.001 snapshot");
+
+  // Navigate to "ENTER A NEW PLAYER" (index 6) and add second player
+  state.ui.selected_option_index = 6U;
+  state.ui.pending_player_name_input = "hero two";
+  comic2::update_game_lifecycle(state,
+                                comic2::InputState{.fire_pressed = true});
+  expect(state.dos_config.player_count == 2U,
+         "Second player must increment player_count to 2");
+  expect(state.dos_config.player_names[1] == "HERO TWO",
+         "Second player must be stored in slot 1");
+
+  // Navigate to "RETIRE A PLAYER" (index 7), activate retire mode, and retire
+  // slot 0
+  state.ui.selected_option_index = 7U;
+  comic2::update_game_lifecycle(state,
+                                comic2::InputState{.fire_pressed = true});
+  expect(state.ui.retire_player_mode,
+         "Selecting 'RETIRE A PLAYER' must enter retire_player_mode");
+  expect(state.ui.option_labels[6] == "ERASE WHICH PLAYER?",
+         "Retire mode must display 'ERASE WHICH PLAYER?' prompt");
+  expect(state.ui.selected_option_index == 0U,
+         "Retire mode must select first populated player slot 0");
+
+  comic2::update_game_lifecycle(state,
+                                comic2::InputState{.fire_pressed = true});
+  expect(!state.ui.retire_player_mode,
+         "Confirming slot in retire mode must exit retire_player_mode");
+  expect(state.dos_config.player_count == 1U,
+         "Retiring slot 0 must decrement player_count to 1");
+  expect(state.dos_config.player_names[0].empty(),
+         "Retired slot 0 name must be cleared");
+  expect(state.dos_config.player_names[1] == "HERO TWO",
+         "Remaining slot 1 must be preserved");
+
+  // Prepare a customized save snapshot in GAME.004 and select slot 4 from Menu
+  comic2::RuntimeState custom_slot = comic2::make_default_runtime_state();
+  custom_slot.player.x = 416;
+  custom_slot.player.y = 112;
+  custom_slot.player.score = 4321;
+  custom_slot.player.boots_equipped = true;
+  custom_slot.player.corkscrew_equipped = true;
+  custom_slot.current_level = 8;
+  custom_slot.current_room = 2;
+  expect(comic2::savegame_write_slot_file(custom_slot, temp_dir, 4U),
+         "Writing GAME.004 must succeed");
+
+  state.ui.player_slot_menu_active = false;
+  state.ui.menu_state = comic2::MenuState::GameSelect;
+  state.ui.option_labels = {"NATURE", "MAGIC",  "TIME",
+                            "ICE",    "TECHNO", "DREAMS"};
+  state.ui.selected_option_index = 4U; // TECHNO / slot 4
+  comic2::update_game_lifecycle(state,
+                                comic2::InputState{.fire_pressed = true});
+  expect(state.ui.lifecycle_state == comic2::GameLifecycleState::Gameplay,
+         "Confirming world/slot 4 must transition to Gameplay");
+  expect(state.player.score == 4321 && state.current_level == 8 &&
+             state.player.boots_equipped && state.player.corkscrew_equipped,
+         "Confirming slot 4 must load GAME.004 snapshot into runtime state");
+
+  std::filesystem::remove_all(temp_dir);
+}
+
+void test_phase16_interactive_key_rebinding_ui_and_input_handler() {
+  const auto temp_dir =
+      std::filesystem::temp_directory_path() / "test_comic2_phase16_keys";
+  std::filesystem::remove_all(temp_dir);
+  std::filesystem::create_directories(temp_dir);
+
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  state.ui.persistence_dir = temp_dir;
+
+  comic2::ui_begin_key_rebinding(state);
+  expect(state.ui.key_rebinding_active && state.ui.modal_active,
+         "ui_begin_key_rebinding must activate modal key-rebinding flow");
+
+  // Bind Left = 0x1E ('A')
+  expect(comic2::ui_submit_key_rebinding_scancode(state, 0x1EU),
+         "Valid Left scancode 0x1E must be accepted");
+  expect(state.ui.key_rebinding_step == 1U, "Step must advance to 1 (Right)");
+
+  // Duplicate scancode 0x1E must be rejected!
+  expect(!comic2::ui_submit_key_rebinding_scancode(state, 0x1EU),
+         "Duplicate scancode 0x1E must be rejected");
+  expect(state.ui.key_rebinding_step == 1U,
+         "Step must remain 1 after duplicate rejection");
+
+  // Bind Right = 0x20 ('D'), Up = 0x11 ('W'), Down = 0x1F ('S'),
+  // Jump = 0x39 (Space), Fire = 0x2A (LShift)
+  expect(comic2::ui_submit_key_rebinding_scancode(state, 0x20U),
+         "Right scancode 0x20 must be accepted");
+  expect(comic2::ui_submit_key_rebinding_scancode(state, 0x11U),
+         "Up scancode 0x11 must be accepted");
+  expect(comic2::ui_submit_key_rebinding_scancode(state, 0x1FU),
+         "Down scancode 0x1F must be accepted");
+  expect(comic2::ui_submit_key_rebinding_scancode(state, 0x39U),
+         "Jump scancode 0x39 must be accepted");
+  expect(comic2::ui_submit_key_rebinding_scancode(state, 0x2AU),
+         "Fire scancode 0x2A must be accepted and complete rebinding");
+
+  expect(!state.ui.key_rebinding_active,
+         "Key rebinding must complete after 6 unique keys");
+  expect(
+      state.key_bindings.left == 0x1EU && state.key_bindings.right == 0x20U &&
+          state.key_bindings.up == 0x11U && state.key_bindings.down == 0x1FU &&
+          state.key_bindings.jump == 0x39U && state.key_bindings.fire == 0x2AU,
+      "RuntimeState key_bindings must match newly bound scancodes");
+  expect(std::filesystem::exists(temp_dir / "KEYS.DEF"),
+         "Completed key rebinding must persist KEYS.DEF");
+
+  // Verify apply_dos_scancode_to_input maps custom scancodes
+  comic2::InputState mapped_input{};
+  comic2::apply_dos_scancode_to_input(mapped_input, 0x2AU, state.key_bindings);
+  expect(mapped_input.fire_pressed,
+         "Custom Fire scancode 0x2A must map to fire_pressed");
+
+  std::filesystem::remove_all(temp_dir);
+}
+
 } // namespace
 
 void run_ui_tests() {
@@ -901,4 +1162,8 @@ void run_ui_tests() {
   test_phase16_fr_script_loading_and_message_extraction();
   test_phase16_ent_process_interaction_script_and_multi_step_dialog();
   test_phase16_framed_8x8_font_modal_rendering();
+  test_phase16_hud_update_mode_icons_on_bezel();
+  test_phase16_option_list_and_menu_panel_render_8x8_text_and_high_scores();
+  test_phase16_interactive_player_slot_management_and_world_save_loading();
+  test_phase16_interactive_key_rebinding_ui_and_input_handler();
 }

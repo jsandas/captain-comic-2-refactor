@@ -30,7 +30,8 @@ bool cfg_load_options_file(RuntimeState &state,
 bool cfg_save_options_file(const RuntimeState &state,
                            const std::filesystem::path &path);
 
-// Savegame snapshot serialization (GAME.000 .. GAME.003 - 3,127 bytes)
+// Savegame snapshot serialization (GAME.000 .. GAME.005 - 3,127 bytes)
+std::string savegame_slot_filename(std::size_t slot_index);
 void savegame_write_snapshot(const RuntimeState &state,
                              std::vector<std::uint8_t> &bytes);
 void savegame_read_snapshot(RuntimeState &state,
@@ -39,6 +40,12 @@ bool savegame_write_snapshot_file(const RuntimeState &state,
                                   const std::filesystem::path &path);
 bool savegame_read_snapshot_file(RuntimeState &state,
                                  const std::filesystem::path &path);
+bool savegame_write_slot_file(const RuntimeState &state,
+                              const std::filesystem::path &dir,
+                              std::size_t slot_index);
+bool savegame_read_slot_file(RuntimeState &state,
+                             const std::filesystem::path &dir,
+                             std::size_t slot_index);
 
 // Key definitions serialization (KEYS.DEF - 6 bytes)
 void keys_load_or_defaults(DosKeyBindings &keys,

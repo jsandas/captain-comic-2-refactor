@@ -91,6 +91,7 @@ struct DosKeyBindings {
 struct DosConfig {
   std::uint16_t player_count = 0;
   std::array<std::string, 5> player_names{};
+  std::array<std::uint16_t, 5> player_awards{};
   std::array<std::uint16_t, 10> records{};
 
   bool operator==(const DosConfig &) const = default;

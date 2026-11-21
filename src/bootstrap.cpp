@@ -835,6 +835,10 @@ bool poll_bootstrap_input(RuntimeState &state) {
   init_keyboard_handler();
 
   if (g_keyboard_handler) {
+    // Sync active key bindings into the keyboard input handler
+    if (!(g_keyboard_handler->key_bindings() == state.key_bindings)) {
+      g_keyboard_handler->set_key_bindings(state.key_bindings);
+    }
     // Use real SDL2 keyboard input
     return g_keyboard_handler->poll_events(state.input);
   } else {

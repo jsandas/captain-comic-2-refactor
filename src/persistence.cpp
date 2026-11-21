@@ -157,8 +157,13 @@ void cfg_load_options_or_defaults(RuntimeState &state,
       state.dos_config.records[i] = read_u16_stream(bytes, offset);
     }
 
+    for (std::size_t slot = 0; slot < 5; ++slot) {
+      state.dos_config.player_awards[slot] = state.dos_config.records[4 + slot];
+    }
+
     const auto vol_word = state.dos_config.records[4];
-    if (vol_word != 0) {
+    const bool has_encoded_vol = (vol_word >> 8) != 0;
+    if (has_encoded_vol) {
       state.ui.music_volume = static_cast<std::uint8_t>(vol_word & 0xFF);
       state.ui.sfx_volume = static_cast<std::uint8_t>((vol_word >> 8) & 0xFF);
     } else {
@@ -167,7 +172,8 @@ void cfg_load_options_or_defaults(RuntimeState &state,
     }
 
     const auto scale_word = state.dos_config.records[5];
-    if (scale_word != 0) {
+    if (scale_word != 0 &&
+        (has_encoded_vol || state.dos_config.player_count == 0)) {
       state.ui.display_scale = static_cast<std::uint8_t>(scale_word & 0xFF);
     } else {
       state.ui.display_scale = 0x01;
@@ -217,15 +223,38 @@ void cfg_save_options(const RuntimeState &state,
     write_u16_at(bytes, 82 + i * 2, source_records[i]);
   }
 
+  const bool has_any_player_data =
+      state.dos_config.player_count != 0 ||
+      std::any_of(state.dos_config.player_names.begin(),
+                  state.dos_config.player_names.end(),
+                  [](const std::string &n) { return !n.empty(); }) ||
+      std::any_of(state.dos_config.player_awards.begin(),
+                  state.dos_config.player_awards.end(),
+                  [](std::uint16_t a) { return a != 0; });
+
+  for (std::size_t slot = 0; slot < 5; ++slot) {
+    if (state.dos_config.player_awards[slot] != 0) {
+      write_u16_at(bytes, 82 + (4 + slot) * 2,
+                   state.dos_config.player_awards[slot]);
+    } else if (!state.dos_config.player_names[slot].empty()) {
+      write_u16_at(bytes, 82 + (4 + slot) * 2,
+                   state.dos_config.records[4 + slot]);
+    } else if (has_any_player_data) {
+      write_u16_at(bytes, 82 + (4 + slot) * 2, 0U);
+    }
+  }
+
   // Preserve customized audio volume and display scale settings in records 4 &
-  // 5
-  if (state.ui.music_volume != 0x04 || state.ui.sfx_volume != 0x04) {
+  // 5 when not explicitly overridden by player awards
+  if (state.dos_config.player_awards[0] == 0 &&
+      (state.ui.music_volume != 0x04 || state.ui.sfx_volume != 0x04)) {
     const std::uint16_t vol_word =
         static_cast<std::uint16_t>(state.ui.music_volume) |
         (static_cast<std::uint16_t>(state.ui.sfx_volume) << 8);
     write_u16_at(bytes, 82 + 4 * 2, vol_word);
   }
-  if (state.ui.display_scale != 0x01) {
+  if (state.dos_config.player_awards[1] == 0 &&
+      state.ui.display_scale != 0x01) {
     write_u16_at(bytes, 82 + 5 * 2,
                  static_cast<std::uint16_t>(state.ui.display_scale));
   }
@@ -279,9 +308,13 @@ void savegame_read_snapshot(RuntimeState &state,
     state.player.animation_state = bytes[tail + 9];
 
     state.player.firepower = bytes[tail + 12];
-    const bool boots = (bytes[tail + 13] != 0);
+    const bool boots = (bytes[tail + 13] & 0x01U) != 0U;
     state.player.boots_equipped = boots;
     state.progression.boots_acquired = boots;
+
+    const bool corkscrew = (bytes[tail + 13] & 0x80U) != 0U;
+    state.player.corkscrew_equipped = corkscrew;
+    state.progression.corkscrew_acquired = corkscrew;
 
     const bool lantern = (bytes[tail + 14] != 0);
     state.player.lantern_equipped = lantern;
@@ -395,7 +428,9 @@ void savegame_write_snapshot(const RuntimeState &state,
   }
 
   bytes[tail + 12] = state.player.firepower;
-  bytes[tail + 13] = state.player.boots_equipped ? 1 : 0;
+  bytes[tail + 13] =
+      static_cast<std::uint8_t>((state.player.boots_equipped ? 1U : 0U) |
+                                (state.player.corkscrew_equipped ? 0x80U : 0U));
   bytes[tail + 14] = state.player.lantern_equipped ? 1 : 0;
   bytes[tail + 15] = state.player.wand_equipped ? 1 : 0;
 
@@ -428,6 +463,13 @@ void savegame_write_snapshot(const RuntimeState &state,
   }
 }
 
+std::string savegame_slot_filename(std::size_t slot_index) {
+  const std::size_t clamped = std::min<std::size_t>(slot_index, 5U);
+  std::string name = "GAME.000";
+  name.back() = static_cast<char>('0' + clamped);
+  return name;
+}
+
 bool savegame_read_snapshot_file(RuntimeState &state,
                                  const std::filesystem::path &path) {
   const auto loaded = load_file_bytes(path);
@@ -443,6 +485,26 @@ bool savegame_write_snapshot_file(const RuntimeState &state,
   std::vector<std::uint8_t> bytes;
   savegame_write_snapshot(state, bytes);
   return save_file_bytes(path, bytes);
+}
+
+bool savegame_write_slot_file(const RuntimeState &state,
+                              const std::filesystem::path &dir,
+                              std::size_t slot_index) {
+  if (dir.empty()) {
+    return false;
+  }
+  return savegame_write_snapshot_file(state,
+                                      dir / savegame_slot_filename(slot_index));
+}
+
+bool savegame_read_slot_file(RuntimeState &state,
+                             const std::filesystem::path &dir,
+                             std::size_t slot_index) {
+  if (dir.empty()) {
+    return false;
+  }
+  return savegame_read_snapshot_file(state,
+                                     dir / savegame_slot_filename(slot_index));
 }
 
 } // namespace comic2

@@ -222,6 +222,16 @@ struct UiState {
   bool modal_game_over = false;
   bool game_over = false;
   bool level_complete_modal = false;
+  std::uint8_t active_player_slot = 0;
+  std::filesystem::path persistence_dir;
+  bool player_slot_menu_active = false;
+  bool retire_player_mode = false;
+  bool editing_player_name = false;
+  std::string pending_player_name_input;
+  std::size_t save_option_index = 0;
+  bool key_rebinding_active = false;
+  std::size_t key_rebinding_step = 0;
+  DosKeyBindings pending_key_bindings{};
 };
 
 struct RuntimeState {
