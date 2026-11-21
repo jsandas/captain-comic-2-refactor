@@ -1335,10 +1335,10 @@ void ui_init_player_slot_menu(RuntimeState &state) {
   state.ui.player_slot_menu_active = true;
   state.ui.menu_state = MenuState::Options;
 
-  const auto active_count = static_cast<std::uint16_t>(std::count_if(
-      state.dos_config.player_names.begin(),
-      state.dos_config.player_names.end(),
-      [](const std::string &name) { return !name.empty(); }));
+  const auto active_count = static_cast<std::uint16_t>(
+      std::count_if(state.dos_config.player_names.begin(),
+                    state.dos_config.player_names.end(),
+                    [](const std::string &name) { return !name.empty(); }));
   state.dos_config.player_count = active_count;
 
   state.ui.option_labels.assign(8U, "");

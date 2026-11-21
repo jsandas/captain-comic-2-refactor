@@ -148,12 +148,11 @@ bool is_valid_unique_dos_key_binding(std::uint8_t dos_scancode,
   };
   const std::size_t limit =
       current_step < assigned.size() ? current_step : assigned.size();
-  return !std::any_of(
-      assigned.begin(),
-      assigned.begin() + static_cast<std::ptrdiff_t>(limit),
-      [dos_scancode](std::uint8_t bound) {
-        return bound != 0U && bound == dos_scancode;
-      });
+  return !std::any_of(assigned.begin(),
+                      assigned.begin() + static_cast<std::ptrdiff_t>(limit),
+                      [dos_scancode](std::uint8_t bound) {
+                        return bound != 0U && bound == dos_scancode;
+                      });
 }
 
 void apply_dos_scancode_to_input(InputState &input, std::uint8_t dos_scancode,
