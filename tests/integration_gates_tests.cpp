@@ -2632,6 +2632,71 @@ void test_gate_16c_hud_mode_icons_and_interactive_menu_persistence() {
   std::filesystem::remove_all(temp_dir);
 }
 
+void test_gate_16d_continuous_pit_sound_streams() {
+  expect(comic2::get_authentic_sound_table_size() ==
+             comic2::kAuthenticSoundStreamCount,
+         "Gate 16-D: sound table must contain all 56 streams");
+
+  // 1. Verify multi-note stream DS:0x9D3F (MainMenuTheme, 72 pairs at
+  // 0x2174F..0x2186F in comic2_data.asm) steps through SoundDriver::tick()
+  // with exact divisor/duration counts and priority preemption.
+  const auto menu_stream =
+      comic2::make_stream_from_offset(comic2::kSoundOffsetMainMenuTheme);
+  expect(menu_stream.words.size() == 144U,
+         "Gate 16-D: DS:0x9D3F must contain 72 (divisor, duration) pairs");
+
+  comic2::SoundDriver driver;
+  driver.play(menu_stream, menu_stream.priority);
+  expect(driver.is_playing(),
+         "Gate 16-D: SoundDriver must start playing DS:0x9D3F");
+
+  // Note 0: div=0x1C48, dur=2
+  expect(driver.tick() == 0x1C48u, "Gate 16-D: tick 0 must output 0x1C48");
+  expect(driver.tick() == 0x1C48u, "Gate 16-D: tick 1 must output 0x1C48");
+  // Note 1: div=0x17C8, dur=5
+  for (int i = 0; i < 5; ++i) {
+    expect(driver.tick() == 0x17C8u,
+           "Gate 16-D: ticks 2..6 must output 0x17C8");
+  }
+  // Note 2: div=0x12E0, dur=2
+  expect(driver.tick() == 0x12E0u, "Gate 16-D: tick 7 must output 0x12E0");
+  expect(driver.tick() == 0x12E0u, "Gate 16-D: tick 8 must output 0x12E0");
+
+  // Preempt mid-stream with higher-priority BossDamage (DS:0x9A3D, prio 8)
+  const auto boss_hit =
+      comic2::make_stream_for_event(comic2::AudioEvent::BossDamage);
+  driver.play(boss_hit, boss_hit.priority);
+  expect(driver.current_priority() == 8U,
+         "Gate 16-D: BossDamage must preempt MainMenuTheme with priority 8");
+  expect(driver.tick() == 0x3000u && driver.tick() == 0x3000u,
+         "Gate 16-D: BossDamage note 0 must hold 0x3000 for 2 ticks");
+  expect(driver.tick() == 0x3800u && driver.tick() == 0x3800u,
+         "Gate 16-D: BossDamage note 1 must hold 0x3800 for 2 ticks");
+  expect(driver.tick() == 0x4000u && driver.tick() == 0x4000u,
+         "Gate 16-D: BossDamage note 2 must hold 0x4000 for 2 ticks");
+  expect(driver.tick() == 0U && !driver.is_playing(),
+         "Gate 16-D: BossDamage stream must terminate cleanly after 6 ticks");
+
+  // 2. Verify continuous ~18.2 Hz PIT stream advancement across game frames in
+  // run_render_loop (2 PIT ticks per frame).
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  comic2::GameDispatcher dispatcher = comic2::make_default_game_dispatcher();
+  comic2::MemoryFramePresenter presenter;
+  comic2::NullAudioBackend null_audio;
+
+  comic2::queue_audio_event(state, comic2::AudioEvent::Pickup);
+  expect(state.audio.sound.is_playing &&
+             state.audio.sound.stream_offset == comic2::kSoundOffsetItemPickup,
+         "Gate 16-D: queue_audio_event(Pickup) must load DS:0x98E0 into "
+         "SoundPlaybackState");
+
+  comic2::run_render_loop(state, dispatcher, presenter, 3,
+                          std::chrono::milliseconds(0), &null_audio);
+  expect(state.audio.sound.stream_index > 0U,
+         "Gate 16-D: run_render_loop must continuously advance active sound "
+         "streams across frames");
+}
+
 } // namespace
 
 void run_integration_gate_tests() {
@@ -2703,4 +2768,7 @@ void run_integration_gate_tests() {
 
   // Gate 16-C: HUD Mode Icons & Interactive Menu Persistence.
   test_gate_16c_hud_mode_icons_and_interactive_menu_persistence();
+
+  // Gate 16-D: Continuous PIT Sound Streams.
+  test_gate_16d_continuous_pit_sound_streams();
 }

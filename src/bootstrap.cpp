@@ -1125,6 +1125,13 @@ FrameLoopSummary run_render_loop(RuntimeState &state,
       audio_backend->update();
     }
 
+    // Advance the in-state PIT 18.2 Hz sound playback stream (2 PIT ticks per
+    // ~110 ms game frame, matching isr_timer_sound_int08 at 1000:0866).
+    for (int pit_step = 0; pit_step < 2 && state.audio.sound.is_playing;
+         ++pit_step) {
+      advance_sound_stream(state.audio.sound, 44100);
+    }
+
     if (state.ui.lifecycle_enabled) {
       EgaPlanarSurface lifecycle_frame(320, 200);
       render_game_lifecycle_frame(lifecycle_frame, state);

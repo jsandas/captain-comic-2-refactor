@@ -10,6 +10,7 @@
 #include <string>
 #include <utility>
 
+#include "comic2/audio.hpp"
 #include "comic2/bootstrap.hpp"
 #include "comic2/dispatcher.hpp"
 #include "comic2/input_handler.hpp"
@@ -1199,6 +1200,7 @@ bool ui_show_modal_prompt_wait_key(RuntimeState &state,
   state.ui.modal_prompt = prompt;
   state.ui.awaited_key = awaited_key;
   state.ui.modal_active = true;
+  queue_audio_event(state, AudioEvent::ModalPrompt);
   return true;
 }
 
@@ -1658,13 +1660,16 @@ bool transition_game_lifecycle(RuntimeState &state,
   switch (next_state) {
   case GameLifecycleState::Title:
     state.ui.cinematic_frame = 0;
+    queue_audio_event(state, AudioEvent::StartupChime);
     break;
   case GameLifecycleState::Intro:
     state.ui.cinematic_frame = 0;
+    queue_audio_event(state, AudioEvent::IntroFlash);
     break;
   case GameLifecycleState::Menu:
     state.ui.menu_state = MenuState::GameSelect;
     state.ui.selected_option_index = 0;
+    queue_audio_event(state, AudioEvent::MenuTheme);
     if (!state.ui.persistence_dir.empty()) {
       cfg_load_options_file(state, state.ui.persistence_dir / "FR.CFG");
       keys_load_file(state.key_bindings, state.ui.persistence_dir / "KEYS.DEF");
@@ -1737,6 +1742,7 @@ bool transition_game_lifecycle(RuntimeState &state,
     state.progression.flags =
         static_cast<std::uint8_t>(state.progression.flags | 0x80U);
     state.ui.cinematic_frame = 0;
+    queue_audio_event(state, AudioEvent::VictoryFanfare);
     break;
   case GameLifecycleState::GameOver:
     state.ui.modal_active = true;

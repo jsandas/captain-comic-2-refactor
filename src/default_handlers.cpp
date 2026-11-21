@@ -866,6 +866,7 @@ bool ent_process_interaction_script_and_queue_message(
   state.ui.modal_width_cells = msg->width_cells;
   state.ui.modal_height_cells = msg->height_cells;
   state.ui.modal_lines = msg->lines;
+  queue_audio_event(state, AudioEvent::ModalPrompt);
   return true;
 }
 
@@ -1080,6 +1081,7 @@ void update_player_mode_activation(RuntimeState &state) {
       state.progression.mode_inventory_mask | selected_mode);
   state.ui.inventory_mask =
       static_cast<std::uint8_t>(state.ui.inventory_mask | 0x04U);
+  queue_audio_event(state, AudioEvent::ItemActivate);
 }
 
 namespace {
