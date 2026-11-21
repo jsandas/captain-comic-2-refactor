@@ -1192,6 +1192,7 @@ void ui_render_game_selection_panel(EgaPlanarSurface &surface,
   }
 }
 
+// cppcheck-suppress unusedFunction ; reserved for Phase 10
 bool ui_show_modal_prompt_wait_key(RuntimeState &state,
                                    const std::string &prompt,
                                    std::uint8_t awaited_key) {
@@ -1334,12 +1335,10 @@ void ui_init_player_slot_menu(RuntimeState &state) {
   state.ui.player_slot_menu_active = true;
   state.ui.menu_state = MenuState::Options;
 
-  std::uint16_t active_count = 0U;
-  for (const auto &name : state.dos_config.player_names) {
-    if (!name.empty()) {
-      ++active_count;
-    }
-  }
+  const auto active_count = static_cast<std::uint16_t>(std::count_if(
+      state.dos_config.player_names.begin(),
+      state.dos_config.player_names.end(),
+      [](const std::string &name) { return !name.empty(); }));
   state.dos_config.player_count = active_count;
 
   state.ui.option_labels.assign(8U, "");

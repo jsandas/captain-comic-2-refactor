@@ -1,5 +1,6 @@
 #include "comic2/input_handler.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstdlib>
 #include <stdexcept>
@@ -147,12 +148,12 @@ bool is_valid_unique_dos_key_binding(std::uint8_t dos_scancode,
   };
   const std::size_t limit =
       current_step < assigned.size() ? current_step : assigned.size();
-  for (std::size_t i = 0; i < limit; ++i) {
-    if (assigned[i] != 0U && assigned[i] == dos_scancode) {
-      return false;
-    }
-  }
-  return true;
+  return !std::any_of(
+      assigned.begin(),
+      assigned.begin() + static_cast<std::ptrdiff_t>(limit),
+      [dos_scancode](std::uint8_t bound) {
+        return bound != 0U && bound == dos_scancode;
+      });
 }
 
 void apply_dos_scancode_to_input(InputState &input, std::uint8_t dos_scancode,
