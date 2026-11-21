@@ -22,18 +22,17 @@ namespace {
 // Authentic 82-entry key name table from scratch_key_names_table (0x0035F in
 // comic2_data.asm), indexed by (dos_scancode - 1) for scancodes 0x01..0x52.
 constexpr std::array<std::string_view, 0x52> kDosScancodeNames = {
-    "ESC",    "1",      "2",      "3",       "4",       "5",      "6",
-    "7",      "8",      "9",      "0",       "-",       "=",      "BACK SP",
-    "TAB",    "Q",      "W",      "E",       "R",       "T",      "Y",
-    "U",      "I",      "O",      "P",       "[",       "]",      "ENTER",
-    "CTRL",   "A",      "S",      "D",       "F",       "G",      "H",
-    "J",      "K",      "L",      ";",       "'",       "`",      "L SHIFT",
-    "\\",     "Z",      "X",      "C",       "V",       "B",      "N",
-    "M",      ",",      ".",      "/",       "R SHIFT", "*",      "ALT",
-    "SPACE",  "CAPS",   "F1",     "F2",      "F3",      "F4",     "F5",
-    "F6",     "F7",     "F8",     "F9",      "F10",     "NUMLOCK","SCROLL",
-    "HOME",   "UP",     "PGUP",   "- KEY",   "LEFT",    "5 KEY",  "RIGHT",
-    "+ KEY",  "END",    "DOWN",   "PGDN",    "INS",
+    "ESC",   "1",       "2",    "3",     "4",       "5",       "6",    "7",
+    "8",     "9",       "0",    "-",     "=",       "BACK SP", "TAB",  "Q",
+    "W",     "E",       "R",    "T",     "Y",       "U",       "I",    "O",
+    "P",     "[",       "]",    "ENTER", "CTRL",    "A",       "S",    "D",
+    "F",     "G",       "H",    "J",     "K",       "L",       ";",    "'",
+    "`",     "L SHIFT", "\\",   "Z",     "X",       "C",       "V",    "B",
+    "N",     "M",       ",",    ".",     "/",       "R SHIFT", "*",    "ALT",
+    "SPACE", "CAPS",    "F1",   "F2",    "F3",      "F4",      "F5",   "F6",
+    "F7",    "F8",      "F9",   "F10",   "NUMLOCK", "SCROLL",  "HOME", "UP",
+    "PGUP",  "- KEY",   "LEFT", "5 KEY", "RIGHT",   "+ KEY",   "END",  "DOWN",
+    "PGDN",  "INS",
 };
 
 #ifdef COMIC2_USE_SDL2

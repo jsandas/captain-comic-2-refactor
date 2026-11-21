@@ -2615,21 +2615,19 @@ void test_gate_16c_hud_mode_icons_and_interactive_menu_persistence() {
   // 3. Reload from Menu lifecycle into a fresh RuntimeState
   comic2::RuntimeState reloaded = comic2::make_default_runtime_state();
   reloaded.ui.persistence_dir = temp_dir;
-  comic2::transition_game_lifecycle(reloaded,
-                                    comic2::GameLifecycleState::Menu);
+  comic2::transition_game_lifecycle(reloaded, comic2::GameLifecycleState::Menu);
   reloaded.ui.selected_option_index = 2U;
   expect(comic2::update_game_lifecycle(
              reloaded, comic2::InputState{.fire_pressed = true}),
          "Gate 16-C: Menu slot 2 selection must transition to Gameplay");
-  expect(reloaded.player.score == 6543 && reloaded.player.x == 352 &&
-             reloaded.player.boots_equipped &&
-             reloaded.player.lantern_equipped &&
-             reloaded.player.corkscrew_equipped &&
-             reloaded.player.wand_equipped &&
-             reloaded.dos_config.player_names[0] == "COMIC" &&
-             reloaded.key_bindings.left == 0x1EU &&
-             reloaded.key_bindings.fire == 0x2AU,
-         "Gate 16-C: Menu reload must restore GAME.002, FR.CFG, and KEYS.DEF");
+  expect(
+      reloaded.player.score == 6543 && reloaded.player.x == 352 &&
+          reloaded.player.boots_equipped && reloaded.player.lantern_equipped &&
+          reloaded.player.corkscrew_equipped && reloaded.player.wand_equipped &&
+          reloaded.dos_config.player_names[0] == "COMIC" &&
+          reloaded.key_bindings.left == 0x1EU &&
+          reloaded.key_bindings.fire == 0x2AU,
+      "Gate 16-C: Menu reload must restore GAME.002, FR.CFG, and KEYS.DEF");
 
   std::filesystem::remove_all(temp_dir);
 }

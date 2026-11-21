@@ -1009,7 +1009,8 @@ void test_phase16_interactive_player_slot_management_and_world_save_loading() {
   // Enter two new players via live Menu lifecycle
   state.ui.lifecycle_state = comic2::GameLifecycleState::Menu;
   state.ui.pending_player_name_input = "comic one";
-  comic2::update_game_lifecycle(state, comic2::InputState{.fire_pressed = true});
+  comic2::update_game_lifecycle(state,
+                                comic2::InputState{.fire_pressed = true});
   expect(state.dos_config.player_count == 1U,
          "Entering a new player must increment player_count to 1");
   expect(state.dos_config.player_names[0] == "COMIC ONE",
@@ -1022,7 +1023,8 @@ void test_phase16_interactive_player_slot_management_and_world_save_loading() {
   // Navigate to "ENTER A NEW PLAYER" (index 6) and add second player
   state.ui.selected_option_index = 6U;
   state.ui.pending_player_name_input = "hero two";
-  comic2::update_game_lifecycle(state, comic2::InputState{.fire_pressed = true});
+  comic2::update_game_lifecycle(state,
+                                comic2::InputState{.fire_pressed = true});
   expect(state.dos_config.player_count == 2U,
          "Second player must increment player_count to 2");
   expect(state.dos_config.player_names[1] == "HERO TWO",
@@ -1031,7 +1033,8 @@ void test_phase16_interactive_player_slot_management_and_world_save_loading() {
   // Navigate to "RETIRE A PLAYER" (index 7), activate retire mode, and retire
   // slot 0
   state.ui.selected_option_index = 7U;
-  comic2::update_game_lifecycle(state, comic2::InputState{.fire_pressed = true});
+  comic2::update_game_lifecycle(state,
+                                comic2::InputState{.fire_pressed = true});
   expect(state.ui.retire_player_mode,
          "Selecting 'RETIRE A PLAYER' must enter retire_player_mode");
   expect(state.ui.option_labels[6] == "ERASE WHICH PLAYER?",
@@ -1039,7 +1042,8 @@ void test_phase16_interactive_player_slot_management_and_world_save_loading() {
   expect(state.ui.selected_option_index == 0U,
          "Retire mode must select first populated player slot 0");
 
-  comic2::update_game_lifecycle(state, comic2::InputState{.fire_pressed = true});
+  comic2::update_game_lifecycle(state,
+                                comic2::InputState{.fire_pressed = true});
   expect(!state.ui.retire_player_mode,
          "Confirming slot in retire mode must exit retire_player_mode");
   expect(state.dos_config.player_count == 1U,
@@ -1066,7 +1070,8 @@ void test_phase16_interactive_player_slot_management_and_world_save_loading() {
   state.ui.option_labels = {"NATURE", "MAGIC",  "TIME",
                             "ICE",    "TECHNO", "DREAMS"};
   state.ui.selected_option_index = 4U; // TECHNO / slot 4
-  comic2::update_game_lifecycle(state, comic2::InputState{.fire_pressed = true});
+  comic2::update_game_lifecycle(state,
+                                comic2::InputState{.fire_pressed = true});
   expect(state.ui.lifecycle_state == comic2::GameLifecycleState::Gameplay,
          "Confirming world/slot 4 must transition to Gameplay");
   expect(state.player.score == 4321 && state.current_level == 8 &&
@@ -1115,13 +1120,11 @@ void test_phase16_interactive_key_rebinding_ui_and_input_handler() {
 
   expect(!state.ui.key_rebinding_active,
          "Key rebinding must complete after 6 unique keys");
-  expect(state.key_bindings.left == 0x1EU &&
-             state.key_bindings.right == 0x20U &&
-             state.key_bindings.up == 0x11U &&
-             state.key_bindings.down == 0x1FU &&
-             state.key_bindings.jump == 0x39U &&
-             state.key_bindings.fire == 0x2AU,
-         "RuntimeState key_bindings must match newly bound scancodes");
+  expect(
+      state.key_bindings.left == 0x1EU && state.key_bindings.right == 0x20U &&
+          state.key_bindings.up == 0x11U && state.key_bindings.down == 0x1FU &&
+          state.key_bindings.jump == 0x39U && state.key_bindings.fire == 0x2AU,
+      "RuntimeState key_bindings must match newly bound scancodes");
   expect(std::filesystem::exists(temp_dir / "KEYS.DEF"),
          "Completed key rebinding must persist KEYS.DEF");
 

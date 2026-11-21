@@ -172,7 +172,8 @@ void cfg_load_options_or_defaults(RuntimeState &state,
     }
 
     const auto scale_word = state.dos_config.records[5];
-    if (scale_word != 0 && (has_encoded_vol || state.dos_config.player_count == 0)) {
+    if (scale_word != 0 &&
+        (has_encoded_vol || state.dos_config.player_count == 0)) {
       state.ui.display_scale = static_cast<std::uint8_t>(scale_word & 0xFF);
     } else {
       state.ui.display_scale = 0x01;
@@ -427,9 +428,9 @@ void savegame_write_snapshot(const RuntimeState &state,
   }
 
   bytes[tail + 12] = state.player.firepower;
-  bytes[tail + 13] = static_cast<std::uint8_t>(
-      (state.player.boots_equipped ? 1U : 0U) |
-      (state.player.corkscrew_equipped ? 0x80U : 0U));
+  bytes[tail + 13] =
+      static_cast<std::uint8_t>((state.player.boots_equipped ? 1U : 0U) |
+                                (state.player.corkscrew_equipped ? 0x80U : 0U));
   bytes[tail + 14] = state.player.lantern_equipped ? 1 : 0;
   bytes[tail + 15] = state.player.wand_equipped ? 1 : 0;
 
