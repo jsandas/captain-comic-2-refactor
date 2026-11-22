@@ -803,10 +803,12 @@ std::uint16_t get_authentic_sound_offset_by_index(std::size_t index) {
 
 SoundStream make_stream_from_offset(std::uint16_t stream_offset) {
   const auto &table = get_authentic_sound_table();
-  for (const auto &entry : table) {
-    if (entry.offset == stream_offset) {
-      return SoundStream{entry.words, entry.priority};
-    }
+  const auto it = std::find_if(
+      table.begin(), table.end(), [stream_offset](const auto &entry) {
+        return entry.offset == stream_offset;
+      });
+  if (it != table.end()) {
+    return SoundStream{it->words, it->priority};
   }
   return SoundStream{{0x01C0u, 0x0003u, 0x0000u, 0x0000u}, 1U};
 }
