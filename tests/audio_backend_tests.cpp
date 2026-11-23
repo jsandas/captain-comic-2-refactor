@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <stdexcept>
 #include <vector>
@@ -292,6 +293,31 @@ void test_authentic_56_sound_table_and_continuous_18_2hz_stepping() {
   expect(driver.current_priority() == 10U &&
              driver.current_divisor() == 0x23DAu,
          "priority-10 PlayerDeath must preempt MenuTheme");
+
+  // Verify title music pitch accuracy (fractional cycle synthesis without
+  // integer cycle-length quantization error).
+  // First note of TitleTheme is divisor 0x1FBE -> 1193180.0 / 8126.0 ~= 146.835
+  // Hz. Across 1 second (44100 samples) of constant divisor 0x1FBE, a square
+  // wave at 146.835 Hz must have ~293 zero-crossings (not 294 from integer
+  // cycle_length=300 quantization).
+  const comic2::SoundStream single_title_note{{0x1FBEu, 19U, 0x0000u, 0x0000u},
+                                              1U};
+  comic2::AudioSynthesizer synth(44100);
+  const auto title_pcm = synth.synthesize(single_title_note, 44100);
+  expect(title_pcm.size() == 44100U,
+         "AudioSynthesizer should generate 1 second of title note samples");
+  int transitions = 0;
+  for (std::size_t i = 1; i < title_pcm.size(); ++i) {
+    if ((title_pcm[i - 1] > 0 && title_pcm[i] < 0) ||
+        (title_pcm[i - 1] < 0 && title_pcm[i] > 0)) {
+      ++transitions;
+    }
+  }
+  const double measured_freq = static_cast<double>(transitions) / 2.0;
+  const double expected_freq = 1193180.0 / static_cast<double>(0x1FBEu);
+  expect(std::abs(measured_freq - expected_freq) < 0.6,
+         "synthesized title note pitch must match authentic PIT frequency "
+         "1193180 / divisor");
 }
 
 } // namespace

@@ -703,11 +703,16 @@ public:
   void enqueue_event(AudioEvent event) override {
     ++events_enqueued_;
     const SoundStream stream = make_stream_for_event(event);
+    const std::uint8_t prev_priority = sound_driver_.current_priority();
+    const bool was_playing = sound_driver_.is_playing();
     sound_driver_.play(stream, stream.priority);
     if (!available_ || device_id_ == 0) {
       return;
     }
-    pump_pit_tick();
+    if (!was_playing || stream.priority >= prev_priority) {
+      SDL_ClearQueuedAudio(device_id_);
+      phase_ = 0.0;
+    }
   }
 
   void update() override {
@@ -735,6 +740,7 @@ public:
 
   void shutdown() override {
     sound_driver_.stop();
+    phase_ = 0.0;
     if (device_id_ != 0) {
       SDL_CloseAudioDevice(device_id_);
       device_id_ = 0;
@@ -759,20 +765,32 @@ private:
     }
     const std::uint16_t divisor = sound_driver_.tick();
     if (divisor == 0U) {
+      phase_ = 0.0;
       return;
     }
     const int sample_rate =
         obtained_spec_.freq > 0 ? obtained_spec_.freq : 44100;
-    const auto pcm = synthesize_pit_samples(divisor, 1U, sample_rate);
-    if (!pcm.empty()) {
-      SDL_QueueAudio(device_id_, pcm.data(),
-                     static_cast<Uint32>(pcm.size() * sizeof(std::int16_t)));
+    const double frequency = 1193180.0 / static_cast<double>(divisor);
+    const double phase_step = frequency / static_cast<double>(sample_rate);
+    const int total_sample_count = std::max(
+        1, static_cast<int>(std::lround(static_cast<double>(sample_rate) /
+                                        (1193180.0 / 65536.0))));
+    std::vector<std::int16_t> pcm(static_cast<std::size_t>(total_sample_count));
+    constexpr std::int16_t kAmplitude = 12000;
+    for (int i = 0; i < total_sample_count; ++i) {
+      pcm[static_cast<std::size_t>(i)] =
+          (phase_ < 0.5) ? kAmplitude : static_cast<std::int16_t>(-kAmplitude);
+      phase_ += phase_step;
+      phase_ -= std::floor(phase_);
     }
+    SDL_QueueAudio(device_id_, pcm.data(),
+                   static_cast<Uint32>(pcm.size() * sizeof(std::int16_t)));
   }
 
   bool available_ = false;
   bool owns_sdl_audio_subsystem_ = false;
   std::size_t events_enqueued_ = 0;
+  double phase_ = 0.0;
   SoundDriver sound_driver_;
   SDL_AudioDeviceID device_id_ = 0;
   SDL_AudioSpec obtained_spec_{};
@@ -880,6 +898,10 @@ AudioSynthesizer::synthesize(const SoundStream &stream,
 
   std::vector<std::int16_t> output(static_cast<std::size_t>(sample_count), 0);
   int written = 0;
+  double phase = 0.0;
+  constexpr std::int16_t kAmplitude = 12000;
+  constexpr double kPitTickRateHz = 1193180.0 / 65536.0;
+
   for (std::size_t idx = 0;
        idx + 1 < stream.words.size() && written < sample_count; idx += 2) {
     const std::uint16_t divisor = stream.words[idx];
@@ -888,15 +910,24 @@ AudioSynthesizer::synthesize(const SoundStream &stream,
     if (divisor == 0U) {
       break;
     }
-    const auto note_samples =
-        synthesize_pit_samples(divisor, duration_ticks, sample_rate_);
-    if (note_samples.empty()) {
+    const double frequency = 1193180.0 / static_cast<double>(divisor);
+    if (frequency <= 0.0) {
       break;
     }
-    const int to_copy = std::min<int>(sample_count - written,
-                                      static_cast<int>(note_samples.size()));
-    std::copy_n(note_samples.begin(), to_copy, output.begin() + written);
-    written += to_copy;
+    const double phase_step = frequency / static_cast<double>(sample_rate_);
+    const int note_sample_count =
+        std::max(1, static_cast<int>(std::lround(
+                        static_cast<double>(sample_rate_) *
+                        static_cast<double>(duration_ticks) / kPitTickRateHz)));
+    const int to_write =
+        std::min<int>(sample_count - written, note_sample_count);
+    for (int i = 0; i < to_write; ++i) {
+      output[static_cast<std::size_t>(written + i)] =
+          (phase < 0.5) ? kAmplitude : static_cast<std::int16_t>(-kAmplitude);
+      phase += phase_step;
+      phase -= std::floor(phase);
+    }
+    written += to_write;
   }
 
   if (written == 0) {
