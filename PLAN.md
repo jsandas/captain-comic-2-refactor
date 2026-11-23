@@ -1580,9 +1580,9 @@ Complete the remaining assembly-parity gaps identified across `reference/comic2/
 - [x] Wire interactive player slot management ("ENTER A NEW PLAYER", "RETIRE A PLAYER"), world selection -> level/save slot loading (`GAME.000`..`GAME.005`), and interactive keyboard remapping (`KEYS.DEF` / `FR.CFG`) into the live `Menu` and `Save` lifecycle states.
 
 #### 16.4 Continuous Audio Stream Playback & Sound Table Integration (`src/audio.cpp`, `src/bootstrap.cpp`)
-- [ ] Extract all 56 authentic `(frequency_divisor, duration_ticks)` sound effect and musical tune streams from `comic2_data.asm` (`0x2170a - 0x218aa`) into static tables in `src/audio.cpp`.
-- [ ] Update `Sdl2AudioBackend` (and the frame tick audio pump) to advance `SoundDriver::tick()` continuously at the ~18.2 Hz PIT timer rate (`isr_timer_sound_int08` at `1000:0866`), streaming multi-note tunes and priority-preempted SFX smoothly across frames rather than single-divisor bursts.
-- [ ] Wire authentic sound table IDs to all gameplay, menu, pickup, boss, and cutscene events.
+- [x] Extract all 56 authentic `(frequency_divisor, duration_ticks)` sound effect and musical tune streams from `comic2_data.asm` (`0x2170a - 0x218aa`) into static tables in `src/audio.cpp`.
+- [x] Update `Sdl2AudioBackend` (and the frame tick audio pump) to advance `SoundDriver::tick()` continuously at the ~18.2 Hz PIT timer rate (`isr_timer_sound_int08` at `1000:0866`), streaming multi-note tunes and priority-preempted SFX smoothly across frames rather than single-divisor bursts.
+- [x] Wire authentic sound table IDs to all gameplay, menu, pickup, boss, and cutscene events.
 
 #### 16.5 Multi-Room & Multi-Level Playthrough Verification (`tests/integration_gates_tests.cpp`, `tests/subsystem_scaffold_tests.cpp`)
 - [ ] Add comprehensive automated tests verifying Room 0 through Room N decoding, valid tile index bounds, and `MappedObject12` entity spawns across all 15 playable levels (`FR000.1` .. `FR014.1`) (completing item 11.3).
@@ -1594,7 +1594,7 @@ Complete the remaining assembly-parity gaps identified across `reference/comic2/
 - [x] **Gate 16-A (Entity & Boss AI Parity)**: All 16+ entity behavior handlers and boss state machines execute deterministic movement, projectile firing, animation frame cycling, and damage phases matching `comic2_standalone.asm`.
 - [x] **Gate 16-B (Scripted Dialog & Text Rendering)**: `FR###.3` XOR-`0x25` message offsets resolve to decrypted strings and render readable 8x8 glyph text inside framed modal boxes on the EGA surface.
 - [x] **Gate 16-C (HUD Mode Icons & Interactive Menu Persistence)**: Collected equipment icons render on the `FRPAK.001` bezel, and interactive menu/save prompts persist and reload `GAME.000..005` and `FR.CFG` / `KEYS.DEF`.
-- [ ] **Gate 16-D (Continuous PIT Sound Streams)**: Multi-note sound streams from `comic2_data.asm` advance at ~18.2 Hz through `SoundDriver::tick()` with exact divisor/duration stepping and priority preemption.
+- [x] **Gate 16-D (Continuous PIT Sound Streams)**: Multi-note sound streams from `comic2_data.asm` advance at ~18.2 Hz through `SoundDriver::tick()` with exact divisor/duration stepping and priority preemption.
 - [ ] **Gate 16-E (15-Level Catalog & Room Verification)**: All rooms across all 15 levels (`FR000`–`FR014`) load without out-of-bounds tile indices or malformed entity/script payloads.
 
 ---
@@ -1613,11 +1613,11 @@ Complete the remaining assembly-parity gaps identified across `reference/comic2/
 **Objective**: Render Boots/Lantern/Corkscrew/Wand icons on the bezel HUD and wire interactive save/load slots (`GAME.000..005`) and key rebinding (`FR.CFG` / `KEYS.DEF`) into the frontend menu.
 **Files**: `src/ui.cpp`, `src/persistence.cpp`, `src/input_handler.cpp`, `tests/ui_tests.cpp`, `tests/persistence_tests.cpp`.
 
-#### PR 16-D1: Authentic 56-Entry Sound Table & Continuous 18.2 Hz PIT Stream Playback [NEXT]
+#### PR 16-D1: Authentic 56-Entry Sound Table & Continuous 18.2 Hz PIT Stream Playback [COMPLETED]
 **Objective**: Extract the 56 sound streams from `comic2_data.asm` (`0x2170a - 0x218aa`) and drive `SoundDriver::tick()` continuously at 18.2 Hz in `Sdl2AudioBackend` and headless tests.
-**Files**: `include/comic2/audio.hpp`, `src/audio.cpp`, `src/bootstrap.cpp`, `tests/audio_tests.cpp`.
+**Files**: `include/comic2/audio.hpp`, `src/audio.cpp`, `src/bootstrap.cpp`, `tests/audio_backend_tests.cpp`, `tests/integration_gates_tests.cpp`.
 
-#### PR 16-E1: All-15-Levels Room Layout Audit & End-to-End Playthrough Gates
+#### PR 16-E1: All-15-Levels Room Layout Audit & End-to-End Playthrough Gates [NEXT]
 **Objective**: Validate Room 0..N layouts, tile bounds, entity spawns, and script offsets across all 15 levels (`FR000`–`FR014`) and pass Gates 16-A through 16-E.
 **Files**: `tests/subsystem_scaffold_tests.cpp`, `tests/integration_gates_tests.cpp`.
 

@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <stdexcept>
 #include <vector>
@@ -209,6 +210,116 @@ void test_null_audio_backend_accepts_events() {
          "null backend should still track enqueued events for diagnostics");
 }
 
+void test_authentic_56_sound_table_and_continuous_18_2hz_stepping() {
+  expect(comic2::get_authentic_sound_table_size() ==
+             comic2::kAuthenticSoundStreamCount,
+         "sound table must contain all 56 authentic sound streams");
+
+  // Verify every entry in the 56-stream table has a valid offset, non-zero
+  // initial divisor, and (0, 0) terminator.
+  for (std::size_t i = 0; i < comic2::kAuthenticSoundStreamCount; ++i) {
+    const auto offset = comic2::get_authentic_sound_offset_by_index(i);
+    const auto stream = comic2::get_authentic_sound_stream_by_index(i);
+    expect(offset != 0U, "authentic sound entry offset must be non-zero");
+    expect(stream.words.size() >= 4U && (stream.words.size() % 2U) == 0U,
+           "authentic sound stream must contain divisor/duration pairs");
+    expect(stream.words[0] != 0U && stream.words[1] != 0U,
+           "authentic sound stream must start with a valid note");
+    expect(stream.words[stream.words.size() - 2] == 0U &&
+               stream.words[stream.words.size() - 1] == 0U,
+           "authentic sound stream must end with (0, 0) terminator");
+
+    const auto by_offset = comic2::make_stream_from_offset(offset);
+    expect(by_offset.words == stream.words,
+           "make_stream_from_offset must return exact stream words");
+  }
+
+  // Verify specific canonical streams from comic2_data.asm:
+  // - DS:0x00DB (Title/Intro theme, 68 pairs = 136 words)
+  // - DS:0x9D3F (Main menu melody at data_0:0x2174F, 72 pairs = 144 words)
+  // - DS:0x969A (Player death at data_0:0x210AA, 5 pairs = 10 words, prio 10)
+  // - DS:0x98E0 (Item pickup at data_0:0x212F0, 5 pairs = 10 words, prio 3)
+  const auto title_stream =
+      comic2::make_stream_from_offset(comic2::kSoundOffsetTitleTheme);
+  expect(title_stream.words.size() == 136U &&
+             title_stream.words[0] == 0x1FBEu &&
+             title_stream.words[1] == 0x0003u,
+         "DS:0x00DB title stream must match comic2_data.asm bytes");
+
+  const auto menu_stream =
+      comic2::make_stream_from_offset(comic2::kSoundOffsetMainMenuTheme);
+  expect(menu_stream.words.size() == 144U && menu_stream.words[0] == 0x1C48u &&
+             menu_stream.words[1] == 0x0002u,
+         "DS:0x9D3F main menu stream must match comic2_data.asm bytes");
+
+  // Verify exact duration-tick stepping through SoundDriver::tick() for
+  // multi-note stream DS:0x98E0 (ItemPickup: 4 notes of duration 2 ticks each)
+  const auto pickup_stream =
+      comic2::make_stream_from_offset(comic2::kSoundOffsetItemPickup);
+  expect(pickup_stream.words.size() == 10U && pickup_stream.priority == 3U,
+         "DS:0x98E0 item pickup stream must have 4 notes + terminator");
+
+  comic2::SoundDriver driver;
+  driver.play(pickup_stream, pickup_stream.priority);
+  expect(driver.is_playing(), "driver should be playing pickup stream");
+
+  const std::uint16_t expected_divisors[8] = {
+      0x0FDAu, 0x0FDAu, 0x0C90u, 0x0C90u, 0x0A91u, 0x0A91u, 0x0800u, 0x0800u,
+  };
+  for (int t = 0; t < 8; ++t) {
+    const auto div = driver.tick();
+    expect(div == expected_divisors[t],
+           "SoundDriver::tick must hold each divisor for its exact tick count");
+  }
+  expect(driver.tick() == 0U && !driver.is_playing(),
+         "SoundDriver::tick must stop cleanly upon reaching (0, 0) terminator");
+
+  // Verify priority preemption with authentic streams:
+  // Start MenuTheme (priority 1), reject Shoot (priority 1 allows
+  // same-or-higher replacement, JumpStart priority 0 is rejected), and preempt
+  // with PlayerDeath (priority 10).
+  driver.play(menu_stream, menu_stream.priority);
+  expect(driver.current_priority() == 1U && driver.current_divisor() == 0x1C48u,
+         "MenuTheme should start at divisor 0x1C48 with priority 1");
+  const auto jump_stream =
+      comic2::make_stream_from_offset(comic2::kSoundOffsetJumpStart);
+  driver.play(jump_stream, jump_stream.priority);
+  expect(driver.current_priority() == 1U && driver.current_divisor() == 0x1C48u,
+         "priority-0 JumpStart must not preempt priority-1 MenuTheme");
+
+  const auto death_stream =
+      comic2::make_stream_from_offset(comic2::kSoundOffsetPlayerDeath);
+  driver.play(death_stream, death_stream.priority);
+  expect(driver.current_priority() == 10U &&
+             driver.current_divisor() == 0x23DAu,
+         "priority-10 PlayerDeath must preempt MenuTheme");
+
+  // Verify title music pitch accuracy (fractional cycle synthesis without
+  // integer cycle-length quantization error).
+  // First note of TitleTheme is divisor 0x1FBE -> 1193180.0 / 8126.0 ~= 146.835
+  // Hz. Across 1 second (44100 samples) of constant divisor 0x1FBE, a square
+  // wave at 146.835 Hz must have ~293 zero-crossings (not 294 from integer
+  // cycle_length=300 quantization).
+  const comic2::SoundStream single_title_note{{0x1FBEu, 19U, 0x0000u, 0x0000u},
+                                              1U};
+  comic2::AudioSynthesizer synth(44100);
+  const auto title_pcm = synth.synthesize(single_title_note, 44100);
+  expect(title_pcm.size() == 44100U,
+         "AudioSynthesizer should generate 1 second of title note samples");
+  int transitions = 0;
+  for (std::size_t i = 1; i < title_pcm.size(); ++i) {
+    if ((title_pcm[i - 1] > 0 && title_pcm[i] < 0) ||
+        (title_pcm[i - 1] < 0 && title_pcm[i] > 0)) {
+      ++transitions;
+    }
+  }
+  const double measured_freq = static_cast<double>(transitions) / 2.0;
+  const double expected_freq = 1193180.0 / static_cast<double>(0x1FBEu);
+  expect(std::abs(measured_freq - expected_freq) < 0.6,
+         "synthesized title note pitch must match authentic PIT frequency "
+         "1193180 / divisor");
+}
+
 } // namespace
 
 void run_audio_backend_tests() {
@@ -217,4 +328,5 @@ void run_audio_backend_tests() {
   test_run_render_loop_skips_audio_when_initialization_fails();
   test_sound_command_parser_and_synthesizer_work();
   test_null_audio_backend_accepts_events();
+  test_authentic_56_sound_table_and_continuous_18_2hz_stepping();
 }

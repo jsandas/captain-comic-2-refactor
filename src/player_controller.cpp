@@ -188,8 +188,11 @@ void apply_airborne_physics_tick(RuntimeState &state,
       get_effective_motion_config(state, motion);
 
   // Variable jump height: releasing jump key early truncates jump counter
-  // (matches loc_2a2c: mov byte [0x898], 0x0)
+  // (matches loc_2a2c: mov byte [0x898], 0x0 and loc_249f: int 3 with 0x96F6)
   if (effective_motion.truncate_jump_on_release && !state.input.jump_pressed) {
+    if (state.player.jump_counter > 0 && state.player.y_vel < 0) {
+      queue_audio_event(state, AudioEvent::JumpTruncate);
+    }
     state.player.jump_counter = 0;
   }
 

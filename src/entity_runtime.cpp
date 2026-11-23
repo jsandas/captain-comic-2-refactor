@@ -1176,13 +1176,13 @@ ProjectileCombatResult apply_projectile_entity_collisions(RuntimeState &state) {
           ++result.entities_damaged;
           state.player.score =
               static_cast<std::uint16_t>(state.player.score + 200U);
-          queue_audio_event(state, AudioEvent::Hit);
+          queue_audio_event(state, AudioEvent::BossDamage);
         } else {
           ++result.entities_damaged;
           ++result.entities_defeated;
           state.player.score =
               static_cast<std::uint16_t>(state.player.score + 1000U);
-          queue_audio_event(state, AudioEvent::Death);
+          queue_audio_event(state, AudioEvent::VictoryFanfare);
           state.boss_victory = true;
           state.level_complete = true;
           state.ui.level_complete_modal = true;
@@ -1203,7 +1203,7 @@ ProjectileCombatResult apply_projectile_entity_collisions(RuntimeState &state) {
           slot.x -= 4;
         }
         slot.anim_tick = 1;
-        queue_audio_event(state, AudioEvent::Hit);
+        queue_audio_event(state, AudioEvent::EnemyHit);
         ++result.entities_damaged;
       } else {
         // Lethal hit
@@ -1211,7 +1211,7 @@ ProjectileCombatResult apply_projectile_entity_collisions(RuntimeState &state) {
         ++result.entities_defeated;
         state.player.score =
             static_cast<std::uint16_t>(state.player.score + 100U);
-        queue_audio_event(state, AudioEvent::Hit);
+        queue_audio_event(state, AudioEvent::EnemyDefeat);
 
         if (slot.mapped_object_ptr < state.mapped_objects.size()) {
           state.mapped_objects[slot.mapped_object_ptr].state_flags = 2;
@@ -1332,6 +1332,7 @@ void apply_entity_combat(RuntimeState &state) {
       ++state.player.gems;
       state.player.score =
           static_cast<std::uint16_t>(state.player.score + 100U);
+      queue_audio_event(state, AudioEvent::Pickup);
       deactivate_runtime_slot(slot);
       continue;
     }
@@ -1339,6 +1340,7 @@ void apply_entity_combat(RuntimeState &state) {
       state.player.firepower = static_cast<std::uint8_t>(
           std::min<std::uint8_t>(state.player.firepower + 1, 8));
       state.player.score = static_cast<std::uint16_t>(state.player.score + 50U);
+      queue_audio_event(state, AudioEvent::Pickup);
       deactivate_runtime_slot(slot);
       continue;
     }
