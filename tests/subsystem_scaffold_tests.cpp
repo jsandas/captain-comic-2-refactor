@@ -1702,10 +1702,24 @@ void test_phase16_all_15_levels_rooms_tiles_entities_and_scripts() {
       expect(!state.mapped_objects.empty(),
              "Every room across all 15 levels should populate MappedObject12 "
              "spawns");
+      for (const auto &obj : state.mapped_objects) {
+        expect(obj.state_flags != 0U && obj.state_flags <= 33U &&
+                   obj.state_flags != comic2::kBehaviorGem &&
+                   obj.state_flags != comic2::kBehaviorPowerup,
+               "Synthesized MappedObject12 entries must carry a non-zero "
+               "active behavior state_flags");
+      }
       expect_eq(state.active_entities.size(), state.mapped_objects.size(),
                 "Room active entities should match populated mapped objects");
       expect_eq(state.runtime_slots.size(), 6U,
                 "Room runtime slots should be provisioned to 6 slots");
+      for (const auto &slot : state.runtime_slots) {
+        if (comic2::is_runtime_slot_active(slot)) {
+          expect(slot.behavior_state != 0U,
+                 "Active runtime slot hydrated from synthesized MappedObject12 "
+                 "must have non-zero behavior_state");
+        }
+      }
 
       if (tuple->has_script()) {
         expect_eq(

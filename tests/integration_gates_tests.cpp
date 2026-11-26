@@ -2834,6 +2834,13 @@ void test_gate_16e_all_15_levels_catalog_and_room_verification() {
                  state.active_entities.size() == state.mapped_objects.size(),
              "Gate 16-E: room must populate valid MappedObject12 entity "
              "spawns");
+      for (const auto &obj : state.mapped_objects) {
+        expect(obj.state_flags != 0U && obj.state_flags <= 33U &&
+                   obj.state_flags != comic2::kBehaviorGem &&
+                   obj.state_flags != comic2::kBehaviorPowerup,
+               "Gate 16-E: synthesized MappedObject12 must carry a non-zero "
+               "active behavior state");
+      }
 
       if (tuple->has_script()) {
         expect(state.level_script_bytes.size() == comic2::kLevelScriptBlockSize,
