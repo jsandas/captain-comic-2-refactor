@@ -2754,7 +2754,7 @@ void test_gate_16a_entity_and_boss_ai_parity() {
   proj.active = true;
   state.projectiles = {proj};
   const auto hit1 = comic2::apply_projectile_entity_collisions(state);
-  expect(hit1.projectiles_hit == 1U && boss.unknown_0e == 5U,
+  expect(hit1.projectiles_hit == 1U && state.runtime_slots[1].unknown_0e == 5U,
          "Gate 16-A: projectile hit must decrement boss HP to 5");
   expect(((boss.unknown_1c >> 8) & 0xFFU) == comic2::kBossInvulnerabilityTicks,
          "Gate 16-A: boss hit must start invulnerability window");
