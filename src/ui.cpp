@@ -1865,7 +1865,7 @@ bool update_game_lifecycle(RuntimeState &state, const InputState &input,
     if (should_transition_to_save(state)) {
       return transition_game_lifecycle(state, GameLifecycleState::Save);
     }
-    if ((state.progression.flags & 0x80U) != 0U) {
+    if (state.boss_victory || (state.progression.flags & 0x80U) != 0U) {
       return transition_game_lifecycle(state, GameLifecycleState::Victory);
     }
     if (state.player.hp == 0 && state.player.lives == 0) {
@@ -1878,7 +1878,7 @@ bool update_game_lifecycle(RuntimeState &state, const InputState &input,
     if (should_transition_to_save(state)) {
       return transition_game_lifecycle(state, GameLifecycleState::Save);
     }
-    if ((state.progression.flags & 0x80U) != 0U) {
+    if (state.boss_victory || (state.progression.flags & 0x80U) != 0U) {
       return transition_game_lifecycle(state, GameLifecycleState::Victory);
     }
     if (state.player.hp == 0 && state.player.lives == 0) {
@@ -1903,7 +1903,7 @@ bool update_game_lifecycle(RuntimeState &state, const InputState &input,
                          state.ui.persistence_dir / "KEYS.DEF");
         }
       }
-      if ((state.progression.flags & 0x80U) != 0U) {
+      if (state.boss_victory || (state.progression.flags & 0x80U) != 0U) {
         return transition_game_lifecycle(state, GameLifecycleState::Victory);
       }
       return transition_game_lifecycle(state, GameLifecycleState::Gameplay);

@@ -1184,6 +1184,8 @@ ProjectileCombatResult apply_projectile_entity_collisions(RuntimeState &state) {
               static_cast<std::uint16_t>(state.player.score + 1000U);
           queue_audio_event(state, AudioEvent::VictoryFanfare);
           state.boss_victory = true;
+          state.progression.flags =
+              static_cast<std::uint8_t>(state.progression.flags | 0x80U);
           state.level_complete = true;
           state.ui.level_complete_modal = true;
           if (slot.mapped_object_ptr < state.mapped_objects.size()) {

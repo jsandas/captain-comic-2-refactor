@@ -343,7 +343,220 @@ decode_room_mapped_objects(std::span<const std::uint8_t> decoded_room_bytes) {
   return mapped_objects;
 }
 
-void load_room_effect_script_and_trigger_ranges(RuntimeState &state) {
+std::vector<std::uint16_t>
+build_linear_row_pointer_table(std::uint16_t tile_w, std::uint16_t tile_h) {
+  std::vector<std::uint16_t> row_pointers(tile_h, 0);
+  for (std::uint16_t y = 0; y < tile_h; ++y) {
+    row_pointers[y] = static_cast<std::uint16_t>(
+        static_cast<std::size_t>(y) * static_cast<std::size_t>(tile_w));
+  }
+  return row_pointers;
+}
+
+std::uint16_t
+resolve_synthesized_entity_behavior_state(std::uint16_t descriptor_ptr) {
+  switch (descriptor_ptr) {
+  case 0x8091U:
+  case 0x8700U:
+  case 0x9936U:
+  case 0xCDF7U:
+  case 0xCE17U:
+  case 0xCE27U:
+    return kBehaviorChase;
+  case 0x80A1U:
+  case 0x80D1U:
+  case 0x8740U:
+    return kBehaviorBounce;
+  case 0x80B1U:
+  case 0x80C1U:
+  case 0x8720U:
+  case 0x8730U:
+  case 0x9CF2U:
+    return kBehaviorJump;
+  case 0x80E1U:
+  case 0x8750U:
+  case 0x9501U:
+  case 0xAFBBU:
+    return kBehaviorGravity;
+  case 0x80F1U:
+  case 0x8101U:
+  case 0x8710U:
+  case 0x8760U:
+  case 0x9103U:
+  case 0x92DAU:
+  case 0x92EAU:
+  case 0x9511U:
+  case 0x9946U:
+  case 0x9D22U:
+  case 0x9D32U:
+  case 0xA319U:
+  case 0xA93AU:
+  case 0xAF9BU:
+  case 0xAFABU:
+  case 0xAFCBU:
+  case 0xAFEBU:
+  case 0xB938U:
+  case 0xBF7BU:
+  case 0xC71CU:
+  case 0xCE87U:
+  case 0xCE97U:
+  case 0xCEA7U:
+    return kBehaviorShoot;
+  case 0x8D98U:
+    return kBehaviorBoss;
+  case 0x8DA8U:
+  case 0xA94AU:
+    return kBehaviorAsm09_HeavyLeaper;
+  case 0x90F3U:
+  case 0xA309U:
+    return kBehaviorAsm10_GhostPhaser;
+  case 0x94F1U:
+  case 0xA2E9U:
+  case 0xCE07U:
+    return kBehaviorAsm11_HighBouncer;
+  case 0x9926U:
+    return kBehaviorAsm12_CeilingDropHazard;
+  case 0xA2F9U:
+  case 0xB928U:
+  case 0xBF6BU:
+    return kBehaviorAsm13_FastLedgePatrol;
+  case 0x9D02U:
+    return kBehaviorAsm14_DirectionLockedWalker;
+  case 0x9D12U:
+    return kBehaviorAsm15_GroundPounder;
+  case 0xA2C9U:
+  case 0xAF7BU:
+    return kBehaviorAsm16_DiagonalBouncer;
+  case 0xA2D9U:
+  case 0xCDD7U:
+  case 0xCE67U:
+    return kBehaviorAsm17_TrampolineJumper;
+  case 0xA95AU:
+    return kBehaviorAsm18_WallJumpingRunner;
+  case 0xA96AU:
+    return kBehaviorAsm19_DropTrap1;
+  case 0xA97AU:
+    return kBehaviorAsm20_SpikeDropTrap2;
+  case 0xAF5BU:
+  case 0xAF6BU:
+  case 0xAF8BU:
+  case 0xBF5BU:
+  case 0xC6FCU:
+    return kBehaviorAsm21_HovercraftOscillator;
+  case 0xAFDBU:
+  case 0xB918U:
+  case 0xCE37U:
+    return kBehaviorAsm22_TwoPhaseDrone;
+  case 0xB908U:
+    return kBehaviorAsm23_FastRammer;
+  case 0xBF1BU:
+  case 0xBF2BU:
+  case 0xBF3BU:
+  case 0xBF4BU:
+    return kBehaviorAsm24_CeilingDropGhost;
+  case 0x9956U:
+    return kBehaviorAsm25_InvertedCeilingCrawler;
+  case 0xC6ECU:
+    return kBehaviorAsm26_StraightHorizCruiser;
+  case 0xC6CCU:
+    return kBehaviorAsm27_BossWalker;
+  case 0xC70CU:
+    return kBehaviorAsm28_BossSwooper;
+  case 0xC6DCU:
+    return kBehaviorAsm29_LeftwardDart;
+  case 0xCDE7U:
+    return kBehaviorAsm30_TorpedoSprinter;
+  case 0xCE77U:
+    return kBehaviorAsm31_HeavyStalactite;
+  case 0xCE47U:
+    return kBehaviorAsm32_LeftSwoopDiver;
+  case 0xCE57U:
+    return kBehaviorAsm33_RightSwoopDiver;
+  default:
+    if (descriptor_ptr != 0U && descriptor_ptr <= 3U) {
+      return kBehaviorJump;
+    }
+    if (descriptor_ptr >= 4U && descriptor_ptr <= 7U) {
+      return kBehaviorBounce;
+    }
+    return static_cast<std::uint16_t>(kBehaviorChase +
+                                      ((descriptor_ptr >> 4U) % 3U));
+  }
+}
+
+std::vector<MappedObject12>
+build_mapped_objects_from_level_data(const LevelRuntimeData *level_data,
+                                     std::uint16_t level, std::uint16_t room) {
+  std::vector<MappedObject12> objects;
+  if (level_data == nullptr) {
+    return objects;
+  }
+
+  if (room < level_data->active_enemies.size()) {
+    for (const auto &enemy : level_data->active_enemies[room]) {
+      MappedObject12 obj{};
+      obj.room_x = room;
+      obj.room_y = level;
+      obj.descriptor_ptr = enemy.flags != 0U ? enemy.flags : 0x8000U;
+      obj.state_flags =
+          resolve_synthesized_entity_behavior_state(obj.descriptor_ptr);
+      obj.world_x = static_cast<std::uint16_t>(enemy.x);
+      obj.world_y = static_cast<std::uint16_t>(enemy.y);
+      objects.push_back(obj);
+    }
+  }
+
+  if (objects.empty() && room < level_data->special_entities.size()) {
+    for (const auto &special : level_data->special_entities[room]) {
+      if (special.x == 0 && special.y == 0 && special.flags == 0) {
+        continue;
+      }
+      MappedObject12 obj{};
+      obj.room_x = room;
+      obj.room_y = level;
+      obj.descriptor_ptr = special.flags != 0U ? special.flags : 0x8000U;
+      obj.state_flags =
+          resolve_synthesized_entity_behavior_state(obj.descriptor_ptr);
+      obj.world_x = static_cast<std::uint16_t>(special.x);
+      obj.world_y = static_cast<std::uint16_t>(special.y);
+      objects.push_back(obj);
+    }
+  }
+
+  if (objects.empty()) {
+    // Authentic static mapped object entries from CS:0x0AF0 (GAME.000) for
+    // rooms whose items live exclusively in the global mapped object table.
+    if (level == 1U && room == 7U) {
+      const std::uint16_t state_flags =
+          resolve_synthesized_entity_behavior_state(0x9E04U);
+      objects.push_back(MappedObject12{.room_x = room,
+                                       .room_y = level,
+                                       .descriptor_ptr = 0x9E04U,
+                                       .state_flags = state_flags,
+                                       .world_x = 96U,
+                                       .world_y = 128U});
+      objects.push_back(MappedObject12{.room_x = room,
+                                       .room_y = level,
+                                       .descriptor_ptr = 0x9E04U,
+                                       .state_flags = state_flags,
+                                       .world_x = 96U,
+                                       .world_y = 48U});
+    } else if (level == 9U && room == 1U) {
+      objects.push_back(MappedObject12{
+          .room_x = room,
+          .room_y = level,
+          .descriptor_ptr = 0xB286U,
+          .state_flags = resolve_synthesized_entity_behavior_state(0xB286U),
+          .world_x = 1952U,
+          .world_y = 32U});
+    }
+  }
+
+  return objects;
+}
+
+void load_room_effect_script_and_trigger_ranges(
+    RuntimeState &state, bool allow_fallback_anchor = true) {
   state.room_event_anchor = RoomEventAnchorState{};
   state.room_event_script = RoomEventScriptState{};
 
@@ -353,7 +566,7 @@ void load_room_effect_script_and_trigger_ranges(RuntimeState &state) {
   state.room_event_script.raw_trigger_bytes = state.room_resource_bytes;
   state.room_event_script.decoded_script_bytes = state.level_script_bytes;
 
-  if (state.mapped_objects.empty()) {
+  if (!allow_fallback_anchor || state.mapped_objects.empty()) {
     return;
   }
 
@@ -363,15 +576,14 @@ void load_room_effect_script_and_trigger_ranges(RuntimeState &state) {
                      return (object.state_flags & 0x0001U) != 0U;
                    });
 
-  const MappedObject12 *anchor_source =
-      event_object != state.mapped_objects.end()
-          ? &(*event_object)
-          : &state.mapped_objects.front();
+  const MappedObject12 &anchor_source =
+      event_object != state.mapped_objects.end() ? *event_object
+                                                 : state.mapped_objects.front();
 
   state.room_event_anchor.active = true;
-  state.room_event_anchor.x = static_cast<std::int16_t>(anchor_source->world_x);
-  state.room_event_anchor.y = static_cast<std::int16_t>(anchor_source->world_y);
-  state.room_event_anchor.descriptor_ptr = anchor_source->descriptor_ptr;
+  state.room_event_anchor.x = static_cast<std::int16_t>(anchor_source.world_x);
+  state.room_event_anchor.y = static_cast<std::int16_t>(anchor_source.world_y);
+  state.room_event_anchor.descriptor_ptr = anchor_source.descriptor_ptr;
   state.room_event_anchor.velocity_x =
       static_cast<std::int16_t>((state.current_room % 2U) == 0U ? 1 : -1);
   state.room_event_anchor.velocity_y =
@@ -394,8 +606,16 @@ bool load_room_tilemap_from_resource_buffer(RuntimeState &state,
   } catch (...) {
     return false;
   }
+  const std::size_t tile_count =
+      static_cast<std::size_t>(spec->room_entry.tile_w) *
+      static_cast<std::size_t>(spec->room_entry.tile_h);
+  const bool has_embedded_metadata = decoded.bytes.size() > tile_count;
   const std::optional<std::vector<std::uint16_t>> row_pointers =
-      build_room_row_pointer_table(decoded.bytes, spec->room_entry.tile_h);
+      has_embedded_metadata
+          ? build_room_row_pointer_table(decoded.bytes, spec->room_entry.tile_h)
+          : std::optional<std::vector<std::uint16_t>>(
+                build_linear_row_pointer_table(spec->room_entry.tile_w,
+                                               spec->room_entry.tile_h));
   if (!row_pointers.has_value()) {
     return false;
   }
@@ -421,10 +641,16 @@ bool load_room_tilemap_from_resource_buffer(RuntimeState &state,
   std::vector<std::uint8_t> resource_bytes(bytes.begin(), bytes.end());
   state.room_resource_bytes = std::move(resource_bytes);
 
-  const auto mapped_objects = decode_room_mapped_objects(decoded.bytes);
-  state.mapped_objects = mapped_objects.value_or(std::vector<MappedObject12>{});
+  if (has_embedded_metadata) {
+    const auto mapped_objects = decode_room_mapped_objects(decoded.bytes);
+    state.mapped_objects =
+        mapped_objects.value_or(std::vector<MappedObject12>{});
+  } else {
+    state.mapped_objects =
+        build_mapped_objects_from_level_data(state.level_data, level, room);
+  }
   hydrate_entity_runtime_for_room(state);
-  load_room_effect_script_and_trigger_ranges(state);
+  load_room_effect_script_and_trigger_ranges(state, has_embedded_metadata);
 
   return true;
 }
@@ -445,8 +671,16 @@ bool load_room_tilemap_from_resource_file(
   } catch (...) {
     return false;
   }
+  const std::size_t tile_count =
+      static_cast<std::size_t>(spec->room_entry.tile_w) *
+      static_cast<std::size_t>(spec->room_entry.tile_h);
+  const bool has_embedded_metadata = decoded.bytes.size() > tile_count;
   const std::optional<std::vector<std::uint16_t>> row_pointers =
-      build_room_row_pointer_table(decoded.bytes, spec->room_entry.tile_h);
+      has_embedded_metadata
+          ? build_room_row_pointer_table(decoded.bytes, spec->room_entry.tile_h)
+          : std::optional<std::vector<std::uint16_t>>(
+                build_linear_row_pointer_table(spec->room_entry.tile_w,
+                                               spec->room_entry.tile_h));
   if (!row_pointers.has_value()) {
     return false;
   }
@@ -472,10 +706,16 @@ bool load_room_tilemap_from_resource_file(
   std::vector<std::uint8_t> resource_bytes(bytes.begin(), bytes.end());
   state.room_resource_bytes = std::move(resource_bytes);
 
-  const auto mapped_objects = decode_room_mapped_objects(decoded.bytes);
-  state.mapped_objects = mapped_objects.value_or(std::vector<MappedObject12>{});
+  if (has_embedded_metadata) {
+    const auto mapped_objects = decode_room_mapped_objects(decoded.bytes);
+    state.mapped_objects =
+        mapped_objects.value_or(std::vector<MappedObject12>{});
+  } else {
+    state.mapped_objects =
+        build_mapped_objects_from_level_data(state.level_data, level, room);
+  }
   hydrate_entity_runtime_for_room(state);
-  load_room_effect_script_and_trigger_ranges(state);
+  load_room_effect_script_and_trigger_ranges(state, has_embedded_metadata);
 
   return true;
 }

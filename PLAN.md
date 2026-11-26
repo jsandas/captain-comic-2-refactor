@@ -1327,7 +1327,7 @@ Cross-referencing `comic2_standalone.asm` (specifically `io_load_resource` at `1
 - [x] Decode Signed-RLE room tilemap bytes into `RuntimeState::room_grid.tile_data` with indices indexing `RuntimeState::level_tileset`.
 - [x] Extract `MappedObject12` records from room payload and populate `RuntimeState::mapped_objects`.
 - [x] Update bootstrap room-tile rendering to use `RuntimeState::level_tileset` when available instead of relying on `FRPAK.001` tile slicing.
-- [ ] Add tests verifying Room 0 through Room N layouts for Level 0, valid tile index bounds, and entity list population.
+- [x] Add tests verifying Room 0 through Room N layouts for Level 0, valid tile index bounds, and entity list population.
 
 #### 11.4 Masked Sprite Sheet Decoder (`FR###.2`)
 - [x] Implement `decode_masked_sprite_sheet(std::span<const uint8_t> payload)` in `src/resource_loader.cpp`.
@@ -1585,8 +1585,8 @@ Complete the remaining assembly-parity gaps identified across `reference/comic2/
 - [x] Wire authentic sound table IDs to all gameplay, menu, pickup, boss, and cutscene events.
 
 #### 16.5 Multi-Room & Multi-Level Playthrough Verification (`tests/integration_gates_tests.cpp`, `tests/subsystem_scaffold_tests.cpp`)
-- [ ] Add comprehensive automated tests verifying Room 0 through Room N decoding, valid tile index bounds, and `MappedObject12` entity spawns across all 15 playable levels (`FR000.1` .. `FR014.1`) (completing item 11.3).
-- [ ] Add end-to-end integration tests covering menu world selection -> level load, NPC script dialog presentation, boss defeat -> victory transition, and save/load roundtrips from the live frontend.
+- [x] Add comprehensive automated tests verifying Room 0 through Room N decoding, valid tile index bounds, and `MappedObject12` entity spawns across all 15 playable levels (`FR000.1` .. `FR014.1`) (completing item 11.3).
+- [x] Add end-to-end integration tests covering menu world selection -> level load, NPC script dialog presentation, boss defeat -> victory transition, and save/load roundtrips from the live frontend.
 
 ---
 
@@ -1595,7 +1595,7 @@ Complete the remaining assembly-parity gaps identified across `reference/comic2/
 - [x] **Gate 16-B (Scripted Dialog & Text Rendering)**: `FR###.3` XOR-`0x25` message offsets resolve to decrypted strings and render readable 8x8 glyph text inside framed modal boxes on the EGA surface.
 - [x] **Gate 16-C (HUD Mode Icons & Interactive Menu Persistence)**: Collected equipment icons render on the `FRPAK.001` bezel, and interactive menu/save prompts persist and reload `GAME.000..005` and `FR.CFG` / `KEYS.DEF`.
 - [x] **Gate 16-D (Continuous PIT Sound Streams)**: Multi-note sound streams from `comic2_data.asm` advance at ~18.2 Hz through `SoundDriver::tick()` with exact divisor/duration stepping and priority preemption.
-- [ ] **Gate 16-E (15-Level Catalog & Room Verification)**: All rooms across all 15 levels (`FR000`–`FR014`) load without out-of-bounds tile indices or malformed entity/script payloads.
+- [x] **Gate 16-E (15-Level Catalog & Room Verification)**: All rooms across all 15 levels (`FR000`–`FR014`) load without out-of-bounds tile indices or malformed entity/script payloads.
 
 ---
 
@@ -1617,9 +1617,9 @@ Complete the remaining assembly-parity gaps identified across `reference/comic2/
 **Objective**: Extract the 56 sound streams from `comic2_data.asm` (`0x2170a - 0x218aa`) and drive `SoundDriver::tick()` continuously at 18.2 Hz in `Sdl2AudioBackend` and headless tests.
 **Files**: `include/comic2/audio.hpp`, `src/audio.cpp`, `src/bootstrap.cpp`, `tests/audio_backend_tests.cpp`, `tests/integration_gates_tests.cpp`.
 
-#### PR 16-E1: All-15-Levels Room Layout Audit & End-to-End Playthrough Gates [NEXT]
+#### PR 16-E1: All-15-Levels Room Layout Audit & End-to-End Playthrough Gates [COMPLETED]
 **Objective**: Validate Room 0..N layouts, tile bounds, entity spawns, and script offsets across all 15 levels (`FR000`–`FR014`) and pass Gates 16-A through 16-E.
-**Files**: `tests/subsystem_scaffold_tests.cpp`, `tests/integration_gates_tests.cpp`.
+**Files**: `src/room_loader.cpp`, `src/resource_loader.cpp`, `src/entity_runtime.cpp`, `src/default_handlers.cpp`, `src/ui.cpp`, `tests/subsystem_scaffold_tests.cpp`, `tests/integration_gates_tests.cpp`.
 
 ---
 

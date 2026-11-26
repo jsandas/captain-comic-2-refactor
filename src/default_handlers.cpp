@@ -1121,7 +1121,9 @@ void update_progression_state(RuntimeState &state) {
     state.progression.lives_available = true;
   }
 
-  state.progression.flags = 0U;
+  const bool victory_flag =
+      state.boss_victory || ((state.progression.flags & 0x80U) != 0U);
+  state.progression.flags = victory_flag ? 0x80U : 0U;
   if (state.progression.gems_collected) {
     state.progression.flags |= kGemsFlag;
   }

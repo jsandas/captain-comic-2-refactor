@@ -1545,6 +1545,206 @@ void test_phase11_player_animation_state_mapping_contract() {
                0, false, 15U);
 }
 
+void test_phase11_fr000_all_rooms_layouts_tile_bounds_and_entities() {
+  const auto root = find_original_asset_root();
+  if (!root.has_value()) {
+    if (require_original_assets()) {
+      throw std::runtime_error(
+          "COMIC2_REQUIRE_ORIGINAL_ASSETS is set, but reference/original "
+          "assets containing FRDATA.* were not found");
+    }
+    std::cerr << "Skipping FR000 all-rooms layout test: reference/original "
+                 "assets are not present.\n";
+    return;
+  }
+
+  const auto room_file_bytes =
+      comic2::load_file_bytes(root.value() / "FR000.1");
+  expect(room_file_bytes.has_value(), "FR000.1 should be readable");
+  const auto header = comic2::parse_room_table_header(*room_file_bytes);
+  expect(header.has_value(), "FR000.1 header should parse cleanly");
+  expect(header->room_count == 8U && header->level_id == 0U,
+         "FR000.1 should declare 8 rooms for Level 0");
+
+  struct ExpectedRoom {
+    std::uint16_t tile_w;
+    std::uint16_t tile_h;
+    std::size_t mapped_count;
+  };
+  constexpr std::array<ExpectedRoom, 8> kExpectedLevel0Rooms = {{
+      {80U, 30U, 11U},
+      {64U, 40U, 19U},
+      {132U, 15U, 22U},
+      {29U, 16U, 4U},
+      {24U, 82U, 20U},
+      {29U, 10U, 1U},
+      {16U, 10U, 2U},
+      {54U, 30U, 5U},
+  }};
+
+  for (std::uint16_t room = 0; room < header->room_count; ++room) {
+    comic2::RuntimeState state = comic2::make_default_runtime_state();
+    const bool loaded = comic2::load_room_tilemap_from_asset_root(
+        state, root.value(), 0U, room);
+    expect(loaded,
+           "Level 0 room should load cleanly from FR000.1 in asset root");
+    expect_eq(state.level_tileset.size(), 144U,
+              "Level 0 tileset should contain 144 tiles");
+    expect(state.room_grid.tile_w == kExpectedLevel0Rooms[room].tile_w &&
+               state.room_grid.tile_h == kExpectedLevel0Rooms[room].tile_h,
+           "Level 0 room dimensions should match FR000.1 table");
+    const std::size_t expected_tile_count =
+        static_cast<std::size_t>(kExpectedLevel0Rooms[room].tile_w) *
+        static_cast<std::size_t>(kExpectedLevel0Rooms[room].tile_h);
+    expect_eq(state.room_grid.tile_data.size(), expected_tile_count,
+              "Level 0 room tile buffer size should equal tile_w * tile_h");
+    expect_eq(state.room_grid.row_pointers.size(),
+              kExpectedLevel0Rooms[room].tile_h,
+              "Level 0 room row pointer table should match tile_h");
+    for (std::uint16_t y = 0; y < state.room_grid.tile_h; ++y) {
+      expect(state.room_grid.row_pointers[y] ==
+                 static_cast<std::uint16_t>(y * state.room_grid.tile_w),
+             "Level 0 room row pointer should equal y * tile_w");
+    }
+    for (const auto tile_index : state.room_grid.tile_data) {
+      expect(static_cast<std::size_t>(tile_index) < state.level_tileset.size(),
+             "Level 0 room tile index should be within tileset bounds");
+    }
+    expect(comic2::get_tile_at_pixels(state.room_grid, 0, 0).has_value(),
+           "top-left tile lookup should succeed for Level 0 room");
+    expect(comic2::get_tile_at_pixels(
+               state.room_grid,
+               static_cast<std::int16_t>((state.room_grid.tile_w - 1U) * 16U),
+               static_cast<std::int16_t>((state.room_grid.tile_h - 1U) * 16U))
+               .has_value(),
+           "bottom-right tile lookup should succeed for Level 0 room");
+    expect_eq(state.mapped_objects.size(),
+              kExpectedLevel0Rooms[room].mapped_count,
+              "Level 0 room should populate expected MappedObject12 spawns");
+    expect_eq(state.active_entities.size(), state.mapped_objects.size(),
+              "Level 0 room active entity list should match mapped objects");
+    expect_eq(state.runtime_slots.size(), 6U,
+              "Level 0 room should provision 6 runtime entity slots");
+  }
+
+  comic2::RuntimeState out_of_range_state;
+  expect(!comic2::load_room_tilemap_from_asset_root(
+             out_of_range_state, root.value(), 0U, header->room_count),
+         "Out-of-bounds Level 0 room index should be rejected cleanly");
+}
+
+void test_phase16_all_15_levels_rooms_tiles_entities_and_scripts() {
+  const auto root = find_original_asset_root();
+  if (!root.has_value()) {
+    if (require_original_assets()) {
+      throw std::runtime_error(
+          "COMIC2_REQUIRE_ORIGINAL_ASSETS is set, but reference/original "
+          "assets containing FRDATA.* were not found");
+    }
+    std::cerr << "Skipping all-15-levels room audit test: reference/original "
+                 "assets are not present.\n";
+    return;
+  }
+
+  constexpr std::array<std::uint16_t, 15> kExpectedRoomCounts = {
+      8U, 9U, 4U, 2U, 3U, 4U, 4U, 3U, 4U, 4U, 9U, 8U, 7U, 2U, 12U,
+  };
+  constexpr std::array<std::size_t, 15> kExpectedTilesetCounts = {
+      144U, 168U, 86U,  75U,  168U, 102U, 93U,  77U,
+      96U,  72U,  128U, 135U, 145U, 149U, 145U,
+  };
+
+  std::size_t total_rooms_verified = 0U;
+  std::size_t total_mapped_objects_verified = 0U;
+
+  for (std::uint16_t level = 0; level < 15U; ++level) {
+    const auto tuple =
+        comic2::resolve_level_resource_tuple(level, root.value());
+    expect(tuple.has_value(),
+           "Each of the 15 level tuples should resolve in original assets");
+
+    const auto room_file_bytes =
+        comic2::load_file_bytes(root.value() / tuple->room_layout_filename);
+    expect(room_file_bytes.has_value(),
+           "Level room layout file FR###.1 should be readable");
+    const auto header = comic2::parse_room_table_header(*room_file_bytes);
+    expect(header.has_value(), "FR###.1 header should parse cleanly");
+    expect(header->level_id == level,
+           "FR###.1 header level_id should match canonical level index");
+    expect(header->room_count == kExpectedRoomCounts[level],
+           "FR###.1 header room_count should match expected room count");
+
+    for (std::uint16_t room = 0; room < header->room_count; ++room) {
+      comic2::RuntimeState state = comic2::make_default_runtime_state();
+      const bool loaded = comic2::load_room_tilemap_from_asset_root(
+          state, root.value(), level, room);
+      expect(loaded, "Every room across all 15 levels should load cleanly");
+      expect(state.current_level == level && state.current_room == room,
+             "Loaded runtime state should record current level and room");
+      expect_eq(state.level_tileset.size(), kExpectedTilesetCounts[level],
+                "Decoded tileset count should match expected FR###.0 tiles");
+      expect(!state.level_sprites.empty(),
+             "Decoded FR###.2 sprite sheet should be populated for every room");
+      expect(state.room_grid.tile_w > 0U && state.room_grid.tile_h > 0U,
+             "Room dimensions should be positive");
+      expect_eq(state.room_grid.tile_data.size(),
+                static_cast<std::size_t>(state.room_grid.tile_w) *
+                    static_cast<std::size_t>(state.room_grid.tile_h),
+                "Room tile data size should equal tile_w * tile_h");
+      expect_eq(state.room_grid.row_pointers.size(), state.room_grid.tile_h,
+                "Row pointer table size should equal tile_h");
+
+      for (const auto tile_id : state.room_grid.tile_data) {
+        expect(static_cast<std::size_t>(tile_id) < state.level_tileset.size(),
+               "Every decoded room tile index must be within tileset bounds");
+      }
+
+      expect(!state.mapped_objects.empty(),
+             "Every room across all 15 levels should populate MappedObject12 "
+             "spawns");
+      for (const auto &obj : state.mapped_objects) {
+        expect(obj.state_flags != 0U && obj.state_flags <= 33U &&
+                   obj.state_flags != comic2::kBehaviorGem &&
+                   obj.state_flags != comic2::kBehaviorPowerup,
+               "Synthesized MappedObject12 entries must carry a non-zero "
+               "active behavior state_flags");
+      }
+      expect_eq(state.active_entities.size(), state.mapped_objects.size(),
+                "Room active entities should match populated mapped objects");
+      expect_eq(state.runtime_slots.size(), 6U,
+                "Room runtime slots should be provisioned to 6 slots");
+      for (const auto &slot : state.runtime_slots) {
+        if (comic2::is_runtime_slot_active(slot)) {
+          expect(slot.behavior_state != 0U,
+                 "Active runtime slot hydrated from synthesized MappedObject12 "
+                 "must have non-zero behavior_state");
+        }
+      }
+
+      if (tuple->has_script()) {
+        expect_eq(
+            state.level_script_bytes.size(), comic2::kLevelScriptBlockSize,
+            "Level with FR###.3 script should cache 0x0C00 decoded bytes");
+        const auto msg0 =
+            comic2::extract_level_script_message(state.level_script_bytes, 0U);
+        expect(msg0.has_value() && !msg0->text.empty(),
+               "FR###.3 message 0 should decode to non-empty dialog text");
+      } else {
+        expect(state.level_script_bytes.empty(),
+               "Level without FR###.3 script should have empty script buffer");
+      }
+
+      ++total_rooms_verified;
+      total_mapped_objects_verified += state.mapped_objects.size();
+    }
+  }
+
+  expect_eq(total_rooms_verified, 83U,
+            "All 83 rooms across all 15 levels should be verified");
+  expect(total_mapped_objects_verified > 500U,
+         "Total mapped objects across all 83 rooms should exceed 500 spawns");
+}
+
 } // namespace
 
 void run_subsystem_scaffold_tests() {
@@ -1589,4 +1789,6 @@ void run_subsystem_scaffold_tests() {
   test_phase11_level_resource_tuple_catalog();
   test_phase11_fr000_room0_layout_loads_from_asset_root();
   test_phase11_fr000_tileset_decode_parity();
+  test_phase11_fr000_all_rooms_layouts_tile_bounds_and_entities();
+  test_phase16_all_15_levels_rooms_tiles_entities_and_scripts();
 }
