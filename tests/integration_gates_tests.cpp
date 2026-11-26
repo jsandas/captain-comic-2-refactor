@@ -2697,6 +2697,348 @@ void test_gate_16d_continuous_pit_sound_streams() {
          "streams across frames");
 }
 
+void test_gate_16a_entity_and_boss_ai_parity() {
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  state.room_grid.tile_w = 20;
+  state.room_grid.tile_h = 12;
+  state.room_grid.row_pointers.resize(12);
+  for (std::uint16_t y = 0; y < 12; ++y) {
+    state.room_grid.row_pointers[y] = static_cast<std::uint16_t>(y * 20);
+  }
+  state.room_grid.tile_data.assign(20 * 12, 0xFF);
+  for (std::size_t x = 0; x < 20; ++x) {
+    state.room_grid.tile_data[8 * 20 + x] = 0x01; // solid floor at y = 128
+  }
+  state.tile_hazard_bounds = {1, 1};
+  state.player.x = 160;
+  state.player.y = 96;
+  state.player.hp = 12;
+  state.player.shield_power = 2;
+
+  // 1. Verify authentic behavior dispatch, ranged shooting, and animation frame
+  // cycling
+  state.runtime_slots.resize(2);
+  auto &shooter = state.runtime_slots[0];
+  shooter.hitbox_w = 16;
+  shooter.hitbox_h = 16;
+  shooter.x = 64;
+  shooter.y = 96;
+  shooter.mapped_object_ptr = 1;
+  shooter.behavior_state = comic2::kBehaviorShoot;
+  shooter.anim_span = 2;
+  shooter.anim_period = 4;
+  shooter.unknown_1c = 23;
+
+  auto &boss = state.runtime_slots[1];
+  boss.hitbox_w = 16;
+  boss.hitbox_h = 16;
+  boss.x = 112;
+  boss.y = 112;
+  boss.mapped_object_ptr = 2;
+  boss.behavior_state = comic2::kBehaviorBoss;
+  boss.unknown_0e = 6; // Phase 1 (6 HP)
+
+  comic2::ent_update_object_behaviors(state);
+  expect(state.enemy_projectiles[0].active,
+         "Gate 16-A: ranged enemy must fire projectile on cadence");
+  expect((boss.unknown_1c & 0xFFU) == 1U,
+         "Gate 16-A: boss at 6 HP must execute in Phase 1");
+  expect(comic2::compute_entity_animation_frame(shooter) >= 2U,
+         "Gate 16-A: moving entity must index moving animation span");
+
+  // 2. Boss damage phases: hit -> invulnerability -> Phase 2 -> Phase 3 ->
+  // defeat
+  comic2::ProjectileState proj{};
+  proj.x = boss.x + 4;
+  proj.y = boss.y + 4;
+  proj.active = true;
+  state.projectiles = {proj};
+  const auto hit1 = comic2::apply_projectile_entity_collisions(state);
+  expect(hit1.projectiles_hit == 1U && boss.unknown_0e == 5U,
+         "Gate 16-A: projectile hit must decrement boss HP to 5");
+  expect(((boss.unknown_1c >> 8) & 0xFFU) == comic2::kBossInvulnerabilityTicks,
+         "Gate 16-A: boss hit must start invulnerability window");
+
+  boss.unknown_1c = 0;
+  boss.unknown_0e = 4;
+  comic2::handle_boss_behavior(state, boss);
+  expect((boss.unknown_1c & 0xFFU) == 2U,
+         "Gate 16-A: boss at <= 4 HP must transition to Phase 2");
+
+  boss.unknown_1c = 0;
+  boss.unknown_0e = 2;
+  comic2::handle_boss_behavior(state, boss);
+  expect((boss.unknown_1c & 0xFFU) == 3U,
+         "Gate 16-A: boss at <= 2 HP must transition to Phase 3");
+
+  boss.unknown_1c = 0;
+  boss.unknown_0e = 1;
+  proj.active = true;
+  proj.x = boss.x + 4;
+  proj.y = boss.y + 4;
+  state.projectiles = {proj};
+  const auto fatal = comic2::apply_projectile_entity_collisions(state);
+  expect(fatal.entities_defeated == 1U && state.boss_victory &&
+             (state.progression.flags & 0x80U) != 0U &&
+             !comic2::is_runtime_slot_active(boss),
+         "Gate 16-A: fatal boss hit must trigger boss_victory and deactivate "
+         "slot");
+}
+
+void test_gate_16e_all_15_levels_catalog_and_room_verification() {
+  const auto original_root = find_reference_original_assets_root();
+  if (original_root.empty()) {
+    return;
+  }
+
+  constexpr std::array<std::uint16_t, 15> kExpectedRoomCounts = {
+      8U, 9U, 4U, 2U, 3U, 4U, 4U, 3U, 4U, 4U, 9U, 8U, 7U, 2U, 12U,
+  };
+
+  std::size_t total_rooms_loaded = 0U;
+  comic2::MemoryFramePresenter presenter;
+
+  for (std::uint16_t level = 0; level < 15U; ++level) {
+    const auto tuple =
+        comic2::resolve_level_resource_tuple(level, original_root);
+    expect(tuple.has_value(),
+           "Gate 16-E: level tuple must resolve for all 15 playable levels");
+
+    const auto room_bytes =
+        comic2::load_file_bytes(original_root / tuple->room_layout_filename);
+    expect(room_bytes.has_value(),
+           "Gate 16-E: FR###.1 room file must be readable");
+    const auto header = comic2::parse_room_table_header(*room_bytes);
+    expect(header.has_value() &&
+               header->room_count == kExpectedRoomCounts[level] &&
+               header->level_id == level,
+           "Gate 16-E: FR###.1 room table header must match level metadata");
+
+    for (std::uint16_t room = 0; room < header->room_count; ++room) {
+      comic2::RuntimeState state = comic2::make_default_runtime_state();
+      const bool loaded = comic2::load_room_tilemap_from_asset_root(
+          state, original_root, level, room);
+      expect(loaded,
+             "Gate 16-E: room must load without error from original assets");
+      expect(!state.level_tileset.empty() && !state.level_sprites.empty(),
+             "Gate 16-E: room load must populate level tileset and sprites");
+      expect(state.room_grid.tile_data.size() ==
+                 static_cast<std::size_t>(state.room_grid.tile_w) *
+                     static_cast<std::size_t>(state.room_grid.tile_h),
+             "Gate 16-E: room tile grid must match tile_w * tile_h");
+      for (const auto tile_id : state.room_grid.tile_data) {
+        expect(static_cast<std::size_t>(tile_id) < state.level_tileset.size(),
+               "Gate 16-E: all room tile IDs must be within tileset bounds");
+      }
+      expect(!state.mapped_objects.empty() &&
+                 state.active_entities.size() == state.mapped_objects.size(),
+             "Gate 16-E: room must populate valid MappedObject12 entity "
+             "spawns");
+
+      if (tuple->has_script()) {
+        expect(state.level_script_bytes.size() == comic2::kLevelScriptBlockSize,
+               "Gate 16-E: level script must decode to 0x0C00 bytes");
+        const auto msg0 =
+            comic2::extract_level_script_message(state.level_script_bytes, 0U);
+        expect(msg0.has_value() && !msg0->text.empty(),
+               "Gate 16-E: level script message 0 must decode cleanly");
+      }
+
+      if (room == 0U) {
+        comic2::render_bootstrap_frame(presenter, state);
+        expect(presenter.has_frame(),
+               "Gate 16-E: Room 0 of each level must render a valid EGA frame");
+      }
+      ++total_rooms_loaded;
+    }
+  }
+
+  expect(total_rooms_loaded == 83U,
+         "Gate 16-E: all 83 rooms across all 15 levels must pass verification");
+}
+
+void test_gate_16e_end_to_end_live_frontend_playthrough() {
+  using comic2::GameLifecycleState;
+  const auto original_root = find_reference_original_assets_root();
+  if (original_root.empty()) {
+    return;
+  }
+
+  const auto temp_dir =
+      std::filesystem::temp_directory_path() / "test_comic2_gate_16e_e2e";
+  std::filesystem::remove_all(temp_dir);
+  std::filesystem::create_directories(temp_dir);
+
+  comic2::RuntimeState state = comic2::make_default_runtime_state();
+  state.assets_root = original_root;
+  state.ui.persistence_dir = temp_dir;
+  comic2::load_initial_bootstrap_resources(state, original_root);
+  comic2::load_ui_assets(state, original_root);
+
+  comic2::GameDispatcher dispatcher = comic2::make_default_game_dispatcher();
+  comic2::EgaPlanarSurface surface(320, 200);
+
+  // 1. Title -> Intro -> Menu -> World Selection (MAGIC = index 1 -> Level 6)
+  expect(comic2::get_game_lifecycle_state(state) == GameLifecycleState::Title,
+         "Gate 16-E E2E: must start in Title state");
+  comic2::render_game_lifecycle_frame(surface, state);
+
+  expect(comic2::update_game_lifecycle(
+             state, comic2::InputState{.jump_pressed = true}, &dispatcher),
+         "Gate 16-E E2E: Title -> Intro must succeed");
+  expect(comic2::get_game_lifecycle_state(state) == GameLifecycleState::Intro,
+         "Gate 16-E E2E: state must be Intro");
+  state.ui.cinematic_frame = 4U;
+  expect(
+      comic2::update_game_lifecycle(state, comic2::InputState{}, &dispatcher),
+      "Gate 16-E E2E: Intro -> Menu must succeed");
+  expect(comic2::get_game_lifecycle_state(state) == GameLifecycleState::Menu,
+         "Gate 16-E E2E: state must be Menu");
+
+  // Navigate right to MAGIC (index 1 -> Level 6) and confirm world selection
+  expect(comic2::update_game_lifecycle(
+             state, comic2::InputState{.right_pressed = true}, &dispatcher),
+         "Gate 16-E E2E: Menu right navigation must succeed");
+  expect(state.ui.selected_option_index == 1U,
+         "Gate 16-E E2E: selected world index must be 1 (MAGIC)");
+  comic2::render_game_lifecycle_frame(surface, state);
+
+  expect(comic2::update_game_lifecycle(
+             state, comic2::InputState{.fire_pressed = true}, &dispatcher),
+         "Gate 16-E E2E: Menu world confirmation must transition to Gameplay");
+  expect(comic2::get_game_lifecycle_state(state) ==
+             GameLifecycleState::Gameplay,
+         "Gate 16-E E2E: state must be Gameplay after world selection");
+  expect(state.current_level == 6U && state.current_room == 0U,
+         "Gate 16-E E2E: selecting MAGIC must load Level 6 Room 0");
+  expect(state.room_grid.tile_w == 80U && state.room_grid.tile_h == 30U,
+         "Gate 16-E E2E: Level 6 Room 0 geometry (80x30) must be loaded");
+  expect(state.level_script_bytes.size() == comic2::kLevelScriptBlockSize,
+         "Gate 16-E E2E: Level 6 script (FR006.3) must be decoded and cached");
+
+  // 2. NPC script dialog presentation in live Gameplay
+  state.player.x = 72;
+  state.player.y = 72;
+  state.player.is_physics_active = false;
+  state.mapped_objects.push_back(comic2::MappedObject12{
+      .room_x = 0,
+      .room_y = 6,
+      .descriptor_ptr = 0x980D,
+      .state_flags = 0x0002,
+      .world_x = 72,
+      .world_y = 72,
+  });
+
+  expect(
+      comic2::update_game_lifecycle(state, comic2::InputState{}, &dispatcher),
+      "Gate 16-E E2E: Gameplay tick with NPC interaction must succeed");
+  expect(state.ui.modal_active && !state.ui.modal_prompt.empty(),
+         "Gate 16-E E2E: NPC interaction must activate FR006.3 dialog modal");
+  surface.clear(0x00);
+  comic2::render_game_lifecycle_frame(surface, state);
+
+  bool saw_dialog_text = false;
+  for (std::size_t y = 0; y < 200U && !saw_dialog_text; ++y) {
+    for (std::size_t x = 0; x < 320U && !saw_dialog_text; ++x) {
+      if (read_gate11_color(surface, x, y) == 0x07U) {
+        saw_dialog_text = true;
+      }
+    }
+  }
+  expect(saw_dialog_text,
+         "Gate 16-E E2E: live Gameplay frame must render 8x8 NPC dialog text");
+
+  // Dismiss NPC dialog modal and configure player inventory for save roundtrip
+  state.ui.modal_active = false;
+  state.ui.modal_prompt.clear();
+  state.transition_state.player_frozen = false;
+  state.player.score = 7777U;
+  state.player.gems = 19U;
+  state.player.firepower = 3U;
+  state.player.boots_equipped = true;
+  state.player.lantern_equipped = true;
+  state.player.corkscrew_equipped = true;
+  state.player.wand_equipped = true;
+
+  // 3. Save/Load roundtrip from the live frontend (Gameplay -> Save -> Menu ->
+  // Gameplay)
+  state.flags.room_event_triggered = true;
+  expect(
+      comic2::update_game_lifecycle(state, comic2::InputState{}, &dispatcher),
+      "Gate 16-E E2E: room event must transition Gameplay -> Save");
+  expect(comic2::get_game_lifecycle_state(state) == GameLifecycleState::Save,
+         "Gate 16-E E2E: state must be Save");
+  expect(std::filesystem::exists(temp_dir / "GAME.001"),
+         "Gate 16-E E2E: Save state must write GAME.001 for slot 1");
+
+  // Reload into a fresh RuntimeState via the live Menu frontend
+  comic2::RuntimeState reloaded = comic2::make_default_runtime_state();
+  reloaded.assets_root = original_root;
+  reloaded.ui.persistence_dir = temp_dir;
+  comic2::load_initial_bootstrap_resources(reloaded, original_root);
+  comic2::transition_game_lifecycle(reloaded, GameLifecycleState::Menu);
+  reloaded.ui.selected_option_index = 1U;
+  expect(comic2::update_game_lifecycle(
+             reloaded, comic2::InputState{.fire_pressed = true}, &dispatcher),
+         "Gate 16-E E2E: confirming slot 1 in Menu must reload GAME.001 into "
+         "Gameplay");
+  expect(comic2::get_game_lifecycle_state(reloaded) ==
+             GameLifecycleState::Gameplay,
+         "Gate 16-E E2E: reloaded state must enter Gameplay");
+  expect(
+      reloaded.current_level == 6U && reloaded.player.score == 7777U &&
+          reloaded.player.gems == 19U && reloaded.player.firepower == 3U &&
+          reloaded.player.boots_equipped && reloaded.player.lantern_equipped &&
+          reloaded.player.corkscrew_equipped && reloaded.player.wand_equipped,
+      "Gate 16-E E2E: reloaded Gameplay state must preserve saved level, "
+      "score, and equipment");
+
+  // 4. Boss defeat -> Victory transition in live frontend
+  reloaded.ui.modal_active = false;
+  reloaded.ui.modal_prompt.clear();
+  reloaded.ui.room_event_modal_active = false;
+  reloaded.ui.room_event_consumed = true;
+  reloaded.transition_state.player_frozen = false;
+  reloaded.runtime_slots.assign(1U, comic2::RuntimeEntitySlot32{});
+  auto &boss = reloaded.runtime_slots[0];
+  boss.hitbox_w = 16;
+  boss.hitbox_h = 16;
+  boss.x = 120;
+  boss.y = 80;
+  boss.mapped_object_ptr = 1;
+  boss.behavior_state = comic2::kBehaviorBoss;
+  boss.unknown_0e = 1; // 1 HP remaining
+  boss.unknown_1c = 0;
+
+  comic2::ProjectileState finishing_shot{};
+  finishing_shot.x = 120;
+  finishing_shot.y = 84;
+  finishing_shot.x_vel = 4;
+  finishing_shot.y_vel = 0;
+  finishing_shot.active = true;
+  reloaded.projectiles = {finishing_shot};
+
+  expect(comic2::update_game_lifecycle(reloaded, comic2::InputState{},
+                                       &dispatcher),
+         "Gate 16-E E2E: boss-defeat Gameplay tick must succeed");
+  expect(reloaded.boss_victory && (reloaded.progression.flags & 0x80U) != 0U,
+         "Gate 16-E E2E: defeating boss must set boss_victory and 0x80 flag");
+  expect(comic2::get_game_lifecycle_state(reloaded) ==
+             GameLifecycleState::Victory,
+         "Gate 16-E E2E: defeating boss must transition Gameplay -> Victory");
+  expect(reloaded.player.score == 8777U,
+         "Gate 16-E E2E: defeating boss must award 1000-point victory bonus");
+
+  comic2::render_game_lifecycle_frame(surface, reloaded);
+  expect(comic2::update_game_lifecycle(
+             reloaded, comic2::InputState{.fire_pressed = true}, &dispatcher),
+         "Gate 16-E E2E: confirming Victory screen must return to Menu");
+  expect(comic2::get_game_lifecycle_state(reloaded) == GameLifecycleState::Menu,
+         "Gate 16-E E2E: lifecycle must return cleanly to Menu after Victory");
+
+  std::filesystem::remove_all(temp_dir);
+}
+
 } // namespace
 
 void run_integration_gate_tests() {
@@ -2763,6 +3105,9 @@ void run_integration_gate_tests() {
   // Gate 15-C: End-to-End Game Flow Lifecycle.
   test_gate_15c_end_to_end_game_flow();
 
+  // Gate 16-A: Entity & Boss AI Parity.
+  test_gate_16a_entity_and_boss_ai_parity();
+
   // Gate 16-B: Scripted Dialog & Text Rendering.
   test_gate_16b_scripted_dialog_and_text_rendering();
 
@@ -2771,4 +3116,8 @@ void run_integration_gate_tests() {
 
   // Gate 16-D: Continuous PIT Sound Streams.
   test_gate_16d_continuous_pit_sound_streams();
+
+  // Gate 16-E: 15-Level Catalog, All-Rooms Audit & End-to-End Live Playthrough.
+  test_gate_16e_all_15_levels_catalog_and_room_verification();
+  test_gate_16e_end_to_end_live_frontend_playthrough();
 }

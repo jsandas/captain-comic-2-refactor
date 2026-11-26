@@ -328,14 +328,37 @@ decode_masked_sprite_sheet(std::span<const std::uint8_t> payload) {
     const std::size_t record_header_size = 6U;
     const std::size_t image_offset =
         record_header_size + static_cast<std::size_t>(image_data_off);
-    if (image_offset < record_header_size + mask_byte_count) {
-      return std::nullopt;
-    }
-
     const std::size_t record_size = record_header_size +
                                     static_cast<std::size_t>(image_data_off) +
                                     (4U * mask_byte_count);
-    if (offset + record_size > payload.size()) {
+    if (image_offset < record_header_size + mask_byte_count ||
+        offset + record_size > payload.size()) {
+      // Check for trailing 4-byte-header opaque 4-plane sprite records
+      // ([width_pixels:u16][height_rows:u16][4 * plane_bytes], e.g. 32x32
+      // records in FR004.2 and FR011.2).
+      const std::size_t opaque_header_size = 4U;
+      const std::size_t opaque_record_size =
+          opaque_header_size + (4U * mask_byte_count);
+      if (width <= 64U && (width % 8U) == 0U && height <= 64U &&
+          mask_byte_count > 0U &&
+          offset + opaque_record_size <= payload.size() &&
+          ((payload.size() - offset) % opaque_record_size) == 0U) {
+        sprite.image_data_off = 0U;
+        sprite.mask_bytes.assign(mask_byte_count, 0xFFU);
+        const auto image_begin =
+            payload.begin() +
+            static_cast<std::ptrdiff_t>(offset + opaque_header_size);
+        for (std::size_t plane = 0; plane < sprite.planes.size(); ++plane) {
+          const auto plane_begin = image_begin + static_cast<std::ptrdiff_t>(
+                                                     plane * mask_byte_count);
+          const auto plane_end =
+              plane_begin + static_cast<std::ptrdiff_t>(mask_byte_count);
+          sprite.planes[plane].assign(plane_begin, plane_end);
+        }
+        sprites.push_back(sprite);
+        offset += opaque_record_size;
+        continue;
+      }
       return std::nullopt;
     }
 
