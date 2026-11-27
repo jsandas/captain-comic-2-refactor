@@ -1062,22 +1062,60 @@ void hud_render_overlay(EgaPlanarSurface &surface, const RuntimeState &state) {
 
 void ui_render_option_list(EgaPlanarSurface &surface,
                            const RuntimeState &state) {
-  draw_rect(surface, 40, 20, 240, 144, 0x04);
-  blit_string(surface, 48, 22, "CAPTAIN COMIC II", 0x0E);
-  blit_string(surface, 56, 32, "PLAYER         AWARDS", 0x07);
+  // Authentic DOS Game Selection / Player Save Slot screen
+  // (ui_draw_menu_frame at 1000:5f86 & ui_render_option_list at 1000:606b):
+  surface.clear(0x00U);
+
+  // Header strings above border box in color 0x07
+  blit_string(surface, 16, 0, "CAPTAIN COMIC II - FRACTURED REALITY", 0x07U);
+  blit_string(surface, 40, 16, "  G A M E  S E L E C T I O N  ", 0x07U);
+
+  // Double-line border box in light blue (0x09) from Y=24 to Y=192, X=0..312
+  blit_char(surface, 0, 24, '"', 0x09U);
+  for (std::int32_t col = 1; col <= 38; ++col) {
+    blit_char(surface, col * 8, 24, '#', 0x09U);
+  }
+  blit_char(surface, 312, 24, '$', 0x09U);
+
+  for (std::int32_t row_y = 32; row_y <= 184; row_y += 8) {
+    blit_char(surface, 0, row_y, '%', 0x09U);
+    blit_char(surface, 312, row_y, '&', 0x09U);
+  }
+
+  blit_char(surface, 0, 192, ':', 0x09U);
+  for (std::int32_t col = 1; col <= 38; ++col) {
+    blit_char(surface, col * 8, 192, ';', 0x09U);
+  }
+  blit_char(surface, 312, 192, '<', 0x09U);
+
+  // Column header inside box
+  blit_string(surface, 64, 32, "PLAYER         AWARDS", 0x07U);
+
+  const auto &menu_sprites = get_embedded_menu_sprites();
 
   for (std::size_t i = 0; i < state.ui.option_labels.size() && i < 8U; ++i) {
-    const bool is_selected = i == state.ui.selected_option_index;
+    const bool is_selected = (i == state.ui.selected_option_index);
     const std::uint8_t color = is_selected ? 0x0AU : 0x07U;
-    const std::int32_t row_y = static_cast<std::int32_t>(44U + i * 14U);
+    const std::int32_t row_y = static_cast<std::int32_t>(44U + i * 16U);
 
     if (is_selected) {
-      blit_char(surface, 48, row_y, '+', 0x0FU);
+      if (menu_sprites.size() >= 4U) {
+        const std::size_t cursor_idx = state.ui.retire_player_mode ? 3U : 2U;
+        gfx_blit_masked_sprite(surface, 44, row_y - 4,
+                               menu_sprites[cursor_idx]);
+      } else {
+        blit_char(surface, 48, row_y, '+', 0x0FU);
+      }
     }
 
-    const std::string &label = state.ui.option_labels[i];
-    if (!label.empty()) {
-      blit_string(surface, 64, row_y, label.c_str(), color);
+    if (state.ui.editing_player_name && is_selected && i < 5U) {
+      const std::string editing_text = state.ui.pending_player_name_input + "+";
+      blit_string(surface, 64, row_y, editing_text.c_str(), 0x07U);
+    } else {
+      const std::string &label = state.ui.option_labels[i];
+      if (!label.empty()) {
+        blit_string(surface, 64, row_y, label.c_str(), color);
+      }
     }
 
     // Render high score / award entries from ds_high_scores_buffer (FR.CFG
@@ -1094,6 +1132,21 @@ void ui_render_option_list(EgaPlanarSurface &surface,
         std::snprintf(award_buf, sizeof(award_buf), "%02u",
                       static_cast<unsigned>(awards % 100U));
         blit_string(surface, 200, row_y, award_buf, 0x0EU);
+
+        if (menu_sprites.size() >= 2U && awards > 0U) {
+          std::uint16_t rem = std::min<std::uint16_t>(awards, 25U);
+          std::int32_t medal_x = 224;
+          while (rem >= 5U && medal_x <= 296) {
+            gfx_blit_masked_sprite(surface, medal_x, row_y, menu_sprites[0]);
+            medal_x += 8;
+            rem = static_cast<std::uint16_t>(rem - 5U);
+          }
+          while (rem > 0U && medal_x <= 296) {
+            gfx_blit_masked_sprite(surface, medal_x, row_y, menu_sprites[1]);
+            medal_x += 8;
+            --rem;
+          }
+        }
       }
     }
   }
@@ -1101,6 +1154,14 @@ void ui_render_option_list(EgaPlanarSurface &surface,
 
 void ui_render_game_selection_panel(EgaPlanarSurface &surface,
                                     const RuntimeState &state) {
+  if (state.ui.player_slot_menu_active) {
+    ui_render_option_list(surface, state);
+    if (state.ui.modal_active) {
+      ui_render_modal_prompt(surface, state);
+    }
+    return;
+  }
+
   if (state.bezel_frame.has_value() &&
       can_blit_opaque_image(surface, 0, 0, *state.bezel_frame)) {
     gfx_rle_blit_opaque_4plane(surface, 0, 0, *state.bezel_frame);
@@ -1348,7 +1409,10 @@ void ui_init_player_slot_menu(RuntimeState &state) {
     state.ui.option_labels[i] = state.dos_config.player_names[i];
   }
   state.ui.option_labels[5] = "";
-  if (state.ui.retire_player_mode) {
+  if (state.ui.editing_player_name) {
+    state.ui.option_labels[6] = "ENTER YOUR NAME.";
+    state.ui.option_labels[7] = "HIT (ESC) TO ABORT";
+  } else if (state.ui.retire_player_mode) {
     state.ui.option_labels[6] = "ERASE WHICH PLAYER?";
     state.ui.option_labels[7] = "HIT (ESC) TO ABORT";
   } else {
@@ -1613,12 +1677,12 @@ bool render_startup_demo_and_backstory(EgaPlanarSurface &surface,
                                  ? state.demo_walk_sprites
                                  : get_embedded_comic_walk_sprites();
 
-  const bool has_demo_assets =
-      state.intro_screens.size() >= 4U &&
-      state.demo_ship_sprites.size() >= 8U &&
-      state.demo_flash_sprites.size() >= 2U &&
-      state.demo_overlay_images.size() >= 4U &&
-      state.demo_beam_sprites.size() >= 6U && walk_sprites.size() >= 6U;
+  const bool has_demo_assets = state.intro_screens.size() >= 4U &&
+                               state.demo_ship_sprites.size() >= 8U &&
+                               state.demo_flash_sprites.size() >= 2U &&
+                               state.demo_overlay_images.size() >= 4U &&
+                               state.demo_beam_sprites.size() >= 6U &&
+                               walk_sprites.size() >= 6U;
 
   const std::uint16_t tick = state.ui.startup_demo_tick;
   if (state.ui.startup_demo_tick < 60000U) {
@@ -1732,9 +1796,8 @@ bool render_startup_demo_and_backstory(EgaPlanarSurface &surface,
     };
     auto draw_flash = [&](std::int32_t x, std::uint16_t flash_tick,
                           int overlay_idx) {
-      if (overlay_idx >= 0 &&
-          static_cast<std::size_t>(overlay_idx) <
-              state.demo_overlay_images.size()) {
+      if (overlay_idx >= 0 && static_cast<std::size_t>(overlay_idx) <
+                                  state.demo_overlay_images.size()) {
         gfx_rle_blit_opaque_4plane(
             surface, 192, 80,
             state.demo_overlay_images[static_cast<std::size_t>(overlay_idx)]);
@@ -2047,6 +2110,8 @@ bool transition_game_lifecycle(RuntimeState &state,
     if (!state.ui.persistence_dir.empty()) {
       cfg_load_options_file(state, state.ui.persistence_dir / "FR.CFG");
       keys_load_file(state.key_bindings, state.ui.persistence_dir / "KEYS.DEF");
+    } else if (!state.assets_root.empty()) {
+      cfg_load_options_file(state, state.assets_root / "FR.CFG");
     }
     if (state.ui.player_slot_menu_active) {
       ui_init_player_slot_menu(state);
@@ -2191,11 +2256,15 @@ bool update_game_lifecycle(RuntimeState &state, const InputState &input,
     }
     if (input.sdl_keyboard_active) {
       if (input.any_key_pressed) {
+        state.ui.player_slot_menu_active = true;
         return transition_game_lifecycle(state, GameLifecycleState::Menu);
       }
     } else if (input.any_key_pressed || input.pause_pressed ||
                input.jump_pressed || input.fire_pressed ||
                input.mode_activate_pressed) {
+      if (state.ui.lifecycle_enabled) {
+        state.ui.player_slot_menu_active = true;
+      }
       return transition_game_lifecycle(state, GameLifecycleState::Menu);
     }
     return true;
@@ -2208,13 +2277,91 @@ bool update_game_lifecycle(RuntimeState &state, const InputState &input,
       return true;
     }
     if (state.ui.player_slot_menu_active) {
-      if (input.left_pressed) {
+      if (state.ui.editing_player_name) {
+        if (input.last_dos_scancode == 0x01U) {
+          state.ui.editing_player_name = false;
+          state.ui.pending_player_name_input.clear();
+          ui_init_player_slot_menu(state);
+          return true;
+        }
+        if (input.last_dos_scancode == 0x0EU ||
+            input.last_dos_scancode == 0x4BU) {
+          if (!state.ui.pending_player_name_input.empty()) {
+            state.ui.pending_player_name_input.pop_back();
+          }
+          return true;
+        }
+        if (input.last_dos_scancode == 0x1CU) {
+          const std::string entered = state.ui.pending_player_name_input;
+          state.ui.editing_player_name = false;
+          state.ui.pending_player_name_input.clear();
+          if (!entered.empty()) {
+            ui_enter_new_player(state, entered);
+          } else {
+            ui_init_player_slot_menu(state);
+          }
+          return true;
+        }
+        if (input.last_dos_scancode != 0U &&
+            state.ui.pending_player_name_input.size() < 15U) {
+          char ch = '\0';
+          if (input.last_dos_scancode == 0x39U) {
+            ch = ' ';
+          } else {
+            const auto key_name = dos_scancode_name(input.last_dos_scancode);
+            if (key_name.size() == 1U) {
+              const char c = key_name[0];
+              if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+                ch = c;
+              }
+            }
+          }
+          if (ch != '\0') {
+            state.ui.pending_player_name_input.push_back(ch);
+          }
+        }
+        return true;
+      }
+
+      if (input.sdl_keyboard_active && input.last_dos_scancode == 0x01U) {
+        if (state.ui.retire_player_mode) {
+          state.ui.retire_player_mode = false;
+          ui_init_player_slot_menu(state);
+          return true;
+        }
+        return transition_game_lifecycle(state, GameLifecycleState::Quit);
+      }
+
+      const bool move_prev =
+          input.sdl_keyboard_active
+              ? (input.last_dos_scancode == 0x48U ||
+                 input.last_dos_scancode == 0x4BU ||
+                 input.last_dos_scancode == state.key_bindings.up ||
+                 input.last_dos_scancode == state.key_bindings.left)
+              : input.left_pressed;
+      const bool move_next =
+          input.sdl_keyboard_active
+              ? (input.last_dos_scancode == 0x50U ||
+                 input.last_dos_scancode == 0x4DU ||
+                 input.last_dos_scancode == state.key_bindings.down ||
+                 input.last_dos_scancode == state.key_bindings.right)
+              : (input.right_pressed || input.down_pressed);
+      const bool confirm_pressed =
+          input.sdl_keyboard_active
+              ? (input.last_dos_scancode == 0x1CU ||
+                 input.last_dos_scancode == 0x39U ||
+                 input.last_dos_scancode == 0x52U ||
+                 input.last_dos_scancode == state.key_bindings.jump ||
+                 input.last_dos_scancode == state.key_bindings.fire)
+              : (input.jump_pressed || input.fire_pressed);
+
+      if (move_prev) {
         ui_select_prev_valid_option(state);
       }
-      if (input.right_pressed || input.down_pressed) {
+      if (move_next) {
         ui_select_next_valid_option(state);
       }
-      if (input.jump_pressed || input.fire_pressed) {
+      if (confirm_pressed) {
         if (state.ui.retire_player_mode) {
           if (state.ui.selected_option_index < 5U) {
             ui_retire_player(state, state.ui.selected_option_index);
@@ -2225,6 +2372,24 @@ bool update_game_lifecycle(RuntimeState &state, const InputState &input,
           return true;
         }
         if (state.ui.selected_option_index == 6U) {
+          if (input.sdl_keyboard_active &&
+              state.ui.pending_player_name_input.empty()) {
+            std::size_t target_slot = 5U;
+            for (std::size_t i = 0; i < 5U; ++i) {
+              if (state.dos_config.player_names[i].empty()) {
+                target_slot = i;
+                break;
+              }
+            }
+            if (target_slot < 5U) {
+              state.ui.editing_player_name = true;
+              state.ui.pending_player_name_input.clear();
+              state.ui.option_labels[6] = "ENTER YOUR NAME.";
+              state.ui.option_labels[7] = "HIT (ESC) TO ABORT";
+              state.ui.selected_option_index = target_slot;
+            }
+            return true;
+          }
           const std::string name = state.ui.pending_player_name_input.empty()
                                        ? "CAPTAIN"
                                        : state.ui.pending_player_name_input;
@@ -2245,7 +2410,23 @@ bool update_game_lifecycle(RuntimeState &state, const InputState &input,
           state.ui.menu_state = MenuState::GameSelect;
           state.ui.option_labels = {"NATURE", "MAGIC",  "TIME",
                                     "ICE",    "TECHNO", "DREAMS"};
-          ui_select_world_or_save_slot(state, state.ui.active_player_slot);
+          bool loaded_save = false;
+          if (!state.ui.persistence_dir.empty()) {
+            loaded_save = savegame_read_slot_file(
+                state, state.ui.persistence_dir, state.ui.active_player_slot);
+          } else if (!state.assets_root.empty()) {
+            loaded_save = savegame_read_slot_file(state, state.assets_root,
+                                                  state.ui.active_player_slot);
+          }
+          if (!loaded_save) {
+            state.current_level = 0U;
+            state.current_room = 0U;
+          }
+          if (!state.assets_root.empty()) {
+            load_room_tilemap_from_asset_root(state, state.assets_root,
+                                              state.current_level,
+                                              state.current_room);
+          }
           return transition_game_lifecycle(state, GameLifecycleState::Gameplay);
         }
       }

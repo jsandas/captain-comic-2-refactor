@@ -1150,9 +1150,9 @@ void test_startup_demo_backstory_and_config_options_screens() {
          "load_ui_assets must populate starfield_screen (SEG_PALETTE:0x1CD0)");
   expect(state.credits_overlay.has_value(),
          "load_ui_assets must populate credits_overlay (SEG_PALETTE:0x0000)");
-  expect(
-      state.config_prompt_overlay.has_value(),
-      "load_ui_assets must populate config_prompt_overlay (SEG_PALETTE:0x0CDC)");
+  expect(state.config_prompt_overlay.has_value(),
+         "load_ui_assets must populate config_prompt_overlay "
+         "(SEG_PALETTE:0x0CDC)");
   expect(state.demo_ship_sprites.size() == 8U,
          "load_ui_assets must load 8 FRDEMO.0 ship sprites");
   expect(state.demo_flash_sprites.size() == 2U,
@@ -1184,12 +1184,14 @@ void test_startup_demo_backstory_and_config_options_screens() {
          "Startup Demo Part 1 must apply palette DS:0xABC0");
 
   // Phase 2 (tick 120..431): Planet Ogron surface (FRPAK.003/004 + FRDEMO.1)
-  state.ui.startup_demo_tick = 120U + 90U + 17U; // Flash 1 tick 1 -> IntroFlashB
+  state.ui.startup_demo_tick =
+      120U + 90U + 17U; // Flash 1 tick 1 -> IntroFlashB
   state.audio.pending_events.clear();
   surface.clear(0x00);
   comic2::render_game_lifecycle_frame(surface, state);
   expect(!state.audio.pending_events.empty() &&
-             state.audio.pending_events.back() == comic2::AudioEvent::IntroFlashB,
+             state.audio.pending_events.back() ==
+                 comic2::AudioEvent::IntroFlashB,
          "Demo Part 2 flash must queue IntroFlashB (DS:0xAC92)");
 
   // Phase 3 (tick 432..443): Comic beaming up through space (FRDEMO.2)
@@ -1295,10 +1297,61 @@ void test_startup_demo_backstory_and_config_options_screens() {
              state.ui.lifecycle_state == comic2::GameLifecycleState::Intro,
          "Completing 6 key bindings must finish Define Keys");
 
-  // Pressing any other key on Config screen advances to Menu
+  // Pressing any other key on Config screen advances to Menu with the Player
+  // Save Slot menu active (NOT the 6-world stage selection menu!)
+  const auto temp_dir = std::filesystem::temp_directory_path() /
+                        "test_comic2_startup_player_menu";
+  std::filesystem::remove_all(temp_dir);
+  std::filesystem::create_directories(temp_dir);
+  state.ui.persistence_dir = temp_dir;
+
   comic2::update_game_lifecycle(state, any_key);
   expect(state.ui.lifecycle_state == comic2::GameLifecycleState::Menu,
          "Pressing any other key on Config screen must advance to Menu");
+  expect(state.ui.player_slot_menu_active,
+         "Menu after Config screen must open the Player Save Slot menu");
+  expect(state.ui.selected_option_index == 6U &&
+             state.ui.option_labels[6] == "ENTER A NEW PLAYER",
+         "Empty player roster must highlight 'ENTER A NEW PLAYER'");
+
+  surface.clear(0x00);
+  comic2::render_game_lifecycle_frame(surface, state);
+
+  // Press Enter (0x1C) on 'ENTER A NEW PLAYER' to begin inline name entry, type
+  // "COMIC", and press Enter (0x1C) to save the new player slot
+  comic2::InputState press_enter{};
+  press_enter.sdl_keyboard_active = true;
+  press_enter.any_key_pressed = true;
+  press_enter.last_dos_scancode = 0x1CU;
+  comic2::update_game_lifecycle(state, press_enter);
+  expect(state.ui.editing_player_name && state.ui.selected_option_index == 0U,
+         "Confirming 'ENTER A NEW PLAYER' must start inline name editing on "
+         "slot 0");
+
+  for (std::uint8_t sc :
+       {std::uint8_t(0x2E), std::uint8_t(0x18), std::uint8_t(0x32),
+        std::uint8_t(0x17), std::uint8_t(0x2E)}) { // C-O-M-I-C
+    comic2::InputState type_key{};
+    type_key.sdl_keyboard_active = true;
+    type_key.any_key_pressed = true;
+    type_key.last_dos_scancode = sc;
+    comic2::update_game_lifecycle(state, type_key);
+  }
+  comic2::update_game_lifecycle(state, press_enter);
+  expect(!state.ui.editing_player_name &&
+             state.dos_config.player_names[0] == "COMIC" &&
+             state.ui.selected_option_index == 0U,
+         "Pressing Enter after typing name must create player 'COMIC' in slot "
+         "0");
+
+  // Confirming slot 0 ("COMIC") loads GAME.001 (Level 0 Room 0) and enters
+  // Gameplay
+  comic2::update_game_lifecycle(state, press_enter);
+  expect(state.ui.lifecycle_state == comic2::GameLifecycleState::Gameplay &&
+             state.current_level == 0U && state.current_room == 0U,
+         "Selecting player slot 0 must enter Gameplay at Level 0 Room 0");
+
+  std::filesystem::remove_all(temp_dir);
 }
 
 } // namespace

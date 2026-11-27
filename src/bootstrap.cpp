@@ -848,7 +848,8 @@ bool poll_bootstrap_input(RuntimeState &state) {
       if (!state.ui.lifecycle_enabled ||
           state.ui.lifecycle_state == GameLifecycleState::Gameplay ||
           (state.ui.lifecycle_state == GameLifecycleState::Menu &&
-           !state.ui.retire_player_mode && !state.ui.key_rebinding_active)) {
+           !state.ui.retire_player_mode && !state.ui.editing_player_name &&
+           !state.ui.key_rebinding_active)) {
         return false;
       }
     }
@@ -1035,6 +1036,11 @@ run_integrated_bootstrap_loop(const std::filesystem::path &root,
   auto state = make_default_runtime_state();
   const auto bootstrap = initialize_runtime_scene(state, root);
   state.ui.lifecycle_enabled = !read_bootstrap_bool_env("COMIC2_SKIP_FRONTEND");
+  state.ui.player_slot_menu_active = true;
+  if (state.ui.persistence_dir.empty()) {
+    state.ui.persistence_dir =
+        state.assets_root.empty() ? root : state.assets_root;
+  }
 
   auto dispatcher = make_default_game_dispatcher();
   dispatcher.set_trace_enabled(

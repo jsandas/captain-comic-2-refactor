@@ -741,7 +741,16 @@ const Ega4PlaneImage &get_embedded_config_prompt_overlay() {
 
 const std::vector<MaskedSpriteRecord> &get_embedded_comic_walk_sprites() {
   static const std::vector<MaskedSpriteRecord> kSprites = []() {
-    auto decoded = decode_masked_sprite_sheet(detail::kSegStackComicWalkSprites);
+    auto decoded =
+        decode_masked_sprite_sheet(detail::kSegStackComicWalkSprites);
+    return decoded.value_or(std::vector<MaskedSpriteRecord>{});
+  }();
+  return kSprites;
+}
+
+const std::vector<MaskedSpriteRecord> &get_embedded_menu_sprites() {
+  static const std::vector<MaskedSpriteRecord> kSprites = []() {
+    auto decoded = decode_masked_sprite_sheet(detail::kSegStackMenuSprites);
     return decoded.value_or(std::vector<MaskedSpriteRecord>{});
   }();
   return kSprites;
@@ -836,8 +845,7 @@ void load_ui_assets(RuntimeState &state,
     if (const auto bytes = load_file_bytes(frdemo1_path); bytes.has_value()) {
       if (auto sprites = decode_masked_sprite_sheet(*bytes);
           sprites.has_value() && sprites->size() >= 2U) {
-        state.demo_flash_sprites.assign(sprites->begin(),
-                                        sprites->begin() + 2);
+        state.demo_flash_sprites.assign(sprites->begin(), sprites->begin() + 2);
         for (std::size_t i = 2U; i < sprites->size(); ++i) {
           state.demo_overlay_images.push_back(
               make_masked_sprite_image((*sprites)[i]));
