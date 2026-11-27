@@ -141,6 +141,12 @@ void gfx_rle_blit_masked_or_4plane(EgaPlanarSurface &dest, std::size_t x_pixels,
 // Converts a MaskedSpriteRecord into an Ega4PlaneImage suitable for blitting.
 Ega4PlaneImage make_masked_sprite_image(const MaskedSpriteRecord &record);
 
+// Blits a 5-plane MaskedSpriteRecord applying its transparency mask (AND mask,
+// then OR 4 color planes) matching vid_clear_page (1000:77a3).
+void gfx_blit_masked_sprite(EgaPlanarSurface &dest, std::int32_t x_pixels,
+                            std::int32_t y_rows,
+                            const MaskedSpriteRecord &record);
+
 // Authentic in-game playfield viewport within the 320x200 bezel frame.
 // The FRPAK.001 bezel has an 8-pixel border; the playfield sits within it.
 constexpr std::int32_t kPlayfieldX = 8;
@@ -189,6 +195,19 @@ void load_ega_palette_table(
 
 // Standard 16-color EGA palette table (RGBA values).
 std::array<std::array<std::uint8_t, 4>, 16> make_default_ega_palette();
+
+// Converts a 16-byte Mode 0Dh EGA Attribute Controller register table
+// (values in 0x00..0x07, 0x10..0x17) into an RGBA palette table.
+std::array<std::array<std::uint8_t, 4>, 16>
+make_ega_palette_from_registers(const std::array<std::uint8_t, 16> &registers);
+
+// Authentic DOS EGA palette tables from comic2_data.asm:
+std::array<std::array<std::uint8_t, 4>, 16> make_ega_palette_ds_0013();
+std::array<std::array<std::uint8_t, 4>, 16> make_ega_palette_ds_0024();
+std::array<std::array<std::uint8_t, 4>, 16> make_ega_palette_ds_abc0();
+std::array<std::array<std::uint8_t, 4>, 16>
+make_ega_palette_ds_abd1(std::uint16_t cycle_tick = 0, bool post_wipe = false);
+std::array<std::array<std::uint8_t, 4>, 16> make_ega_palette_ds_abe2();
 
 // All-black 16-color EGA palette mask table (RGBA values).
 std::array<std::array<std::uint8_t, 4>, 16> make_black_palette_mask();

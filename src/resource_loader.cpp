@@ -11,7 +11,9 @@
 
 #include "asset_root_candidates.hpp"
 #include "comic2/bootstrap.hpp"
+#include "comic2/renderer.hpp"
 #include "comic2/room_loader.hpp"
+#include "embedded_startup_assets.hpp"
 
 namespace comic2 {
 namespace {
@@ -706,6 +708,45 @@ load_frpak_fullscreen(const std::filesystem::path &path) {
   }
 }
 
+const Ega4PlaneImage &get_embedded_starfield_screen() {
+  static const Ega4PlaneImage kImage = []() {
+    auto img = decode_ega_4plane_rle(detail::kSegPalette1Cd0StarfieldRle, true);
+    img.width_bytes = 40;
+    img.height_rows = 200;
+    return img;
+  }();
+  return kImage;
+}
+
+const Ega4PlaneImage &get_embedded_credits_overlay() {
+  static const Ega4PlaneImage kImage = []() {
+    auto img = decode_ega_4plane_rle(detail::kSegPalette0000CreditsRle, true);
+    img.width_bytes = 40;
+    img.height_rows = 200;
+    return img;
+  }();
+  return kImage;
+}
+
+const Ega4PlaneImage &get_embedded_config_prompt_overlay() {
+  static const Ega4PlaneImage kImage = []() {
+    auto img =
+        decode_ega_4plane_rle(detail::kSegPalette0CdcConfigPromptRle, true);
+    img.width_bytes = 40;
+    img.height_rows = 200;
+    return img;
+  }();
+  return kImage;
+}
+
+const std::vector<MaskedSpriteRecord> &get_embedded_comic_walk_sprites() {
+  static const std::vector<MaskedSpriteRecord> kSprites = []() {
+    auto decoded = decode_masked_sprite_sheet(detail::kSegStackComicWalkSprites);
+    return decoded.value_or(std::vector<MaskedSpriteRecord>{});
+  }();
+  return kSprites;
+}
+
 void load_ui_assets(RuntimeState &state,
                     const std::filesystem::path &asset_root) {
   state.title_screen.reset();
@@ -713,17 +754,41 @@ void load_ui_assets(RuntimeState &state,
   state.victory_screen.reset();
   state.menu_panel.reset();
   state.menu_buttons.clear();
+  state.starfield_screen.reset();
+  state.credits_overlay.reset();
+  state.config_prompt_overlay.reset();
+  state.demo_ship_sprites.clear();
+  state.demo_flash_sprites.clear();
+  state.demo_overlay_images.clear();
+  state.demo_beam_sprites.clear();
+  state.demo_walk_sprites.clear();
 
-  const auto title_path = asset_root / "FRPAK.002";
-  if (path_exists(title_path)) {
+  const auto find_case_file =
+      [&](const char *upper_name,
+          const char *lower_name) -> std::filesystem::path {
+    const auto up = asset_root / upper_name;
+    if (path_exists(up)) {
+      return up;
+    }
+    const auto lo = asset_root / lower_name;
+    if (path_exists(lo)) {
+      return lo;
+    }
+    return {};
+  };
+
+  const auto title_path = find_case_file("FRPAK.002", "frpak.002");
+  if (!title_path.empty()) {
     state.title_screen = load_frpak_fullscreen(title_path);
   }
 
   for (int i = 3; i <= 6; ++i) {
-    char name[16];
-    std::snprintf(name, sizeof(name), "FRPAK.00%d", i);
-    const auto pak_path = asset_root / name;
-    if (path_exists(pak_path)) {
+    char upper_name[16];
+    char lower_name[16];
+    std::snprintf(upper_name, sizeof(upper_name), "FRPAK.00%d", i);
+    std::snprintf(lower_name, sizeof(lower_name), "frpak.00%d", i);
+    const auto pak_path = find_case_file(upper_name, lower_name);
+    if (!pak_path.empty()) {
       auto slide = load_frpak_fullscreen(pak_path);
       if (slide.has_value()) {
         state.intro_screens.push_back(std::move(*slide));
@@ -731,21 +796,21 @@ void load_ui_assets(RuntimeState &state,
     }
   }
 
-  const auto victory_path = asset_root / "FRPAK.007";
-  if (path_exists(victory_path)) {
+  const auto victory_path = find_case_file("FRPAK.007", "frpak.007");
+  if (!victory_path.empty()) {
     state.victory_screen = load_frpak_fullscreen(victory_path);
   }
 
-  const auto frdata0_path = asset_root / "FRDATA.0";
-  if (path_exists(frdata0_path)) {
+  const auto frdata0_path = find_case_file("FRDATA.0", "frdata.0");
+  if (!frdata0_path.empty()) {
     const auto bytes = load_file_bytes(frdata0_path);
     if (bytes.has_value()) {
       state.menu_panel = decode_frdata0_panel(*bytes);
     }
   }
 
-  const auto frdata1_path = asset_root / "FRDATA.1";
-  if (path_exists(frdata1_path)) {
+  const auto frdata1_path = find_case_file("FRDATA.1", "frdata.1");
+  if (!frdata1_path.empty()) {
     const auto bytes = load_file_bytes(frdata1_path);
     if (bytes.has_value()) {
       auto buttons = decode_frdata1_sprites(*bytes);
@@ -753,6 +818,50 @@ void load_ui_assets(RuntimeState &state,
         state.menu_buttons = std::move(*buttons);
       }
     }
+  }
+
+  const auto frdemo0_path = find_case_file("FRDEMO.0", "frdemo.0");
+  if (!frdemo0_path.empty()) {
+    if (const auto bytes = load_file_bytes(frdemo0_path); bytes.has_value()) {
+      // First 8 records in FRDEMO.0 total 846 * 7 + 886 = 6808 bytes
+      if (auto sprites = decode_masked_sprite_sheet(*bytes);
+          sprites.has_value()) {
+        state.demo_ship_sprites = std::move(*sprites);
+      }
+    }
+  }
+
+  const auto frdemo1_path = find_case_file("FRDEMO.1", "frdemo.1");
+  if (!frdemo1_path.empty()) {
+    if (const auto bytes = load_file_bytes(frdemo1_path); bytes.has_value()) {
+      if (auto sprites = decode_masked_sprite_sheet(*bytes);
+          sprites.has_value() && sprites->size() >= 2U) {
+        state.demo_flash_sprites.assign(sprites->begin(),
+                                        sprites->begin() + 2);
+        for (std::size_t i = 2U; i < sprites->size(); ++i) {
+          state.demo_overlay_images.push_back(
+              make_masked_sprite_image((*sprites)[i]));
+        }
+      }
+    }
+  }
+
+  const auto frdemo2_path = find_case_file("FRDEMO.2", "frdemo.2");
+  if (!frdemo2_path.empty()) {
+    if (const auto bytes = load_file_bytes(frdemo2_path); bytes.has_value()) {
+      if (auto sprites = decode_masked_sprite_sheet(*bytes);
+          sprites.has_value()) {
+        state.demo_beam_sprites = std::move(*sprites);
+      }
+    }
+  }
+
+  if (state.title_screen.has_value() || !state.intro_screens.empty() ||
+      !state.demo_ship_sprites.empty()) {
+    state.starfield_screen = get_embedded_starfield_screen();
+    state.credits_overlay = get_embedded_credits_overlay();
+    state.config_prompt_overlay = get_embedded_config_prompt_overlay();
+    state.demo_walk_sprites = get_embedded_comic_walk_sprites();
   }
 }
 

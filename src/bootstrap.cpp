@@ -840,7 +840,19 @@ bool poll_bootstrap_input(RuntimeState &state) {
       g_keyboard_handler->set_key_bindings(state.key_bindings);
     }
     // Use real SDL2 keyboard input
-    return g_keyboard_handler->poll_events(state.input);
+    if (!g_keyboard_handler->poll_events(state.input)) {
+      return false;
+    }
+    if (state.input.sdl_keyboard_active &&
+        state.input.last_dos_scancode == 0x01U) {
+      if (!state.ui.lifecycle_enabled ||
+          state.ui.lifecycle_state == GameLifecycleState::Gameplay ||
+          (state.ui.lifecycle_state == GameLifecycleState::Menu &&
+           !state.ui.retire_player_mode && !state.ui.key_rebinding_active)) {
+        return false;
+      }
+    }
+    return true;
   } else {
     // Fallback to environment variables
     state.input.jump_pressed = read_bootstrap_bool_env("COMIC2_INPUT_JUMP");
@@ -1049,8 +1061,10 @@ FrameLoopSummary run_render_loop(RuntimeState &state,
     audio_enabled = audio_backend->initialize();
     state.audio.audio_enabled = audio_enabled;
     if (audio_enabled) {
-      queue_audio_event(state, AudioEvent::StartupChime);
-      flush_audio_events(state, audio_backend);
+      if (!state.ui.lifecycle_enabled) {
+        queue_audio_event(state, AudioEvent::StartupChime);
+        flush_audio_events(state, audio_backend);
+      }
     } else {
       // Clear any accumulated events if audio failed to initialize
       state.audio.pending_events.clear();
@@ -1114,6 +1128,17 @@ FrameLoopSummary run_render_loop(RuntimeState &state,
     summary.max_frame_time_us = std::max(summary.max_frame_time_us,
                                          static_cast<std::uint64_t>(tick_us));
 
+    if (state.ui.lifecycle_enabled) {
+      EgaPlanarSurface lifecycle_frame(320, 200);
+      render_game_lifecycle_frame(lifecycle_frame, state);
+      if (state.palette.loaded) {
+        presenter.set_palette(state.palette.entries);
+      }
+      presenter.present(lifecycle_frame);
+    } else {
+      render_bootstrap_frame(presenter, state);
+    }
+
     if (audio_enabled) {
       if (!was_airborne && state.player.is_airborne) {
         queue_audio_event(state, AudioEvent::Jump);
@@ -1130,17 +1155,6 @@ FrameLoopSummary run_render_loop(RuntimeState &state,
     for (int pit_step = 0; pit_step < 2 && state.audio.sound.is_playing;
          ++pit_step) {
       advance_sound_stream(state.audio.sound, 44100);
-    }
-
-    if (state.ui.lifecycle_enabled) {
-      EgaPlanarSurface lifecycle_frame(320, 200);
-      render_game_lifecycle_frame(lifecycle_frame, state);
-      if (state.palette.loaded) {
-        presenter.set_palette(state.palette.entries);
-      }
-      presenter.present(lifecycle_frame);
-    } else {
-      render_bootstrap_frame(presenter, state);
     }
 
     if (did_gameplay_tick && read_bootstrap_bool_env("COMIC2_ORACLE_REPLAY")) {

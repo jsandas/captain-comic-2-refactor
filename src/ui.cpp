@@ -1547,7 +1547,15 @@ bool ui_submit_key_rebinding_scancode(RuntimeState &state,
 bool render_title_screen(EgaPlanarSurface &surface, const RuntimeState &state) {
   if (state.title_screen.has_value() &&
       can_blit_opaque_image(surface, 0, 0, *state.title_screen)) {
-    gfx_rle_blit_opaque_4plane(surface, 0, 0, *state.title_screen);
+    const auto &starfield = state.starfield_screen.has_value()
+                                ? *state.starfield_screen
+                                : get_embedded_starfield_screen();
+    if (can_blit_opaque_image(surface, 0, 0, starfield)) {
+      gfx_rle_blit_opaque_4plane(surface, 0, 0, starfield);
+      gfx_rle_blit_masked_or_4plane(surface, 0, 0, *state.title_screen);
+    } else {
+      gfx_rle_blit_opaque_4plane(surface, 0, 0, *state.title_screen);
+    }
     return true;
   }
 
@@ -1555,6 +1563,357 @@ bool render_title_screen(EgaPlanarSurface &surface, const RuntimeState &state) {
   draw_rect(surface, 40, 40, 240, 120, 0x09);
   blit_string(surface, 64, 80, "CAPTAIN COMIC II", 0x0F);
   blit_string(surface, 80, 100, "FRACTURED REALITY", 0x0E);
+  return false;
+}
+
+namespace {
+
+void render_horizontal_split_wipe(EgaPlanarSurface &surface,
+                                  const Ega4PlaneImage &img_from,
+                                  const Ega4PlaneImage &img_to,
+                                  std::size_t step_bytes) {
+  // Implements ui_draw_title_stars (1000:74e1):
+  // Rows 0..15 and 176..199 come from img_from; rows 16..175 pan horizontally
+  // so the left `step_bytes` columns come from the right side of img_to and
+  // the remaining `40 - step_bytes` columns come from the left side of
+  // img_from.
+  if (!can_blit_opaque_image(surface, 0, 0, img_from) ||
+      !can_blit_opaque_image(surface, 0, 0, img_to)) {
+    return;
+  }
+  gfx_rle_blit_opaque_4plane(surface, 0, 0, img_from);
+  const std::size_t k = std::clamp<std::size_t>(step_bytes, 0U, 40U);
+  for (std::size_t plane = 0; plane < 4U; ++plane) {
+    auto dst = surface.plane(plane);
+    const auto &src_from = img_from.planes[plane];
+    const auto &src_to = img_to.planes[plane];
+    for (std::size_t y = 16U; y < 176U; ++y) {
+      const std::size_t row_off = y * 40U;
+      for (std::size_t xb = 0; xb < k; ++xb) {
+        dst[row_off + xb] = src_to[row_off + (40U - k) + xb];
+      }
+      for (std::size_t xb = k; xb < 40U; ++xb) {
+        dst[row_off + xb] = src_from[row_off + (xb - k)];
+      }
+    }
+  }
+}
+
+} // namespace
+
+bool render_startup_demo_and_backstory(EgaPlanarSurface &surface,
+                                       RuntimeState &state) {
+  const auto &starfield = state.starfield_screen.has_value()
+                              ? *state.starfield_screen
+                              : get_embedded_starfield_screen();
+  const auto &credits = state.credits_overlay.has_value()
+                            ? *state.credits_overlay
+                            : get_embedded_credits_overlay();
+  const auto &walk_sprites = !state.demo_walk_sprites.empty()
+                                 ? state.demo_walk_sprites
+                                 : get_embedded_comic_walk_sprites();
+
+  const bool has_demo_assets =
+      state.intro_screens.size() >= 4U &&
+      state.demo_ship_sprites.size() >= 8U &&
+      state.demo_flash_sprites.size() >= 2U &&
+      state.demo_overlay_images.size() >= 4U &&
+      state.demo_beam_sprites.size() >= 6U && walk_sprites.size() >= 6U;
+
+  const std::uint16_t tick = state.ui.startup_demo_tick;
+  if (state.ui.startup_demo_tick < 60000U) {
+    ++state.ui.startup_demo_tick;
+  }
+
+  // If demo assets aren't loaded (e.g. minimal unit test state), jump directly
+  // to the Title + Backstory composition (or fallback).
+  if (!has_demo_assets) {
+    if (!state.ui.title_music_started) {
+      state.ui.title_music_started = true;
+      queue_audio_event(state, AudioEvent::StartupChime);
+    }
+    load_ega_palette_table(state, make_ega_palette_ds_0024());
+    if (state.intro_screens.size() >= 4U &&
+        can_blit_opaque_image(surface, 0, 0, starfield) &&
+        can_blit_opaque_image(surface, 0, 0, state.intro_screens[3])) {
+      gfx_rle_blit_opaque_4plane(surface, 0, 0, starfield);
+      gfx_rle_blit_masked_or_4plane(surface, 0, 0, state.intro_screens[3]);
+      return true;
+    }
+    return render_title_screen(surface, state);
+  }
+
+  // Phase 0 (ticks 0..24, 25 ticks): Initial credits splash (1000:00EE..0131)
+  if (tick < 25U) {
+    load_ega_palette_table(state, make_ega_palette_ds_0013());
+    gfx_rle_blit_opaque_4plane(surface, 0, 0, starfield);
+    gfx_rle_blit_masked_or_4plane(surface, 0, 0, credits);
+    return true;
+  }
+
+  // Phase 1 (ticks 25..119, 95 ticks): Spaceship landing on Planet Ogron
+  // (ui_story_screen at 1000:7164..71FB)
+  if (tick < 120U) {
+    const std::uint16_t p1 = static_cast<std::uint16_t>(tick - 25U);
+    load_ega_palette_table(state, make_ega_palette_ds_abc0());
+    gfx_rle_blit_opaque_4plane(surface, 0, 0, starfield);
+    if (p1 >= 18U) {
+      // Planet horizon graphic FRDEMO.0[7] (0x1722) at (72, 96)
+      gfx_blit_masked_sprite(surface, 72, 96, state.demo_ship_sprites[7]);
+    }
+    if (p1 >= 63U) {
+      // 32 steps of spaceship descent from (256, 0) across FRDEMO.0[6..1]
+      const std::uint16_t step = static_cast<std::uint16_t>(p1 - 63U);
+      std::int32_t sx = 256;
+      std::int32_t sy = 0;
+      std::size_t sprite_idx = 6U;
+      for (std::uint16_t s = 0; s <= step && s < 32U; ++s) {
+        if (s < 6U) {
+          sx -= 4;
+          sy += 3;
+          sprite_idx = 6U;
+        } else if (s < 12U) {
+          sx -= 4;
+          sy += 3;
+          sprite_idx = 5U;
+        } else if (s < 17U) {
+          sx -= 8;
+          sy += 6;
+          sprite_idx = 4U;
+        } else if (s < 22U) {
+          sx -= 8;
+          sy += 6;
+          sprite_idx = 3U;
+        } else if (s < 27U) {
+          sx -= 12;
+          sy += 8;
+          sprite_idx = 2U;
+        } else {
+          sx -= 12;
+          sy += 8;
+          sprite_idx = 1U;
+        }
+      }
+      gfx_blit_masked_sprite(surface, sx, sy,
+                             state.demo_ship_sprites[sprite_idx]);
+    }
+    return true;
+  }
+
+  // Phase 2 (ticks 120..431, 312 ticks): Planet Ogron surface
+  // (ui_title_screen at 1000:7298..74DF)
+  if (tick < 432U) {
+    const std::uint16_t p2 = static_cast<std::uint16_t>(tick - 120U);
+    const auto &frpak003 = state.intro_screens[0];
+    const auto &frpak004 = state.intro_screens[1];
+
+    if (p2 < 50U) {
+      load_ega_palette_table(state, make_ega_palette_ds_abd1(p2, false));
+      gfx_rle_blit_opaque_4plane(surface, 0, 0, frpak003);
+      return true;
+    }
+    if (p2 < 90U) {
+      const std::size_t wipe_step = static_cast<std::size_t>(p2 - 50U + 1U);
+      load_ega_palette_table(state, make_ega_palette_ds_abd1(p2, false));
+      render_horizontal_split_wipe(surface, frpak003, frpak004, wipe_step);
+      return true;
+    }
+
+    // Post-wipe sequence on FRPAK.004 with cs:0x7120 palette cycling
+    const std::uint16_t act = static_cast<std::uint16_t>(p2 - 90U);
+    load_ega_palette_table(state, make_ega_palette_ds_abd1(act, true));
+    gfx_rle_blit_opaque_4plane(surface, 0, 0, frpak004);
+
+    auto draw_walk = [&](bool facing_right, std::int32_t x,
+                         std::uint16_t step_idx) {
+      const std::size_t base = facing_right ? 0U : 3U;
+      const std::size_t frame = base + (step_idx % 3U);
+      gfx_blit_masked_sprite(surface, x, 129, walk_sprites[frame]);
+    };
+    auto draw_flash = [&](std::int32_t x, std::uint16_t flash_tick,
+                          int overlay_idx) {
+      if (overlay_idx >= 0 &&
+          static_cast<std::size_t>(overlay_idx) <
+              state.demo_overlay_images.size()) {
+        gfx_rle_blit_opaque_4plane(
+            surface, 192, 80,
+            state.demo_overlay_images[static_cast<std::size_t>(overlay_idx)]);
+      }
+      if (flash_tick == 1U) {
+        queue_audio_event(state, AudioEvent::IntroFlashB);
+      }
+      const std::size_t f_idx = (flash_tick % 2U == 0U) ? 0U : 1U;
+      gfx_blit_masked_sprite(surface, x, 129, state.demo_flash_sprites[f_idx]);
+    };
+
+    if (act < 16U) {
+      // Walk right 16 steps from x=0 to x=120 (ends at x=128)
+      draw_walk(true, static_cast<std::int32_t>(act * 8U), act);
+    } else if (act < 26U) {
+      // Flash 1 at x=128
+      draw_flash(128, static_cast<std::uint16_t>(act - 16U), -1);
+    } else if (act < 36U) {
+      // Walk left 10 steps from x=128 to x=56 (ends at x=48)
+      const std::uint16_t s = static_cast<std::uint16_t>(act - 26U);
+      draw_walk(false, 128 - static_cast<std::int32_t>(s * 8U), s);
+    } else if (act < 46U) {
+      // Flash 2 at x=48
+      draw_flash(48, static_cast<std::uint16_t>(act - 36U), -1);
+    } else if (act < 48U) {
+      // Walk right 2 steps from x=48 to x=56 (ends at x=64)
+      const std::uint16_t s = static_cast<std::uint16_t>(act - 46U);
+      draw_walk(true, 48 + static_cast<std::int32_t>(s * 8U), s);
+    } else if (act < 58U) {
+      // Flash 3 at x=64, followed by IntroFlashA (DS:0xAC3A) on completion
+      const std::uint16_t ft = static_cast<std::uint16_t>(act - 48U);
+      draw_flash(64, ft, -1);
+      if (ft == 9U) {
+        queue_audio_event(state, AudioEvent::IntroFlash);
+      }
+    } else if (act < 76U) {
+      // Walk right 18 steps from x=64 to x=200 (ends at x=208) with overlay 0
+      const std::uint16_t s = static_cast<std::uint16_t>(act - 58U);
+      gfx_rle_blit_opaque_4plane(surface, 192, 80,
+                                 state.demo_overlay_images[0]);
+      draw_walk(true, 64 + static_cast<std::int32_t>(s * 8U), s);
+    } else if (act < 86U) {
+      // Flash 4a at x=208 with overlay 0 (0x028C)
+      draw_flash(208, static_cast<std::uint16_t>(act - 76U), 0);
+    } else if (act < 96U) {
+      // Flash 4b at x=208 with overlay 1 (0x0710)
+      const std::uint16_t ft = static_cast<std::uint16_t>(act - 86U);
+      draw_flash(208, ft, 1);
+      if (ft == 9U) {
+        queue_audio_event(state, AudioEvent::IntroOverlay);
+      }
+    } else if (act < 126U) {
+      // Hold 30 ticks with overlay 1 (0x0710) and Comic standing at (208, 129)
+      gfx_rle_blit_opaque_4plane(surface, 192, 80,
+                                 state.demo_overlay_images[1]);
+      gfx_blit_masked_sprite(surface, 208, 129, state.demo_flash_sprites[1]);
+    } else if (act < 136U) {
+      // Flash 4c at x=208 with overlay 1 (0x0710)
+      draw_flash(208, static_cast<std::uint16_t>(act - 126U), 1);
+    } else if (act < 146U) {
+      // Flash 4d at x=208 with overlay 2 (0x0B94)
+      const std::uint16_t ft = static_cast<std::uint16_t>(act - 136U);
+      draw_flash(208, ft, 2);
+      if (ft == 9U) {
+        queue_audio_event(state, AudioEvent::IntroOverlay);
+      }
+    } else if (act < 176U) {
+      // Hold 30 ticks with overlay 2 (0x0B94)
+      gfx_rle_blit_opaque_4plane(surface, 192, 80,
+                                 state.demo_overlay_images[2]);
+      gfx_blit_masked_sprite(surface, 208, 129, state.demo_flash_sprites[1]);
+    } else if (act < 186U) {
+      // Flash 4e at x=208 with overlay 2 (0x0B94), then IntroFlashA (DS:0xAC3A)
+      const std::uint16_t ft = static_cast<std::uint16_t>(act - 176U);
+      draw_flash(208, ft, 2);
+      if (ft == 9U) {
+        queue_audio_event(state, AudioEvent::IntroFlash);
+      }
+    } else {
+      // Walk left 26 steps from x=208 to x=8 with overlay 3 (0x1018)
+      const std::uint16_t s = static_cast<std::uint16_t>(act - 186U);
+      gfx_rle_blit_opaque_4plane(surface, 192, 80,
+                                 state.demo_overlay_images[3]);
+      draw_walk(false, 208 - static_cast<std::int32_t>(s * 8U), s);
+    }
+    return true;
+  }
+
+  // Phase 3 (ticks 432..443, 12 ticks): Comic beaming up through space
+  // (1000:7660..76D5)
+  if (tick < 444U) {
+    const std::uint16_t p3 = static_cast<std::uint16_t>(tick - 432U);
+    load_ega_palette_table(state, make_ega_palette_ds_abc0());
+    gfx_rle_blit_opaque_4plane(surface, 0, 0, starfield);
+    const std::size_t beam_idx =
+        std::min<std::size_t>(p3 / 2U, state.demo_beam_sprites.size() - 1U);
+    const std::int32_t by = 180 - static_cast<std::int32_t>(p3 * 10U);
+    gfx_blit_masked_sprite(surface, 132, by, state.demo_beam_sprites[beam_idx]);
+    return true;
+  }
+
+  // Phase 4a (ticks 444..483, 40 ticks): Title Logo Screen (FRPAK.005 over
+  // SEG_PALETTE:0x1CD0 with green palette DS:0xABE2 and TitleAndIntroTheme
+  // DS:0x00DB, matching 1000:76D6..770B)
+  if (!state.ui.title_music_started) {
+    state.ui.title_music_started = true;
+    queue_audio_event(state, AudioEvent::StartupChime);
+  }
+  if (tick < 484U) {
+    load_ega_palette_table(state, make_ega_palette_ds_abe2());
+    gfx_rle_blit_opaque_4plane(surface, 0, 0, starfield);
+    gfx_rle_blit_masked_or_4plane(surface, 0, 0, state.intro_screens[2]);
+    return true;
+  }
+
+  // Phase 4b (ticks >= 484, holds until keypress): Title Banner + Backstory
+  // Screen (FRPAK.006 over SEG_PALETTE:0x1CD0 with gold/yellow/red palette
+  // DS:0x0024 and TitleAndIntroTheme DS:0x00DB, matching 1000:770C..773E)
+  load_ega_palette_table(state, make_ega_palette_ds_0024());
+  gfx_rle_blit_opaque_4plane(surface, 0, 0, starfield);
+  gfx_rle_blit_masked_or_4plane(surface, 0, 0, state.intro_screens[3]);
+  return true;
+}
+
+bool render_title_config_options_screen(EgaPlanarSurface &surface,
+                                        RuntimeState &state) {
+  if (state.ui.key_rebinding_active) {
+    load_ega_palette_table(state, make_default_ega_palette());
+    surface.clear(0x00);
+    blit_string(surface, 112, 40, "DEFINE KEYS", 0x07);
+    static constexpr std::array<const char *, 6> kActionPrompts = {
+        "MOVE LEFT  : ", "MOVE RIGHT : ", "MOVE UP    : ",
+        "MOVE DOWN  : ", "JUMP       : ", "TRIGGER    : ",
+    };
+    const std::array<std::uint8_t, 6> bound_codes = {
+        state.ui.pending_key_bindings.left, state.ui.pending_key_bindings.right,
+        state.ui.pending_key_bindings.up,   state.ui.pending_key_bindings.down,
+        state.ui.pending_key_bindings.jump, state.ui.pending_key_bindings.fire,
+    };
+    const std::size_t visible_steps =
+        std::min<std::size_t>(state.ui.key_rebinding_step + 1U, 6U);
+    for (std::size_t i = 0; i < visible_steps; ++i) {
+      std::string line = kActionPrompts[i];
+      if (i < state.ui.key_rebinding_step) {
+        line += std::string(dos_scancode_name(bound_codes[i]));
+      }
+      blit_string(surface, 72, static_cast<std::int32_t>(64U + i * 12U),
+                  line.c_str(), 0x07);
+    }
+    return true;
+  }
+
+  if (state.ui.joystick_calibration_active) {
+    load_ega_palette_table(state, make_default_ega_palette());
+    surface.clear(0x00);
+    blit_string(surface, 88, 48, "CALIBRATE JOYSTICK", 0x07);
+    blit_string(surface, 72, 64, "PRESS ANY KEY TO ABORT", 0x07);
+    blit_string(surface, 32, 96, "CENTER JOYSTICK AND PRESS BUTTON", 0x07);
+    return true;
+  }
+
+  // Authentic Keyboard & Joystick Configuration Title Screen
+  // (vid_init_screen_pages at 1000:02B4):
+  // Opaque-blit SEG_PALETTE:0x1CD0 (starfield) + Masked-OR blit
+  // SEG_PALETTE:0x0CDC (keyboard/joystick options overlay) with palette
+  // DS:0x0024.
+  load_ega_palette_table(state, make_ega_palette_ds_0024());
+  const auto &starfield = state.starfield_screen.has_value()
+                              ? *state.starfield_screen
+                              : get_embedded_starfield_screen();
+  const auto &config_overlay = state.config_prompt_overlay.has_value()
+                                   ? *state.config_prompt_overlay
+                                   : get_embedded_config_prompt_overlay();
+  if (can_blit_opaque_image(surface, 0, 0, starfield) &&
+      can_blit_opaque_image(surface, 0, 0, config_overlay)) {
+    gfx_rle_blit_opaque_4plane(surface, 0, 0, starfield);
+    gfx_rle_blit_masked_or_4plane(surface, 0, 0, config_overlay);
+    return true;
+  }
   return false;
 }
 
@@ -1582,7 +1941,15 @@ bool event_finale_transition_sequence(EgaPlanarSurface &surface,
                                       RuntimeState &state) {
   if (state.victory_screen.has_value() &&
       can_blit_opaque_image(surface, 0, 0, *state.victory_screen)) {
-    gfx_rle_blit_opaque_4plane(surface, 0, 0, *state.victory_screen);
+    const auto &starfield = state.starfield_screen.has_value()
+                                ? *state.starfield_screen
+                                : get_embedded_starfield_screen();
+    if (can_blit_opaque_image(surface, 0, 0, starfield)) {
+      gfx_rle_blit_opaque_4plane(surface, 0, 0, starfield);
+      gfx_rle_blit_masked_or_4plane(surface, 0, 0, *state.victory_screen);
+    } else {
+      gfx_rle_blit_opaque_4plane(surface, 0, 0, *state.victory_screen);
+    }
     state.progression.flags =
         static_cast<std::uint8_t>(state.progression.flags | 0x80U);
     state.ui.cinematic_frame =
@@ -1660,11 +2027,18 @@ bool transition_game_lifecycle(RuntimeState &state,
   switch (next_state) {
   case GameLifecycleState::Title:
     state.ui.cinematic_frame = 0;
-    queue_audio_event(state, AudioEvent::StartupChime);
+    state.ui.startup_demo_tick = 0;
+    state.ui.title_music_started = false;
     break;
   case GameLifecycleState::Intro:
     state.ui.cinematic_frame = 0;
-    queue_audio_event(state, AudioEvent::IntroFlash);
+    state.ui.key_rebinding_active = false;
+    state.ui.joystick_calibration_active = false;
+    state.ui.joystick_calibration_step = 0;
+    if (!state.ui.persistence_dir.empty()) {
+      keys_load_file(state.key_bindings, state.ui.persistence_dir / "KEYS.DEF");
+    }
+    queue_audio_event(state, AudioEvent::StartupChime);
     break;
   case GameLifecycleState::Menu:
     state.ui.menu_state = MenuState::GameSelect;
@@ -1764,30 +2138,65 @@ bool update_game_lifecycle(RuntimeState &state, const InputState &input,
                            const GameDispatcher *dispatcher) {
   switch (state.ui.lifecycle_state) {
   case GameLifecycleState::Title:
-    if (input.jump_pressed || input.fire_pressed || input.pause_pressed ||
-        input.mode_activate_pressed || input.left_pressed ||
-        input.right_pressed) {
+    if (input.sdl_keyboard_active) {
+      if (input.any_key_pressed) {
+        return transition_game_lifecycle(state, GameLifecycleState::Intro);
+      }
+    } else if (input.any_key_pressed || input.jump_pressed ||
+               input.fire_pressed || input.pause_pressed ||
+               input.mode_activate_pressed || input.left_pressed ||
+               input.right_pressed || input.down_pressed) {
       return transition_game_lifecycle(state, GameLifecycleState::Intro);
     }
     return true;
 
   case GameLifecycleState::Intro:
-    if (input.pause_pressed) {
-      return transition_game_lifecycle(state, GameLifecycleState::Menu);
+    if (state.ui.key_rebinding_active) {
+      if (input.last_dos_scancode != 0U) {
+        ui_submit_key_rebinding_scancode(state, input.last_dos_scancode);
+        if (!state.ui.key_rebinding_active) {
+          state.ui.modal_active = false;
+          state.ui.modal_prompt.clear();
+        }
+      } else if (input.pause_pressed) {
+        ui_submit_key_rebinding_scancode(state, 0x01U);
+      }
+      return true;
+    }
+    if (state.ui.joystick_calibration_active) {
+      if (input.any_key_pressed ||
+          (!input.sdl_keyboard_active &&
+           (input.jump_pressed || input.fire_pressed || input.pause_pressed))) {
+        state.ui.joystick_calibration_active = false;
+        state.ui.joystick_calibration_step = 0U;
+      }
+      return true;
+    }
+    if (input.last_dos_scancode == 0x25U) {
+      ui_begin_key_rebinding(state);
+      return true;
+    }
+    if (input.last_dos_scancode == 0x24U) {
+      state.ui.joystick_calibration_active = true;
+      state.ui.joystick_calibration_step = 0U;
+      return true;
+    }
+    if (input.last_dos_scancode == 0x01U) {
+      return transition_game_lifecycle(state, GameLifecycleState::Quit);
     }
     if (state.ui.cinematic_frame >= 4U ||
         (!state.intro_screens.empty() &&
          state.ui.cinematic_frame >= state.intro_screens.size())) {
       return transition_game_lifecycle(state, GameLifecycleState::Menu);
     }
-    if (input.jump_pressed || input.fire_pressed) {
-      state.ui.cinematic_frame =
-          static_cast<std::uint8_t>(state.ui.cinematic_frame + 1U);
-      if (state.ui.cinematic_frame >= 4U ||
-          (!state.intro_screens.empty() &&
-           state.ui.cinematic_frame >= state.intro_screens.size())) {
+    if (input.sdl_keyboard_active) {
+      if (input.any_key_pressed) {
         return transition_game_lifecycle(state, GameLifecycleState::Menu);
       }
+    } else if (input.any_key_pressed || input.pause_pressed ||
+               input.jump_pressed || input.fire_pressed ||
+               input.mode_activate_pressed) {
+      return transition_game_lifecycle(state, GameLifecycleState::Menu);
     }
     return true;
 
@@ -1933,12 +2342,10 @@ void render_game_lifecycle_frame(EgaPlanarSurface &surface,
                                  RuntimeState &state) {
   switch (state.ui.lifecycle_state) {
   case GameLifecycleState::Title:
-    load_ega_palette_table(state, make_default_ega_palette());
-    render_title_screen(surface, state);
+    render_startup_demo_and_backstory(surface, state);
     break;
   case GameLifecycleState::Intro:
-    load_ega_palette_table(state, make_default_ega_palette());
-    play_intro_cinematic(surface, state);
+    render_title_config_options_screen(surface, state);
     break;
   case GameLifecycleState::Menu:
     load_ega_palette_table(state, make_default_ega_palette());
@@ -1952,7 +2359,7 @@ void render_game_lifecycle_frame(EgaPlanarSurface &surface,
     ui_render_modal_prompt(surface, state);
     break;
   case GameLifecycleState::Victory:
-    load_ega_palette_table(state, make_default_ega_palette());
+    load_ega_palette_table(state, make_ega_palette_ds_0024());
     event_finale_transition_sequence(surface, state);
     break;
   case GameLifecycleState::GameOver:

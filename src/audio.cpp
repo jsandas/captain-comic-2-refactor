@@ -702,6 +702,10 @@ public:
 
   void enqueue_event(AudioEvent event) override {
     ++events_enqueued_;
+    if (event == AudioEvent::StartupChime || event == AudioEvent::MenuTheme ||
+        event == AudioEvent::VictoryFanfare) {
+      sound_driver_.stop();
+    }
     const SoundStream stream = make_stream_for_event(event);
     const std::uint8_t prev_priority = sound_driver_.current_priority();
     const bool was_playing = sound_driver_.is_playing();
@@ -770,12 +774,19 @@ private:
     }
     const int sample_rate =
         obtained_spec_.freq > 0 ? obtained_spec_.freq : 44100;
-    const double frequency = 1193180.0 / static_cast<double>(divisor);
-    const double phase_step = frequency / static_cast<double>(sample_rate);
     const int total_sample_count = std::max(
         1, static_cast<int>(std::lround(static_cast<double>(sample_rate) /
                                         (1193180.0 / 65536.0))));
-    std::vector<std::int16_t> pcm(static_cast<std::size_t>(total_sample_count));
+    std::vector<std::int16_t> pcm(static_cast<std::size_t>(total_sample_count),
+                                  0);
+    if (divisor < 0x0040U) {
+      phase_ = 0.0;
+      SDL_QueueAudio(device_id_, pcm.data(),
+                     static_cast<Uint32>(pcm.size() * sizeof(std::int16_t)));
+      return;
+    }
+    const double frequency = 1193180.0 / static_cast<double>(divisor);
+    const double phase_step = frequency / static_cast<double>(sample_rate);
     constexpr std::int16_t kAmplitude = 12000;
     for (int i = 0; i < total_sample_count; ++i) {
       pcm[static_cast<std::size_t>(i)] =
@@ -871,6 +882,10 @@ std::uint16_t get_sound_offset_for_event(AudioEvent event) {
     return kSoundOffsetModalPromptBeep;
   case AudioEvent::IntroFlash:
     return kSoundOffsetIntroFlashA;
+  case AudioEvent::IntroOverlay:
+    return kSoundOffsetIntroOverlay;
+  case AudioEvent::IntroFlashB:
+    return kSoundOffsetIntroFlashB;
   case AudioEvent::ItemActivate:
     return kSoundOffsetItemActivate;
   }
@@ -1164,6 +1179,10 @@ void queue_audio_event(RuntimeState &state, AudioEvent event) {
     return;
   }
   state.audio.pending_events.push_back(event);
+  if (event == AudioEvent::StartupChime || event == AudioEvent::MenuTheme ||
+      event == AudioEvent::VictoryFanfare) {
+    handle_sound_command(state.audio.sound, SoundCommand::Stop, 0U, 0U, 0U);
+  }
   const std::uint16_t offset = get_sound_offset_for_event(event);
   const SoundStream stream = make_stream_from_offset(offset);
   handle_sound_command(state.audio.sound, SoundCommand::Play, offset, 0x0000U,

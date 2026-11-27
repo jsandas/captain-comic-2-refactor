@@ -49,6 +49,10 @@ bool ui_submit_key_rebinding_scancode(RuntimeState &state,
                                       std::uint8_t dos_scancode);
 
 bool render_title_screen(EgaPlanarSurface &surface, const RuntimeState &state);
+bool render_startup_demo_and_backstory(EgaPlanarSurface &surface,
+                                       RuntimeState &state);
+bool render_title_config_options_screen(EgaPlanarSurface &surface,
+                                        RuntimeState &state);
 bool play_intro_cinematic(EgaPlanarSurface &surface, RuntimeState &state);
 bool event_finale_transition_sequence(EgaPlanarSurface &surface,
                                       RuntimeState &state);
