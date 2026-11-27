@@ -158,6 +158,12 @@ void complete_pending_room_transition(RuntimeState &state) {
   state.player.x_vel = 0;
   state.player.y_vel = 0;
   state.player.is_airborne = false;
+  state.player.fireball_meter_counter = 0U;
+  state.player.shield_meter_subbars = 0U;
+  state.player.shield_fill_countdown = 12U;
+  if (state.player.fuel < 25U) {
+    state.player.fuel = 25U;
+  }
   state.room_entrance_x = state.player.x;
   state.room_entrance_y = state.player.y;
   state.warp_beacon = std::nullopt;
@@ -386,6 +392,12 @@ void reset_player_state_for_level_entry(RuntimeState &state) {
   state.player.damage_recoil_ticks = 0;
   state.player.facing_right = true;
   state.player.hp = 12;
+  state.player.fireball_meter_counter = 0U;
+  state.player.shield_meter_subbars = 0U;
+  state.player.shield_fill_countdown = 12U;
+  if (state.player.fuel < 25U) {
+    state.player.fuel = 25U;
+  }
   state.transition_state = RoomTransitionState{};
   state.flags.level_transition_pending = false;
   state.flags.player_special_state_active = false;
@@ -427,6 +439,9 @@ void reset_player_respawn_state(RuntimeState &state) {
   state.player.fireball_meter_counter = 0;
   state.player.shield_meter_subbars = 0;
   state.player.shield_fill_countdown = 12;
+  if (state.player.fuel < 25U) {
+    state.player.fuel = 25U;
+  }
   state.player.x = 160;
   state.player.y = 160;
   state.player.x_vel = 0;
@@ -527,9 +542,15 @@ void handle_level_transition(RuntimeState &state) {
     candidate_state.player.fireball_meter_counter = 0U;
     candidate_state.player.shield_meter_subbars = 0U;
     candidate_state.player.shield_fill_countdown = 12U;
+    if (candidate_state.player.fuel < 25U) {
+      candidate_state.player.fuel = 25U;
+    }
     state = std::move(candidate_state);
     queue_audio_event(state, AudioEvent::LevelStart);
   } else {
+    if (state.player.fuel < 25U) {
+      state.player.fuel = 25U;
+    }
     state.transition_state.active = true;
     state.transition_state.player_frozen = true;
     state.transition_state.effect_type =

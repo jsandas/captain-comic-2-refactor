@@ -2363,9 +2363,13 @@ bool transition_game_lifecycle(RuntimeState &state,
     break;
   case GameLifecycleState::Gameplay:
     if (state.ui.lifecycle_state == GameLifecycleState::Menu) {
-      // Authentic post-menu selection sound stop (1000:5EEA: mov AX, 3; int 3).
+      // Authentic post-menu selection sound stop (1000:5EEA: mov AX, 3; int 3)
+      // and room-entry fuel top-up to 25 (1000:2286..2292).
       state.audio.pending_events.clear();
       handle_sound_command(state.audio.sound, SoundCommand::Stop, 0U, 0U, 0U);
+      if (state.player.fuel < 25U) {
+        state.player.fuel = 25U;
+      }
     }
     state.ui.menu_state = MenuState::None;
     state.ui.player_slot_menu_active = false;
