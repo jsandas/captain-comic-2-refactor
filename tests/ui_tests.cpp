@@ -955,19 +955,27 @@ void test_phase16_hud_update_mode_icons_on_bezel() {
   expect(saw_mode_bar,
          "Active mode selection bar must render bright green (0x0A) at x=256");
 
-  // Verify 8x16 red LED score digits inside the score box (x=240..303,
-  // y=16..31)
+  // Verify 6-digit 8x16 red LED score digits inside the score box (x=240..287,
+  // y=16..31) and ensure bezel art to the right (x=288..303, y=16..31) is not
+  // overdrawn
   bool saw_score_led = false;
-  for (std::size_t y = 16U; y < 32U && !saw_score_led; ++y) {
-    for (std::size_t x = 240U; x < 304U && !saw_score_led; ++x) {
+  bool overdrew_right_of_score = false;
+  for (std::size_t y = 16U; y < 32U; ++y) {
+    for (std::size_t x = 240U; x < 288U; ++x) {
       if (read_surface_pixel_color(surface, x, y) == 0x0CU) {
         saw_score_led = true;
       }
     }
+    for (std::size_t x = 288U; x < 304U; ++x) {
+      if (read_surface_pixel_color(surface, x, y) != 0x00U) {
+        overdrew_right_of_score = true;
+      }
+    }
   }
-  expect(
-      saw_score_led,
-      "Score must render 8x16 red LED digits (0x0C) inside score box at y=16");
+  expect(saw_score_led, "Score must render 6 8x16 red LED digits (0x0C) inside "
+                        "score box at y=16");
+  expect(!overdrew_right_of_score,
+         "Score must not overdraw bezel art to the right of x=287 at y=16..31");
 
   // Verify Fireball meter (y=42..57) and Shield meter (y=67..82) light up
   // (0x0C)

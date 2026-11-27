@@ -1176,20 +1176,21 @@ void hud_render_overlay(EgaPlanarSurface &surface, const RuntimeState &state) {
       }
     };
 
-    // 1. Score (8 digits inside the FRPAK.001 score box at X = 240..296, Y =
-    // 16) Authentic coordinates: X = 0xF0..0x128 (240..296), Y = 0x10 (16).
+    // 1. Score (6 digits / 3 digit-pair words [0x934]/[0x936]/[0x938] inside
+    // the FRPAK.001 score box at X = 0xF0, 0x100, 0x110 -> digits at 240..280,
+    // ending at 287, Y = 0x10 = 16; see 1000:6d94..6dc7).
     {
       const std::uint32_t full_score =
           (static_cast<std::uint32_t>(state.player.score_high) << 16U) |
           state.player.score;
-      std::uint32_t rem = full_score % 100000000U;
-      std::array<std::uint8_t, 8> digits{};
-      for (int i = 7; i >= 0; --i) {
+      std::uint32_t rem = full_score % 1000000U;
+      std::array<std::uint8_t, 6> digits{};
+      for (int i = 5; i >= 0; --i) {
         digits[static_cast<std::size_t>(i)] =
             static_cast<std::uint8_t>(rem % 10U);
         rem /= 10U;
       }
-      for (std::size_t i = 0; i < 8U; ++i) {
+      for (std::size_t i = 0; i < 6U; ++i) {
         blit_digit_8x16(0xF0U + i * 8U, 0x10U, digits[i]);
       }
     }
