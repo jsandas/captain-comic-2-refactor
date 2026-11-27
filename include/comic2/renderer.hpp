@@ -155,6 +155,24 @@ constexpr std::int32_t kPlayfieldY = 8;
 constexpr std::int32_t kPlayfieldWidth = 208;
 constexpr std::int32_t kPlayfieldHeight = 160;
 
+// Playfield rectangle in frame coordinates (bezel cutout or full frame).
+struct PlayfieldViewport {
+  std::int32_t x;
+  std::int32_t y;
+  std::int32_t w;
+  std::int32_t h;
+};
+
+inline PlayfieldViewport
+resolve_playfield_viewport(const RuntimeState &state,
+                           const EgaPlanarSurface &frame) {
+  if (state.bezel_frame.has_value()) {
+    return {kPlayfieldX, kPlayfieldY, kPlayfieldWidth, kPlayfieldHeight};
+  }
+  return {0, 0, static_cast<std::int32_t>(frame.width_pixels()),
+          static_cast<std::int32_t>(frame.height_rows())};
+}
+
 bool is_sprite_in_viewport(
     std::int32_t x, std::int32_t y, std::int32_t width, std::int32_t height,
     std::int32_t viewport_x = 0, std::int32_t viewport_y = 0,

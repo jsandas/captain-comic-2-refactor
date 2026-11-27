@@ -127,15 +127,11 @@ bool draw_level_sprite_record(EgaPlanarSurface &frame,
 
   const Ega4PlaneImage sprite = make_masked_sprite_image(record);
 
-  const bool has_bezel = state.bezel_frame.has_value();
-  const std::int32_t vp_x = has_bezel ? kPlayfieldX : 0;
-  const std::int32_t vp_y = has_bezel ? kPlayfieldY : 0;
-  const std::int32_t vp_w =
-      has_bezel ? kPlayfieldWidth
-                : static_cast<std::int32_t>(frame.width_pixels());
-  const std::int32_t vp_h =
-      has_bezel ? kPlayfieldHeight
-                : static_cast<std::int32_t>(frame.height_rows());
+  const auto vp = resolve_playfield_viewport(state, frame);
+  const std::int32_t vp_x = vp.x;
+  const std::int32_t vp_y = vp.y;
+  const std::int32_t vp_w = vp.w;
+  const std::int32_t vp_h = vp.h;
 
   const std::int32_t px = state.player.x - state.camera_x + x_offset;
   const std::int32_t py = state.player.y - state.camera_y + y_offset;
@@ -657,15 +653,11 @@ bool draw_player_sprite_from_asset(EgaPlanarSurface &frame,
     return false;
   }
 
-  const bool has_bezel = state.bezel_frame.has_value();
-  const std::int32_t vp_x = has_bezel ? kPlayfieldX : 0;
-  const std::int32_t vp_y = has_bezel ? kPlayfieldY : 0;
-  const std::int32_t vp_w =
-      has_bezel ? kPlayfieldWidth
-                : static_cast<std::int32_t>(frame.width_pixels());
-  const std::int32_t vp_h =
-      has_bezel ? kPlayfieldHeight
-                : static_cast<std::int32_t>(frame.height_rows());
+  const auto vp = resolve_playfield_viewport(state, frame);
+  const std::int32_t vp_x = vp.x;
+  const std::int32_t vp_y = vp.y;
+  const std::int32_t vp_w = vp.w;
+  const std::int32_t vp_h = vp.h;
 
   const std::int32_t px = state.player.x - state.camera_x + x_offset;
   const std::int32_t py = state.player.y - state.camera_y + y_offset;
@@ -696,15 +688,11 @@ bool draw_timed_overlay_sprite_from_asset(EgaPlanarSurface &frame,
     return false;
   }
 
-  const bool has_bezel = state.bezel_frame.has_value();
-  const std::int32_t vp_x = has_bezel ? kPlayfieldX : 0;
-  const std::int32_t vp_y = has_bezel ? kPlayfieldY : 0;
-  const std::int32_t vp_w =
-      has_bezel ? kPlayfieldWidth
-                : static_cast<std::int32_t>(frame.width_pixels());
-  const std::int32_t vp_h =
-      has_bezel ? kPlayfieldHeight
-                : static_cast<std::int32_t>(frame.height_rows());
+  const auto vp = resolve_playfield_viewport(state, frame);
+  const std::int32_t vp_x = vp.x;
+  const std::int32_t vp_y = vp.y;
+  const std::int32_t vp_w = vp.w;
+  const std::int32_t vp_h = vp.h;
 
   const std::int32_t px = state.player.x - state.camera_x + x_offset;
   const std::int32_t py = state.player.y - state.camera_y + y_offset;
@@ -739,15 +727,11 @@ std::optional<Ega4PlaneImage> try_decode_bootstrap_asset(RuntimeState &state) {
 
 void draw_player_marker(EgaPlanarSurface &frame, const RuntimeState &state,
                         std::int32_t x_offset = 0, std::int32_t y_offset = 0) {
-  const bool has_bezel = state.bezel_frame.has_value();
-  const std::int32_t vp_x = has_bezel ? kPlayfieldX : 0;
-  const std::int32_t vp_y = has_bezel ? kPlayfieldY : 0;
-  const std::int32_t vp_w =
-      has_bezel ? kPlayfieldWidth
-                : static_cast<std::int32_t>(frame.width_pixels());
-  const std::int32_t vp_h =
-      has_bezel ? kPlayfieldHeight
-                : static_cast<std::int32_t>(frame.height_rows());
+  const auto vp = resolve_playfield_viewport(state, frame);
+  const std::int32_t vp_x = vp.x;
+  const std::int32_t vp_y = vp.y;
+  const std::int32_t vp_w = vp.w;
+  const std::int32_t vp_h = vp.h;
 
   const std::int32_t px0 = state.player.x - state.camera_x + x_offset;
   const std::int32_t py0 = state.player.y - state.camera_y + y_offset;
@@ -777,15 +761,11 @@ void draw_room_event_anchor_sprite(EgaPlanarSurface &frame,
     return;
   }
 
-  const bool has_bezel = state.bezel_frame.has_value();
-  const std::int32_t vp_x = has_bezel ? kPlayfieldX : 0;
-  const std::int32_t vp_y = has_bezel ? kPlayfieldY : 0;
-  const std::int32_t vp_w =
-      has_bezel ? kPlayfieldWidth
-                : static_cast<std::int32_t>(frame.width_pixels());
-  const std::int32_t vp_h =
-      has_bezel ? kPlayfieldHeight
-                : static_cast<std::int32_t>(frame.height_rows());
+  const auto vp = resolve_playfield_viewport(state, frame);
+  const std::int32_t vp_x = vp.x;
+  const std::int32_t vp_y = vp.y;
+  const std::int32_t vp_w = vp.w;
+  const std::int32_t vp_h = vp.h;
 
   const std::int32_t px0 = anchor.x - state.camera_x + x_offset;
   const std::int32_t py0 = anchor.y - state.camera_y + y_offset;

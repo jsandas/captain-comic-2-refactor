@@ -336,15 +336,11 @@ bool try_draw_level_sprite_record(EgaPlanarSurface &frame,
     return false;
   }
 
-  const bool has_bezel = state.bezel_frame.has_value();
-  const std::int32_t vp_x = has_bezel ? kPlayfieldX : 0;
-  const std::int32_t vp_y = has_bezel ? kPlayfieldY : 0;
-  const std::int32_t vp_w =
-      has_bezel ? kPlayfieldWidth
-                : static_cast<std::int32_t>(frame.width_pixels());
-  const std::int32_t vp_h =
-      has_bezel ? kPlayfieldHeight
-                : static_cast<std::int32_t>(frame.height_rows());
+  const auto vp = resolve_playfield_viewport(state, frame);
+  const std::int32_t vp_x = vp.x;
+  const std::int32_t vp_y = vp.y;
+  const std::int32_t vp_w = vp.w;
+  const std::int32_t vp_h = vp.h;
 
   if (!is_sprite_in_viewport(x_pixels, y_rows, width, height, vp_x, vp_y, vp_w,
                              vp_h)) {
@@ -768,15 +764,11 @@ void gfx_rle_blit_masked_or_4plane(EgaPlanarSurface &dest, std::size_t x_pixels,
 void draw_runtime_entity_sprites(EgaPlanarSurface &frame,
                                  const RuntimeState &state,
                                  std::int32_t x_offset, std::int32_t y_offset) {
-  const bool has_bezel = state.bezel_frame.has_value();
-  const std::int32_t vp_x = has_bezel ? kPlayfieldX : 0;
-  const std::int32_t vp_y = has_bezel ? kPlayfieldY : 0;
-  const std::int32_t vp_w =
-      has_bezel ? kPlayfieldWidth
-                : static_cast<std::int32_t>(frame.width_pixels());
-  const std::int32_t vp_h =
-      has_bezel ? kPlayfieldHeight
-                : static_cast<std::int32_t>(frame.height_rows());
+  const auto vp = resolve_playfield_viewport(state, frame);
+  const std::int32_t vp_x = vp.x;
+  const std::int32_t vp_y = vp.y;
+  const std::int32_t vp_w = vp.w;
+  const std::int32_t vp_h = vp.h;
 
   for (const auto &slot : state.runtime_slots) {
     if (!is_runtime_slot_active(slot)) {
@@ -816,15 +808,11 @@ void draw_runtime_projectile_sprites(EgaPlanarSurface &frame,
                                      const RuntimeState &state,
                                      std::int32_t x_offset,
                                      std::int32_t y_offset) {
-  const bool has_bezel = state.bezel_frame.has_value();
-  const std::int32_t vp_x = has_bezel ? kPlayfieldX : 0;
-  const std::int32_t vp_y = has_bezel ? kPlayfieldY : 0;
-  const std::int32_t vp_w =
-      has_bezel ? kPlayfieldWidth
-                : static_cast<std::int32_t>(frame.width_pixels());
-  const std::int32_t vp_h =
-      has_bezel ? kPlayfieldHeight
-                : static_cast<std::int32_t>(frame.height_rows());
+  const auto vp = resolve_playfield_viewport(state, frame);
+  const std::int32_t vp_x = vp.x;
+  const std::int32_t vp_y = vp.y;
+  const std::int32_t vp_w = vp.w;
+  const std::int32_t vp_h = vp.h;
 
   for (const auto &projectile : state.projectiles) {
     if (!projectile.active) {
@@ -847,7 +835,7 @@ void draw_runtime_projectile_sprites(EgaPlanarSurface &frame,
       continue;
     }
 
-    const std::int32_t max_x = std::max<std::int32_t>(vp_x, vp_x + vp_w - 16);
+    const std::int32_t max_x = std::max<std::int32_t>(vp_x, vp_x + vp_w - 8);
     const std::int32_t max_y = std::max<std::int32_t>(vp_y, vp_y + vp_h - 8);
     const std::int32_t clamped_x =
         std::max<std::int32_t>(vp_x, std::min(px0, max_x));
