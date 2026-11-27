@@ -592,6 +592,90 @@ Ega4PlaneImage make_8x15_mode_bar_image(bool selected) {
   return img;
 }
 
+// Authentic 8x16 LED 7-segment digit bitmaps from comic2_data.asm
+// (SEG_STACK:0x996A..0x9BCE at 0x1243A..0x126DD, pointer table at 0x98C4).
+// Planes 0 and 1 are 0x00; Planes 2 and 3 carry the bitmap (EGA color 0x0C,
+// bright red on a black 8x16 cell).
+constexpr std::uint8_t kHudDigit8x16Bitmaps[10][16] = {
+    {0x3C, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x00,
+     0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x3C, 0x00}, // 0 (0x996A)
+    {0x00, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x00,
+     0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x00, 0x00}, // 1 (0x99AE)
+    {0x3C, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x3C,
+     0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x3C, 0x00}, // 2 (0x99F2)
+    {0x3C, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x3C,
+     0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x3C, 0x00}, // 3 (0x9A36)
+    {0x00, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x3C,
+     0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x00, 0x00}, // 4 (0x9A7A)
+    {0x3C, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x3C,
+     0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x3C, 0x00}, // 5 (0x9ABE)
+    {0x3C, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x3C,
+     0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x3C, 0x00}, // 6 (0x9B02)
+    {0x3C, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x00,
+     0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x00, 0x00}, // 7 (0x9B46)
+    {0x3C, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x3C,
+     0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x3C, 0x00}, // 8 (0x9B8A)
+    {0x3C, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x3C,
+     0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x3C, 0x00}, // 9 (0x9BCE)
+};
+
+Ega4PlaneImage make_8x16_hud_digit_image(std::uint8_t digit) {
+  const auto idx = static_cast<std::size_t>(digit % 10U);
+  Ega4PlaneImage img{};
+  img.width_bytes = 1U;
+  img.height_rows = 16U;
+  img.row_span_bytes = 16U;
+  img.planes[0].assign(16U, 0x00U);
+  img.planes[1].assign(16U, 0x00U);
+  img.planes[2].assign(std::begin(kHudDigit8x16Bitmaps[idx]),
+                       std::end(kHudDigit8x16Bitmaps[idx]));
+  img.planes[3].assign(std::begin(kHudDigit8x16Bitmaps[idx]),
+                       std::end(kHudDigit8x16Bitmaps[idx]));
+  return img;
+}
+
+// Authentic 8x16 Fireball & Shield meter cell sprite from comic2_data.asm
+// (SEG_STACK:0x98D8 pointer table -> 0xA462 empty, 0xA41E half-lit, 0xA3DA
+// full-lit at 0x12EAA..0x12F75).
+Ega4PlaneImage make_8x16_meter_cell_image(std::uint8_t lit_subbars) {
+  Ega4PlaneImage img{};
+  img.width_bytes = 1U;
+  img.height_rows = 16U;
+  img.row_span_bytes = 16U;
+  img.planes[0].assign(16U, 0x88U);
+  img.planes[0][0] = 0xFFU;
+  img.planes[0][15] = 0xFFU;
+  img.planes[1] = img.planes[0];
+  img.planes[2].assign(16U, 0xFFU);
+  const std::uint8_t intensity =
+      (lit_subbars >= 2U) ? 0x77U : ((lit_subbars == 1U) ? 0x70U : 0x00U);
+  img.planes[3].assign(16U, intensity);
+  img.planes[3][0] = 0x00U;
+  img.planes[3][15] = 0x00U;
+  return img;
+}
+
+// Authentic 16x16 inventory key/item icon from comic2_data.asm
+// (SEG_STACK:0xA28E at 0x12D5E, 4 color planes)
+constexpr std::array<std::uint8_t, 128> kHudInventoryKeyIconPlanes = {
+    // Plane 0
+    0x3f, 0xfc, 0x3e, 0x7c, 0x3e, 0x7c, 0x3e, 0x7c, 0x3e, 0x7c, 0x3e,
+    0x7c, 0x20, 0x04, 0x20, 0x04, 0x3e, 0x7c, 0x3e, 0x7c, 0x3e, 0x7c,
+    0x1e, 0x78, 0x1e, 0x78, 0x0e, 0x70, 0x06, 0x60, 0x03, 0xc0,
+    // Plane 1
+    0x15, 0x54, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x04, 0x00,
+    0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x04,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // Plane 2
+    0x00, 0x00, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x01,
+    0x80, 0x1f, 0xf8, 0x1f, 0xf8, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80,
+    0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x00, 0x00,
+    // Plane 3
+    0x3f, 0xfc, 0x1e, 0xfc, 0x1e, 0xfc, 0x1e, 0xfc, 0x1e, 0xfc, 0x1e,
+    0xfc, 0x1e, 0xfc, 0x00, 0x04, 0x1e, 0xfc, 0x1e, 0xfc, 0x1e, 0xfc,
+    0x0e, 0xf8, 0x0e, 0xf8, 0x06, 0xf0, 0x02, 0xe0, 0x00, 0x00,
+};
+
 void write_bcd_digit(EgaPlanarSurface &surface, std::size_t x, std::size_t y,
                      std::uint8_t value) {
   if (value > 9) {
@@ -649,40 +733,6 @@ void draw_rect(EgaPlanarSurface &surface, std::size_t x, std::size_t y,
       const std::uint8_t byte_value = ((color >> plane) & 0x1U) ? 0xFF : 0x00;
       for (std::size_t i = 0; i < byte_count; ++i) {
         surface.set_plane_byte(plane, start_byte + i, y_row, byte_value);
-      }
-    }
-  }
-}
-
-void draw_rect_unaligned(EgaPlanarSurface &surface, std::size_t x,
-                         std::size_t y, std::size_t w, std::size_t h,
-                         std::uint8_t color) {
-  if (w == 0 || h == 0) {
-    return;
-  }
-
-  for (std::size_t py = 0; py < h; ++py) {
-    const std::size_t y_row = y + py;
-    if (y_row >= surface.height_rows()) {
-      break;
-    }
-    for (std::size_t px = 0; px < w; ++px) {
-      const std::size_t x_pixel = x + px;
-      if (x_pixel >= surface.width_pixels()) {
-        break;
-      }
-      const std::size_t x_byte = x_pixel / 8U;
-      const std::uint8_t bit_mask =
-          static_cast<std::uint8_t>(1U << (7U - (x_pixel % 8U)));
-      for (std::size_t plane = 0; plane < EgaPlanarSurface::kPlaneCount;
-           ++plane) {
-        auto value = surface.get_plane_byte(plane, x_byte, y_row);
-        if (((color >> plane) & 0x1U) != 0U) {
-          value = static_cast<std::uint8_t>(value | bit_mask);
-        } else {
-          value = static_cast<std::uint8_t>(value & ~bit_mask);
-        }
-        surface.set_plane_byte(plane, x_byte, y_row, value);
       }
     }
   }
@@ -882,12 +932,13 @@ void ui_render_modal_prompt(EgaPlanarSurface &surface,
 
 void hud_update_mode_icons(EgaPlanarSurface &surface,
                            const RuntimeState &state) {
-  // Authentic Y positions from DS:0x9710 in comic2_standalone.asm
-  // (hud_draw_item_icon at 1000:3a17): 0x5E (94), 0x77 (119), 0x90 (144),
-  // 0xA9 (169).
-  // Blitted at x = 0x120 (288) on the right-hand FRPAK.001 bezel panel.
-  constexpr std::size_t kIconX = 0x120U; // 288
-  constexpr std::size_t kBarX = 280U;
+  // Authentic coordinates from comic2_standalone.asm:
+  // - 16x16 mode icons (1000:187a..18c0, 1000:465b, 1000:4681, 1000:4881):
+  //   X = 0xF0 (240), Y = 0x5E (94), 0x77 (119), 0x90 (144), 0xA9 (169).
+  // - 8x15 mode indicator bars (hud_draw_item_icon at 1000:3a17):
+  //   X = 0x100 (256), Y = 0x5E (94), 0x77 (119), 0x90 (144), 0xA9 (169).
+  constexpr std::size_t kIconX = 0xF0U; // 240
+  constexpr std::size_t kBarX = 0x100U; // 256
   constexpr std::array<std::size_t, 4> kRowY = {0x5EU, 0x77U, 0x90U, 0xA9U};
 
   const bool corkscrew_collected =
@@ -936,16 +987,21 @@ void hud_update_mode_icons(EgaPlanarSurface &surface,
   }
 
   // Render active/inactive 8x15 mode indicator bars (seg_5E:0x98EA / 0x992A)
-  // when a mode selection mask or effect is active.
-  if (state.ui.active_mode_mask != 0U ||
+  // at X = 0x100 (256). In the original game (1000:2309 -> 1000:3a17), mode 0
+  // (row 0) is active by default unless another mode is selected.
+  if (state.bezel_frame.has_value() || state.ui.active_mode_mask != 0U ||
       state.player.active_mode_effect != 0U) {
     static const auto kSelectedBar = make_8x15_mode_bar_image(true);
     static const auto kUnselectedBar = make_8x15_mode_bar_image(false);
+    const bool has_explicit_mode = state.ui.active_mode_mask != 0U ||
+                                   state.player.active_mode_effect != 0U;
     for (std::size_t row = 0; row < 4U; ++row) {
       const bool row_selected =
-          ((state.ui.active_mode_mask & (1U << row)) != 0U) ||
-          (state.player.active_mode_effect ==
-           static_cast<std::uint8_t>(row + 1U));
+          has_explicit_mode
+              ? (((state.ui.active_mode_mask & (1U << row)) != 0U) ||
+                 (state.player.active_mode_effect ==
+                  static_cast<std::uint8_t>(row + 1U)))
+              : (row == 0U);
       const auto &bar = row_selected ? kSelectedBar : kUnselectedBar;
       if (can_blit_opaque_image(surface, kBarX, kRowY[row], bar)) {
         gfx_rle_blit_opaque_4plane(surface, kBarX, kRowY[row], bar);
@@ -960,64 +1016,123 @@ void hud_render_overlay(EgaPlanarSurface &surface, const RuntimeState &state) {
   }
 
   if (state.bezel_frame.has_value()) {
-    // Authentic bezel HUD: render digit counters on the right panel.
-    // Original layout: x=258..272 (two-digit field), y=0x5E/0x77/0x90/0xA9.
-    constexpr std::int32_t kHudX = 258;
-    constexpr std::uint8_t kHudColor = 0x0F; // bright white
+    static const std::array<Ega4PlaneImage, 10> kHudDigits = {
+        make_8x16_hud_digit_image(0), make_8x16_hud_digit_image(1),
+        make_8x16_hud_digit_image(2), make_8x16_hud_digit_image(3),
+        make_8x16_hud_digit_image(4), make_8x16_hud_digit_image(5),
+        make_8x16_hud_digit_image(6), make_8x16_hud_digit_image(7),
+        make_8x16_hud_digit_image(8), make_8x16_hud_digit_image(9),
+    };
+    static const std::array<Ega4PlaneImage, 3> kMeterCells = {
+        make_8x16_meter_cell_image(0), // 0xA462 empty
+        make_8x16_meter_cell_image(1), // 0xA41E half-lit
+        make_8x16_meter_cell_image(2), // 0xA3DA full-lit
+    };
 
-    // Shield energy bar (8 pips at y=0x5E=94, within x=258..273)
-    {
-      const auto pips = std::min<std::uint8_t>(8U, state.player.shield_power);
-      for (std::uint8_t i = 0; i < 8U; ++i) {
-        const std::uint8_t color = (i < pips) ? 0x0AU : 0x08U;
-        draw_rect_unaligned(surface, static_cast<std::size_t>(kHudX + i * 2),
-                            0x5EU, 2U, 6U, color);
+    const auto blit_digit_8x16 = [&](std::size_t x, std::size_t y,
+                                     std::uint8_t digit) {
+      const auto &img = kHudDigits[static_cast<std::size_t>(digit % 10U)];
+      if (can_blit_opaque_image(surface, x, y, img)) {
+        gfx_rle_blit_opaque_4plane(surface, x, y, img);
       }
-    }
+    };
 
-    // Firepower counter at y=0x77=119
-    {
-      char buf[3] = {'0', '0', '\0'};
-      buf[0] = static_cast<char>('0' + (state.player.firepower / 10U) % 10U);
-      buf[1] = static_cast<char>('0' + state.player.firepower % 10U);
-      blit_string(surface, kHudX, 0x77, buf, kHudColor);
-    }
+    const auto blit_two_digit_8x16 = [&](std::size_t x, std::size_t y,
+                                         std::uint8_t val) {
+      const std::uint8_t clamped = std::min<std::uint8_t>(val, 99U);
+      blit_digit_8x16(x, y, static_cast<std::uint8_t>((clamped / 10U) % 10U));
+      blit_digit_8x16(x + 8U, y, static_cast<std::uint8_t>(clamped % 10U));
+    };
 
-    // Gems counter at y=0x90=144
-    {
-      char buf[3] = {'0', '0', '\0'};
-      buf[0] = static_cast<char>('0' + (state.player.gems / 10U) % 10U);
-      buf[1] = static_cast<char>('0' + state.player.gems % 10U);
-      blit_string(surface, kHudX, 0x90, buf, kHudColor);
-    }
+    const auto blit_meter_bar_6cells = [&](std::size_t x, std::size_t y,
+                                           std::uint8_t lit_subbars) {
+      const std::uint8_t clamped = std::min<std::uint8_t>(lit_subbars, 12U);
+      for (std::size_t cell = 0; cell < 6U; ++cell) {
+        const std::uint8_t cell_base = static_cast<std::uint8_t>(cell * 2U);
+        const std::uint8_t cell_state =
+            (clamped >= cell_base + 2U)
+                ? 2U
+                : ((clamped == cell_base + 1U) ? 1U : 0U);
+        const auto &img = kMeterCells[cell_state];
+        if (can_blit_opaque_image(surface, x + cell * 8U, y, img)) {
+          gfx_rle_blit_opaque_4plane(surface, x + cell * 8U, y, img);
+        }
+      }
+    };
 
-    // Lives counter at y=0xA9=169
-    {
-      char buf[3] = {'0', '0', '\0'};
-      buf[0] = static_cast<char>('0' + (state.player.lives / 10U) % 10U);
-      buf[1] = static_cast<char>('0' + state.player.lives % 10U);
-      blit_string(surface, kHudX, 0xA9, buf, kHudColor);
-    }
-
-    // Score (6 digits) at y=8 (top of right panel)
+    // 1. Score (8 digits inside the FRPAK.001 score box at X = 240..296, Y = 16)
+    // Authentic coordinates: X = 0xF0..0x128 (240..296), Y = 0x10 (16).
     {
       const std::uint32_t full_score =
           (static_cast<std::uint32_t>(state.player.score_high) << 16U) |
           state.player.score;
-      char buf[7];
-      std::snprintf(buf, sizeof(buf), "%06u",
-                    static_cast<unsigned>(full_score % 1000000U));
-      blit_string(surface, kHudX - 8, 8, buf, kHudColor);
+      std::uint32_t rem = full_score % 100000000U;
+      std::array<std::uint8_t, 8> digits{};
+      for (int i = 7; i >= 0; --i) {
+        digits[static_cast<std::size_t>(i)] =
+            static_cast<std::uint8_t>(rem % 10U);
+        rem /= 10U;
+      }
+      for (std::size_t i = 0; i < 8U; ++i) {
+        blit_digit_8x16(0xF0U + i * 8U, 0x10U, digits[i]);
+      }
     }
 
-    // Keys at y=0x43=67
+    // 2. Fireball meter (6 cells of 8x16 at X = 0x100..0x128 (256..296), Y = 0x2A (42))
+    // Lights up to 12 half-bars when blaster is charged (1000:3aa0..3b50).
     {
-      char buf[2] = {'0', '\0'};
-      buf[0] = static_cast<char>('0' + state.player.key_count % 10U);
-      blit_string(surface, kHudX + 8, 0x43, buf, kHudColor);
+      std::uint8_t fireball_subbars = 0U;
+      if (state.player.firepower > 0U) {
+        const int active_shots = static_cast<int>(std::count_if(
+            state.projectiles.begin(), state.projectiles.end(),
+            [](const ProjectileState &p) { return p.active; }));
+        const int drain =
+            static_cast<int>(state.player.weapon_cooldown) + active_shots * 2;
+        fireball_subbars =
+            static_cast<std::uint8_t>(std::clamp(12 - drain, 0, 12));
+      }
+      blit_meter_bar_6cells(0x100U, 0x2AU, fireball_subbars);
     }
 
+    // 3. Shield meter (6 cells of 8x16 at X = 0x100..0x128 (256..296), Y = 0x43 (67))
+    // Lights up 0..12 half-bars matching Comic's 12-unit shield/HP (1000:3a92, 1000:3b51).
+    {
+      const std::uint8_t shield_subbars =
+          std::min<std::uint8_t>(12U, state.player.hp);
+      blit_meter_bar_6cells(0x100U, 0x43U, shield_subbars);
+    }
+
+    // 4. Four 2-digit 8x16 LED counters at X = 0x120 (288), Y = 0x5E, 0x77, 0x90, 0xA9
+    // (1000:183a..1870, hud_draw_shield_bar at 1000:3a5f):
+    // - Row 0 (Y = 0x5E = 94): Blastola Cola (firepower) count
+    // - Row 1 (Y = 0x77 = 119): Gem count
+    // - Row 2 (Y = 0x90 = 144): Fuel count
+    // - Row 3 (Y = 0xA9 = 169): Lives count
+    blit_two_digit_8x16(0x120U, 0x5EU, state.player.firepower);
+    blit_two_digit_8x16(0x120U, 0x77U, state.player.gems);
+    blit_two_digit_8x16(0x120U, 0x90U, state.player.fuel);
+    blit_two_digit_8x16(0x120U, 0xA9U, state.player.lives);
+
+    // 5. Mode icons (X = 0xF0 = 240) and mode indicator bars (X = 0x100 = 256)
     hud_update_mode_icons(surface, state);
+
+    // 6. Bottom 13-slot inventory window (X = 8 + slot * 16, Y = 0xB1 = 177)
+    // (ui_draw_dialog_message at 1000:451c, 1000:18cc..18d9)
+    {
+      static const auto kKeySlotImg =
+          make_16x16_hud_icon_image(kHudInventoryKeyIconPlanes);
+      const std::size_t key_slots =
+          std::min<std::size_t>(13U, state.player.key_count);
+      for (std::size_t slot = 0; slot < 13U; ++slot) {
+        const std::size_t slot_x = 8U + slot * 16U;
+        constexpr std::size_t kSlotY = 0xB1U; // 177
+        draw_rect(surface, slot_x, kSlotY, 16U, 16U, 0x00U);
+        if (slot < key_slots &&
+            can_blit_opaque_image(surface, slot_x, kSlotY, kKeySlotImg)) {
+          gfx_rle_blit_opaque_4plane(surface, slot_x, kSlotY, kKeySlotImg);
+        }
+      }
+    }
     return;
   }
 

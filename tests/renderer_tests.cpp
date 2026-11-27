@@ -687,7 +687,7 @@ void run_renderer_tests() {
       src.set_plane_byte(0, 0, 0, 0xFF);
       src.set_plane_byte(1, 0, 0, 0xFF);
 
-      comic2::Sdl2FramePresenter presenter(640, 480);
+      comic2::Sdl2FramePresenter presenter(640, 400);
       presenter.present(src);
 
       // If we get here without exception, SDL2 presenter is working

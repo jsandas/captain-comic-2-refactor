@@ -891,13 +891,13 @@ void test_phase16_hud_update_mode_icons_on_bezel() {
   comic2::EgaPlanarSurface surface(320, 200);
   surface.clear(0x00);
 
-  // Initially no equipment icons collected -> region x=288..303 at rows
-  // 0x5E, 0x77, 0x90, 0xA9 should remain blank
+  // Initially no equipment icons collected -> region x=240..255 (0xF0..0xFF)
+  // at rows 0x5E, 0x77, 0x90, 0xA9 should remain blank
   comic2::hud_render_overlay(surface, state);
   for (std::size_t row_y : {0x5EU, 0x77U, 0x90U, 0xA9U}) {
     bool any_pixel = false;
     for (std::size_t y = row_y; y < row_y + 16U; ++y) {
-      for (std::size_t x = 288U; x < 304U; ++x) {
+      for (std::size_t x = 240U; x < 256U; ++x) {
         if (read_surface_pixel_color(surface, x, y) != 0U) {
           any_pixel = true;
         }
@@ -908,12 +908,19 @@ void test_phase16_hud_update_mode_icons_on_bezel() {
   }
 
   // Equip all 4 items: Corkscrew (0x5E), Boots (0x77), Lantern (0x90), Wand
-  // (0xA9) and set active_mode_mask
+  // (0xA9) and set active_mode_mask, score, counters, and keys
   state.player.corkscrew_equipped = true;
   state.player.boots_equipped = true;
   state.player.lantern_equipped = true;
   state.player.wand_equipped = true;
   state.ui.active_mode_mask = 0x02U;
+  state.player.score = 1234U;
+  state.player.hp = 12U;
+  state.player.firepower = 3U;
+  state.player.gems = 15U;
+  state.player.fuel = 25U;
+  state.player.lives = 4U;
+  state.player.key_count = 2U;
 
   surface.clear(0x00);
   comic2::hud_render_overlay(surface, state);
@@ -921,7 +928,7 @@ void test_phase16_hud_update_mode_icons_on_bezel() {
   for (std::size_t row_y : {0x5EU, 0x77U, 0x90U, 0xA9U}) {
     bool saw_icon_pixel = false;
     for (std::size_t y = row_y; y < row_y + 16U; ++y) {
-      for (std::size_t x = 288U; x < 304U; ++x) {
+      for (std::size_t x = 240U; x < 256U; ++x) {
         if (read_surface_pixel_color(surface, x, y) != 0U) {
           saw_icon_pixel = true;
           break;
@@ -932,21 +939,75 @@ void test_phase16_hud_update_mode_icons_on_bezel() {
       }
     }
     expect(saw_icon_pixel,
-           "Collected equipment icon must blit visible 16x16 graphic at x=288");
+           "Collected equipment icon must blit visible 16x16 graphic at x=240");
   }
 
-  // Verify 8x15 mode indicator bar at x=280..287
+  // Verify 8x15 mode indicator bar at x=256..263 (0x100..0x107)
   bool saw_mode_bar = false;
   for (std::size_t y = 0x77U; y < 0x77U + 15U; ++y) {
-    for (std::size_t x = 280U; x < 288U; ++x) {
-      if (read_surface_pixel_color(surface, x, y) != 0U) {
+    for (std::size_t x = 256U; x < 264U; ++x) {
+      if (read_surface_pixel_color(surface, x, y) == 0x0AU) {
         saw_mode_bar = true;
         break;
       }
     }
   }
   expect(saw_mode_bar,
-         "Active mode selection bar must render at x=280 on bezel panel");
+         "Active mode selection bar must render bright green (0x0A) at x=256");
+
+  // Verify 8x16 red LED score digits inside the score box (x=240..303, y=16..31)
+  bool saw_score_led = false;
+  for (std::size_t y = 16U; y < 32U && !saw_score_led; ++y) {
+    for (std::size_t x = 240U; x < 304U && !saw_score_led; ++x) {
+      if (read_surface_pixel_color(surface, x, y) == 0x0CU) {
+        saw_score_led = true;
+      }
+    }
+  }
+  expect(saw_score_led,
+         "Score must render 8x16 red LED digits (0x0C) inside score box at y=16");
+
+  // Verify Fireball meter (y=42..57) and Shield meter (y=67..82) light up (0x0C)
+  bool saw_lit_fireball_meter = false;
+  bool saw_lit_shield_meter = false;
+  for (std::size_t x = 256U; x < 304U; ++x) {
+    if (read_surface_pixel_color(surface, x, 46U) == 0x0CU) {
+      saw_lit_fireball_meter = true;
+    }
+    if (read_surface_pixel_color(surface, x, 71U) == 0x0CU) {
+      saw_lit_shield_meter = true;
+    }
+  }
+  expect(saw_lit_fireball_meter,
+         "Fireball meter at x=256..303, y=42 must light up in bright red (0x0C)");
+  expect(saw_lit_shield_meter,
+         "Shield meter at x=256..303, y=67 must light up in bright red (0x0C)");
+
+  // Verify 2-digit 8x16 LED counters at x=288..303 across all 4 rows
+  for (std::size_t row_y : {0x5EU, 0x77U, 0x90U, 0xA9U}) {
+    bool saw_counter_led = false;
+    for (std::size_t y = row_y; y < row_y + 16U && !saw_counter_led; ++y) {
+      for (std::size_t x = 288U; x < 304U && !saw_counter_led; ++x) {
+        if (read_surface_pixel_color(surface, x, y) == 0x0CU) {
+          saw_counter_led = true;
+        }
+      }
+    }
+    expect(saw_counter_led,
+           "2-digit counter must render 8x16 red LED digits (0x0C) at x=288");
+  }
+
+  // Verify bottom inventory window at y=177 (0xB1), slots 0..1 populated
+  bool saw_inv_key = false;
+  for (std::size_t y = 177U; y < 193U && !saw_inv_key; ++y) {
+    for (std::size_t x = 8U; x < 40U && !saw_inv_key; ++x) {
+      if (read_surface_pixel_color(surface, x, y) != 0U) {
+        saw_inv_key = true;
+      }
+    }
+  }
+  expect(saw_inv_key,
+         "Bottom inventory window at y=177 must blit collected key icons");
 }
 
 void test_phase16_option_list_and_menu_panel_render_8x8_text_and_high_scores() {

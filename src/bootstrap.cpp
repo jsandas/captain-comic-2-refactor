@@ -127,22 +127,33 @@ bool draw_level_sprite_record(EgaPlanarSurface &frame,
 
   const Ega4PlaneImage sprite = make_masked_sprite_image(record);
 
+  const bool has_bezel = state.bezel_frame.has_value();
+  const std::int32_t vp_x = has_bezel ? kPlayfieldX : 0;
+  const std::int32_t vp_y = has_bezel ? kPlayfieldY : 0;
+  const std::int32_t vp_w =
+      has_bezel ? kPlayfieldWidth
+                : static_cast<std::int32_t>(frame.width_pixels());
+  const std::int32_t vp_h =
+      has_bezel ? kPlayfieldHeight
+                : static_cast<std::int32_t>(frame.height_rows());
+
   const std::int32_t px = state.player.x - state.camera_x + x_offset;
   const std::int32_t py = state.player.y - state.camera_y + y_offset;
   if (!is_sprite_in_viewport(px, py,
                              static_cast<std::int32_t>(record.width_pixels),
-                             static_cast<std::int32_t>(record.height_rows))) {
+                             static_cast<std::int32_t>(record.height_rows),
+                             vp_x, vp_y, vp_w, vp_h)) {
     return true;
   }
 
-  const std::size_t max_px = static_cast<std::size_t>(frame.width_pixels()) -
-                             static_cast<std::size_t>(record.width_pixels);
-  const std::size_t max_py = static_cast<std::size_t>(frame.height_rows()) -
-                             static_cast<std::size_t>(record.height_rows);
-  const std::size_t clamped_px = static_cast<std::size_t>(
-      std::clamp<std::int32_t>(px, 0, static_cast<std::int32_t>(max_px)));
-  const std::size_t clamped_py = static_cast<std::size_t>(
-      std::clamp<std::int32_t>(py, 0, static_cast<std::int32_t>(max_py)));
+  const std::int32_t max_px = std::max<std::int32_t>(
+      vp_x, vp_x + vp_w - static_cast<std::int32_t>(record.width_pixels));
+  const std::int32_t max_py = std::max<std::int32_t>(
+      vp_y, vp_y + vp_h - static_cast<std::int32_t>(record.height_rows));
+  const std::size_t clamped_px =
+      static_cast<std::size_t>(std::clamp<std::int32_t>(px, vp_x, max_px));
+  const std::size_t clamped_py =
+      static_cast<std::size_t>(std::clamp<std::int32_t>(py, vp_y, max_py));
   gfx_rle_blit_masked_or_4plane(frame, clamped_px, clamped_py, sprite);
   return true;
 }
@@ -646,18 +657,26 @@ bool draw_player_sprite_from_asset(EgaPlanarSurface &frame,
     return false;
   }
 
+  const bool has_bezel = state.bezel_frame.has_value();
+  const std::int32_t vp_x = has_bezel ? kPlayfieldX : 0;
+  const std::int32_t vp_y = has_bezel ? kPlayfieldY : 0;
+  const std::int32_t vp_w =
+      has_bezel ? kPlayfieldWidth
+                : static_cast<std::int32_t>(frame.width_pixels());
+  const std::int32_t vp_h =
+      has_bezel ? kPlayfieldHeight
+                : static_cast<std::int32_t>(frame.height_rows());
+
   const std::int32_t px = state.player.x - state.camera_x + x_offset;
   const std::int32_t py = state.player.y - state.camera_y + y_offset;
-  if (!is_sprite_in_viewport(px, py, 16, 16)) {
+  if (!is_sprite_in_viewport(px, py, 16, 16, vp_x, vp_y, vp_w, vp_h)) {
     return true;
   }
 
-  const std::size_t clamped_px =
-      static_cast<std::size_t>(std::max<std::int16_t>(
-          0, std::min<std::int16_t>(px, frame.width_pixels() - 16)));
-  const std::size_t clamped_py =
-      static_cast<std::size_t>(std::max<std::int16_t>(
-          0, std::min<std::int16_t>(py, frame.height_rows() - 16)));
+  const std::size_t clamped_px = static_cast<std::size_t>(
+      std::clamp<std::int32_t>(px, vp_x, std::max(vp_x, vp_x + vp_w - 16)));
+  const std::size_t clamped_py = static_cast<std::size_t>(
+      std::clamp<std::int32_t>(py, vp_y, std::max(vp_y, vp_y + vp_h - 16)));
   gfx_rle_blit_masked_or_4plane(frame, clamped_px, clamped_py, sprite);
   return true;
 }
@@ -677,18 +696,26 @@ bool draw_timed_overlay_sprite_from_asset(EgaPlanarSurface &frame,
     return false;
   }
 
+  const bool has_bezel = state.bezel_frame.has_value();
+  const std::int32_t vp_x = has_bezel ? kPlayfieldX : 0;
+  const std::int32_t vp_y = has_bezel ? kPlayfieldY : 0;
+  const std::int32_t vp_w =
+      has_bezel ? kPlayfieldWidth
+                : static_cast<std::int32_t>(frame.width_pixels());
+  const std::int32_t vp_h =
+      has_bezel ? kPlayfieldHeight
+                : static_cast<std::int32_t>(frame.height_rows());
+
   const std::int32_t px = state.player.x - state.camera_x + x_offset;
   const std::int32_t py = state.player.y - state.camera_y + y_offset;
-  if (!is_sprite_in_viewport(px, py, 16, 16)) {
+  if (!is_sprite_in_viewport(px, py, 16, 16, vp_x, vp_y, vp_w, vp_h)) {
     return true;
   }
 
-  const std::size_t clamped_px =
-      static_cast<std::size_t>(std::max<std::int16_t>(
-          0, std::min<std::int16_t>(px, frame.width_pixels() - 16)));
-  const std::size_t clamped_py =
-      static_cast<std::size_t>(std::max<std::int16_t>(
-          0, std::min<std::int16_t>(py, frame.height_rows() - 16)));
+  const std::size_t clamped_px = static_cast<std::size_t>(
+      std::clamp<std::int32_t>(px, vp_x, std::max(vp_x, vp_x + vp_w - 16)));
+  const std::size_t clamped_py = static_cast<std::size_t>(
+      std::clamp<std::int32_t>(py, vp_y, std::max(vp_y, vp_y + vp_h - 16)));
   gfx_rle_blit_masked_or_4plane(frame, clamped_px, clamped_py, sprite);
   return true;
 }
@@ -712,17 +739,31 @@ std::optional<Ega4PlaneImage> try_decode_bootstrap_asset(RuntimeState &state) {
 
 void draw_player_marker(EgaPlanarSurface &frame, const RuntimeState &state,
                         std::int32_t x_offset = 0, std::int32_t y_offset = 0) {
+  const bool has_bezel = state.bezel_frame.has_value();
+  const std::int32_t vp_x = has_bezel ? kPlayfieldX : 0;
+  const std::int32_t vp_y = has_bezel ? kPlayfieldY : 0;
+  const std::int32_t vp_w =
+      has_bezel ? kPlayfieldWidth
+                : static_cast<std::int32_t>(frame.width_pixels());
+  const std::int32_t vp_h =
+      has_bezel ? kPlayfieldHeight
+                : static_cast<std::int32_t>(frame.height_rows());
+
   const std::int32_t px0 = state.player.x - state.camera_x + x_offset;
   const std::int32_t py0 = state.player.y - state.camera_y + y_offset;
   const std::uint8_t body_color = state.player.is_airborne ? 0x0E : 0x0C;
 
-  if (!is_sprite_in_viewport(px0, py0, 8, 16)) {
+  if (!is_sprite_in_viewport(px0, py0, 8, 16, vp_x, vp_y, vp_w, vp_h)) {
     return;
   }
 
   for (std::int32_t py = 0; py < 16; ++py) {
     for (std::int32_t px = 0; px < 8; ++px) {
-      set_pixel(frame, px0 + px, py0 + py, body_color);
+      const std::int32_t dx = px0 + px;
+      const std::int32_t dy = py0 + py;
+      if (dx >= vp_x && dx < vp_x + vp_w && dy >= vp_y && dy < vp_y + vp_h) {
+        set_pixel(frame, dx, dy, body_color);
+      }
     }
   }
 }
@@ -736,9 +777,19 @@ void draw_room_event_anchor_sprite(EgaPlanarSurface &frame,
     return;
   }
 
+  const bool has_bezel = state.bezel_frame.has_value();
+  const std::int32_t vp_x = has_bezel ? kPlayfieldX : 0;
+  const std::int32_t vp_y = has_bezel ? kPlayfieldY : 0;
+  const std::int32_t vp_w =
+      has_bezel ? kPlayfieldWidth
+                : static_cast<std::int32_t>(frame.width_pixels());
+  const std::int32_t vp_h =
+      has_bezel ? kPlayfieldHeight
+                : static_cast<std::int32_t>(frame.height_rows());
+
   const std::int32_t px0 = anchor.x - state.camera_x + x_offset;
   const std::int32_t py0 = anchor.y - state.camera_y + y_offset;
-  if (!is_sprite_in_viewport(px0, py0, 12, 12)) {
+  if (!is_sprite_in_viewport(px0, py0, 12, 12, vp_x, vp_y, vp_w, vp_h)) {
     return;
   }
 
@@ -747,7 +798,11 @@ void draw_room_event_anchor_sprite(EgaPlanarSurface &frame,
       const bool is_border = py == 0 || py == 11 || px == 0 || px == 11;
       const bool is_center_cross = (px == 5 || px == 6 || py == 5 || py == 6);
       if (is_border || is_center_cross) {
-        set_pixel(frame, px0 + px, py0 + py, 0x0B);
+        const std::int32_t dx = px0 + px;
+        const std::int32_t dy = py0 + py;
+        if (dx >= vp_x && dx < vp_x + vp_w && dy >= vp_y && dy < vp_y + vp_h) {
+          set_pixel(frame, dx, dy, 0x0B);
+        }
       }
     }
   }

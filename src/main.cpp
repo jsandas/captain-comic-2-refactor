@@ -43,7 +43,7 @@ int main(int argc, char **argv) {
                                            : std::filesystem::current_path();
 
 #ifdef COMIC2_USE_SDL2
-    comic2::Sdl2FramePresenter presenter(640, 480);
+    comic2::Sdl2FramePresenter presenter(640, 400);
 #else
     comic2::MemoryFramePresenter presenter;
 #endif

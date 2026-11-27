@@ -82,7 +82,7 @@ private:
 class Sdl2FramePresenter final : public IFramePresenter {
 public:
   explicit Sdl2FramePresenter(std::uint16_t window_width = 640,
-                              std::uint16_t window_height = 480);
+                              std::uint16_t window_height = 400);
   ~Sdl2FramePresenter() override;
 
   void present(const EgaPlanarSurface &frame) override;
@@ -148,11 +148,12 @@ void gfx_blit_masked_sprite(EgaPlanarSurface &dest, std::int32_t x_pixels,
                             const MaskedSpriteRecord &record);
 
 // Authentic in-game playfield viewport within the 320x200 bezel frame.
-// The FRPAK.001 bezel has an 8-pixel border; the playfield sits within it.
+// The FRPAK.001 bezel has an 8-pixel top/left border and a 208x160 (0xD0x0xA0)
+// playfield cutout at (8, 8).
 constexpr std::int32_t kPlayfieldX = 8;
 constexpr std::int32_t kPlayfieldY = 8;
-constexpr std::int32_t kPlayfieldWidth = 240;
-constexpr std::int32_t kPlayfieldHeight = 176;
+constexpr std::int32_t kPlayfieldWidth = 208;
+constexpr std::int32_t kPlayfieldHeight = 160;
 
 bool is_sprite_in_viewport(
     std::int32_t x, std::int32_t y, std::int32_t width, std::int32_t height,

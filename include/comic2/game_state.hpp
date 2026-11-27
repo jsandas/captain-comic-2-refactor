@@ -94,6 +94,7 @@ struct PlayerState {
       5; // [DS:0x089a] current shield energy (default 5, max 8)
   std::uint8_t firepower = 1; // [DS:0x08ac] blast power level (1-5)
   std::uint8_t gems = 0;
+  std::uint8_t fuel = 25; // [DS:0x0222] jetpack fuel counter (default 25)
   std::uint8_t lives = 3;
   std::uint16_t score = 0;
   std::uint16_t score_high = 0; // [DS:0x0928] high word of 32-bit score counter
