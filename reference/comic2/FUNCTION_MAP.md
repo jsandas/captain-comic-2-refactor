@@ -1,484 +1,370 @@
 # Captain Comic 2 Function Map
-# Cross-reference between disassembly addresses and identified functions
+# Cross-reference between `comic2_standalone.asm` / `comic2_data.asm` and verified engine behavior
+
+> **About Labels in `comic2_standalone.asm`:**
+> `comic2_standalone.asm` is a 100% compilable 16-bit NASM assembly source that builds the exact original `comic2.exe`. Some labels in `comic2_standalone.asm` were generated from an early heuristic pass where the label name disagrees with the actual instruction body (for example, `vid_clear_page` at `1000:77A3` is the masked 4-plane sprite blitter, and `map_redraw_dirty_tiles` at `1000:5D5F` is the player projectile update loop).
+>
+> Below, each entry lists:
+> - **Address & Line** in `comic2_standalone.asm`
+> - **Standalone ASM Label** (exact symbol in `comic2_standalone.asm`)
+> - **Verified Role / Semantic Name** (what the code actually does, plus old `sub_XXXX` reference)
+
+---
 
 ## Core System Functions
 
-### Initialization and Setup
-```
-start (Line 68)             → main entry point, game initialization
-sub_9C9 (Line 1464)         → install_interrupt_handlers
-sub_A5E (Line 1519)         → restore_interrupt_handlers  
-sub_27A (Line 435)          → wait_n_ticks(ax) - waits for game ticks
-```
-
-### Interrupt Handlers  
-```
-INT 08h Handler             → Timer interrupt (18.2 Hz game tick)
-INT 09h Handler             → Keyboard scancode handler
-INT 1Ch Handler             → User timer callback
-INT 3 Handler               → Sound system control (priority queue)
+### Initialization, Lifecycle, and Timing
+```text
+1000:0064 (Line   93) entry                        → Main entry point: CPU speed calibration (cs:0x0062), EGA 256K check, Mode 0Dh init
+1000:0202 (Line  289) sys_fatal_error              → Restore text mode, print fatal error string at DS:0x0046, and exit to DOS
+1000:0215 (Line  304) sys_exit_to_dos              → Restore interrupt vectors, restore initial video mode, print BETA banner, INT 21h AH=4Ch
+1000:027A (Line  385) timer_delay_ticks            → wait_n_ticks(AX) - synchronous delay against cs:0x0245 (game_tick_flag)
+1000:028C (Line  397) sys_print_string             → Print NUL-terminated string at DS:BX via BIOS INT 10h AH=0Eh
+1000:029F (Line  416) sys_print_xor_string         → Decode and print XOR-0x25 string at DS:BX via BIOS INT 10h AH=0Eh
+1000:09C9 (Line 1232) sys_install_interrupts       → Install custom INT 09h, 08h, 23h, 03h, and 15h handlers
+1000:0A5E (Line 1285) sys_restore_all_interrupts   → Restore original INT 09h, 08h, 23h, 03h, and 15h vectors
+1000:0ABC (Line 1324) sys_detect_cpu               → Detect CPU generation (0=8086/8088, 1=80286, 2=80386+) via FLAGS bits 12-15
+1000:5E52 (Line 7330) sys_main_dispatcher          → Seed PRNG from DOS time, run copy-protection hash, load FR.CFG, run game selection menu
 ```
 
-### Input System
-```
-sub_96F (Line 1393)         → read_joystick_axis - analog stick reading
-sub_9AF (Line 1444)         → pit_count - get PIT counter for timing
-
-Key State Variables:
-byte_245 / game_tick_flag   → Set to 1 by INT 08h each tick
-byte_251-254                → Function key scancodes (F1-F4: 3Bh,3Ch,3Dh,3Eh)
-byte_258 key_state_left     → 1 if Left arrow pressed
-byte_259 key_state_right    → 1 if Right arrow pressed
-byte_25A key_state_up       → 1 if Up arrow pressed
-byte_25B key_state_down     → 1 if Down arrow pressed
-byte_25C key_state_jump     → 1 if Space/Jump pressed
-byte_25D key_state_fire     → 1 if R/Fire pressed
-byte_25E scancode_left      → Left arrow (4Bh)
-byte_25F scancode_right     → Right arrow (4Dh)
-byte_260 scancode_up        → Up arrow (48h)
-byte_261 scancode_down      → Down arrow (50h)
-byte_262 scancode_jump      → Space bar (39h)
-byte_263 scancode_fire      → 'R' key (52h)
+### Interrupt Handlers
+```text
+1000:05C2 (Line  761) isr_keyboard_int09           → INT 09h handler: reads scancode from port 60h, updates key_state_* matrix (cs:0x0258..0x025D) and last key cs:0x0061
+1000:067C (Line  857) isr_ctrl_break_int23         → INT 23h handler: jumps to sys_exit_to_dos
+1000:0683 (Line  866) isr_timer_sound_int08        → INT 08h handler (18.2 Hz): divides tick by 2 for game_tick_flag (cs:0x0245), polls joystick if calibrated, drives PC speaker stream, runs retrace EGA palette script (cs:0x0278), chains original INT 08h
+1000:08C7 (Line 1083) snd_api_int03                → INT 03h sound command dispatcher (AL=0..4)
+1000:093A (Line 1137) isr_joystick_int15           → INT 15h (AH=84h) joystick handler: reads buttons (DL=0) or discharge timing via PIT counter (DL=1)
 ```
 
-## Graphics Functions
+### Input System & Calibration
+```text
+1000:02EA (Line  456) file_load_keys_def_and_prompt → Load KEYS.DEF into cs:0x025E..0x0263 and wait for Title prompt key ('K'=keys, 'J'=joystick, Esc=exit)
+1000:033C (Line  492) input_calibrate_joystick     → Interactive text-mode joystick center/axis calibration (stores thresholds in cs:0x026E..0x0276)
+1000:0424 (Line  588) input_wait_joystick_or_key   → Wait for joystick button press+release transition or keyboard abort during calibration
+1000:045C (Line  616) input_setup_keyboard         → Interactive text-mode key remapping UI and optional save to KEYS.DEF
+1000:054B (Line  701) input_read_mapped_key        → Capture unique key scancode (rejecting duplicates) and print key name from SEG_SCRATCH:0x035F
+1000:0599 (Line  738) sys_flush_keyboard_buffer    → (also labeled sys_restore_interrupts) Wait for next key-down scancode in cs:0x0061 and flush BIOS key buffer (0040:001A)
+1000:096F (Line 1168) loc_096f                     → read_joystick_axis: time single joystick axis discharge on port 201h using PIT channel 0
+1000:09AF (Line 1208) loc_09af                     → pit_count: latch and read 16-bit PIT channel 0 counter (ports 43h/40h)
 
-### EGA Video Operations
+In-Code Input & Hardware Variables (CS:0x0245 - CS:0x027A, Lines 337-378):
+cs:0x0060                  → Chain-to-BIOS flag for INT 09h (1 during text entry)
+cs:0x0061                  → Last key-down scancode
+cs:0x0062                  → CPU speed calibration loop limit
+cs:0x0245 game_tick_flag   → Set to 1 by INT 08h every 2nd timer tick
+cs:0x0246 irq0_parity      → Toggles 0/1 each INT 08h tick
+cs:0x0250 scancode_esc     → Esc (01h)
+cs:0x0251..0254 scancode_f1..f4 → Function keys F1-F4 (3Bh, 3Ch, 3Dh, 3Eh; F1=sound on, F2=sound off)
+cs:0x0255 scancode_pgup    → Page Up / 'I' (49h) - cycle mode backward
+cs:0x0256 scancode_pgdn    → Page Down / 'Q' (51h) - cycle mode forward
+cs:0x0257 scancode_home    → Home / 'G' (47h) - open inventory slot selector
+cs:0x0258 key_state_left   → 1 if Left pressed
+cs:0x0259 key_state_right  → 1 if Right pressed
+cs:0x025A key_state_up     → 1 if Up pressed
+cs:0x025B key_state_down   → 1 if Down pressed
+cs:0x025C key_state_jump   → 1 if Space/Jump pressed
+cs:0x025D key_state_fire   → 1 if R/Ins/Fire pressed
+cs:0x025E..0263 map_scancode_* → Active scancode bindings (Left=4Bh, Right=4Dh, Up=48h, Down=50h, Jump=39h, Fire=52h)
+cs:0x0264..0269 key_state_*_tmp → Edge-detection scratch state used during joystick polling in INT 08h
+cs:0x026A..0276 joystick_* → Calibration center/threshold words and calibrated flag (cs:0x0276)
+cs:0x0278 current_melody_ptr → Pointer in CS to active vertical-retrace EGA palette-cycling script
 ```
-gfx_startup_graphics_and_menu_probe (was sub_2B4)   → Startup/title-screen graphics prep + resource probe
-gfx_render_viewport_4plane (was sub_1D2C)           → Viewport row setup + 4-plane dispatch
-gfx_copy_viewport_plane (was sub_1DC0)              → Per-plane viewport copy to A000h
-ent_draw_mapped_slot_or_placeholder (was sub_451C)  → Object slot resolve + mapped sprite/placeholder draw
-gfx_rle_blit_opaque_4plane (was sub_79C7)           → 4-plane opaque RLE blit helper
-gfx_rle_blit_masked_or_4plane (was sub_7A13)        → 4-plane masked RLE OR-blit helper
-gfx_set_crtc_start_on_retrace (was sub_7A89)        → CRTC start update synchronized to retrace
-sprite_frame_table_offset (was sub_3DC3)            → Frame index to 128-byte sprite table offset
-viewport_xy_to_di (was sub_3DD7)                    → Viewport-relative X/Y to screen DI offset
-draw_player_sprite (was sub_3DFB)                   → Draw facing-specific player sprite at comic_x/comic_y
-room_transition_draw_header (was sub_3BC6)          → Render transition header overlay and settle one frame
-room_transition_reveal_sequence_a (was sub_3C13)    → Multi-step room reveal sequence (variant A)
-room_transition_reveal_sequence_b (was sub_3CB1)    → Multi-step room reveal sequence (variant B)
-room_transition_palette_wave (was sub_3F0A)         → Palette/sprite wave sweep during room transition intro
-room_transition_draw_reveal_quad (was sub_3D3A)     → Draw a 2x2 reveal quad from transition frame indices
-room_transition_blit_reveal_quad_4plane (was sub_3D7B) → Blit one reveal quad tile across all four EGA planes
-room_transition_blit_reveal_column_plane (was sub_3D90) → Per-plane reveal column blit (16 rows)
-room_transition_clear_reveal_box (was sub_3DA1)     → Clear 0x20x0x20 reveal box at transition-relative coordinates
-room_transition_present_frame (was sub_3DB6)        → Update visible entities, flush transition frame, and tick-wait
-room_transition_player_entry_sequence (was sub_3E1F) → Transition intro with staged player-entry sprite sweep
-room_transition_player_exit_sequence (was sub_3E98)  → Transition outro with staged player-exit sprite sweep
-event_draw_stacked_sprite_rise (was sub_401B)        → Draw rising stacked sprites during event/object resolution
-event_transition_camera_bob_step (was sub_4073)      → Single camera bob step with viewport redraw/update during transition
-event_finale_transition_sequence (was sub_409C)      → Finale transition sequence with repeated sprite-rise passes and room load handoff
-ui_draw_framed_message_from_stream (was sub_4206)    → Draw framed message/panel from encoded width/height + content stream
-ui_draw_string_8x8 (was sub_42D4)                    → Draw NUL-terminated 8x8 UI string using current cell cursor
-ui_draw_glyph_8x8 (was sub_42E8)                     → Draw one 8x8 UI glyph and advance cursor by one cell
-ega_set_map_mask (was sub_4339)                      → Set EGA Sequencer Map Mask (port 3C4h index 2)
-ui_show_modal_prompt_wait_key (was sub_39AD)         → Show framed modal prompt and wait for acknowledgement/confirm key
-hud_update_mode_icons (was sub_3A17)                 → Update paired HUD mode/status icons from current mode index
-io_open_file_or_prompt_retry (was sub_660B)          → Attempt file open; on failure show prompt and retry loop
-ui_select_next_valid_option (was sub_6011)           → Advance to next selectable option index
-ui_select_prev_valid_option (was sub_6021)           → Move to previous selectable option index
-ui_is_option_selectable (was sub_6030)               → Test whether option index is currently selectable
-ui_render_option_list (was sub_606B)                 → Draw option list panel with current selection highlight
-ui_option_list_input_loop (was sub_615C)             → Handle option-list navigation/confirm/cancel input loop
-ui_edit_selected_option_text (was sub_61C8)          → Edit selected option text field (inline keyboard entry)
-cfg_load_options_or_defaults (was sub_62A4)          → Load options/config table from disk or initialize defaults
-cfg_save_options (was sub_631A)                      → Save options/config table to disk
-savegame_write_snapshot (was sub_633C)               → Write runtime snapshot to selected savegame file
-savegame_read_snapshot (was sub_636F)                → Read runtime snapshot from selected savegame file (with header check)
-ui_draw_completion_delta_hint (was sub_64F5)         → Draw completion/collection delta hint for current selection
-cfg_compute_hardware_seed (was sub_6545)             → Compute hardware/time-derived seed used by settings/save flow
-io_verify_game000_or_prompt_retry (was sub_65EF)     → Verify GAME.000 availability; on failure show prompt/retry loop
-io_verify_frcfg_or_prompt_retry (was sub_65FD)       → Verify FR.CFG availability; on failure show prompt/retry loop
-ui_render_game_selection_panel (was sub_677A)        → Render game-selection panel entries and current highlight
-cfg_run_integrity_challenge (was sub_6DF4)           → Run startup config integrity challenge/update flow
-hud_add_bcd_counter_from_low_digit (was sub_6D99)    → Add value into HUD BCD counter chain starting at lowest digit pair
-hud_add_bcd_counter_from_mid_digit (was sub_6DE7)    → Add value into HUD BCD counter chain starting at middle digit pair
-cfg_input_challenge_code (was sub_7057)              → Input challenge code digits during config integrity flow
-cfg_draw_integrity_challenge_screen (was sub_6F47)   → Draw integrity challenge screen frame, labels, and seed/code preview
-play_intro_cinematic (was sub_7164)                  → Play scripted intro cinematic sequence and hand off to menu flow
-gfx_copy_backbuffer_to_active_page (was sub_7255)    → Copy 6000h backbuffer into current active display page
-intro_draw_sprite_and_present (was sub_7261)         → Draw intro sprite frame, present, and advance one tick
-wait_ticks_or_abort (was sub_7278)                   → Wait N ticks unless abort key/event requests DOS exit
-intro_wipe_split_buffers_step (was sub_74E1)         → Compose one intro wipe step by splitting columns between two source buffers
-gfx_copy_rect_all_planes (was sub_752A)              → Copy rectangle region across EGA planes 0-3
-gfx_copy_rect_rows_stride40 (was sub_7553)           → Copy DX-byte rows for 0xA0 lines with 0x28 byte stride
-intro_draw_overlay_with_comic (was sub_756D)         → Draw intro overlay sprite plus current Comic frame, then present
-intro_flash_comic_with_optional_overlay (was sub_75AD) → Run 10-frame Comic flash loop with optional overlay sprite
-intro_draw_comic_walk_frame (was sub_7622)           → Advance facing-dependent Comic walk frame and draw it to active page
-gfx_init_double_buffer_pages (was sub_7741)          → Initialize CRTC/page state for double-buffered rendering
-gfx_present_and_flip_page (was sub_774E)             → Present current draw page on retrace and toggle to the other page
-gfx_copy_page_4plane (was sub_7765)                  → Copy one full 4-plane EGA page from SI to DI
-gfx_blit_sprite_opaque_both_pages (was sub_790C)     → Blit opaque planar sprite to active page and alternate page
-gfx_blit_sprite_opaque_active_page (was sub_7927)    → Blit opaque planar sprite to active page
-gfx_blit_sprite_plane_rows (was sub_7962)            → Copy one sprite plane row-span with 0x28 byte pitch
-gfx_load_and_blit_opaque_file (was sub_7990)         → Load file into scratch buffer and opaque-blit its planar stream
-gfx_load_and_blit_masked_file (was sub_7999)         → Load file into scratch buffer and masked-OR blit its planar stream
-io_read_file_to_seg001_0600 (was sub_79A2)           → Open/read/close file into seg001:0600h scratch buffer
-gfx_rle_decode_copy_rowspan (was sub_79ED)          → Decode one RLE row-span with literal/copy runs into destination
-gfx_rle_decode_or_rowspan (was sub_7A39)            → Decode one RLE row-span and OR-composite into destination
-ega_select_plane_read_write (was sub_7A68)          → Program EGA sequencer/GC for selected read/write plane index
-gfx_blit_sprite_masked_active_page (was sub_77A3)   → Blit masked planar sprite to active page (aligned or shift-4 path)
-gfx_blit_masked_plane_aligned (was sub_77F2)        → Draw one masked plane row-span for byte-aligned X placement
-gfx_blit_masked_plane_shift4 (was sub_7849)         → Draw one masked plane row-span for 4-pixel-shifted X placement
-gfx_blit_sprite_opaque_offset_both_pages (was sub_78C6) → Blit opaque offset-addressed sprite to both page buffers
-gfx_blit_sprite_opaque_offset_active_page (was sub_78E1) → Blit opaque offset-addressed sprite to active page
-gfx_clear_rect_both_pages (was sub_7AAB)            → Clear rectangular region on active and alternate page buffers
-gfx_clear_rect_active_page (was sub_7AC8)           → Clear rectangular region on active page buffer
-gfx_clear_rect_plane_rows (was sub_7B03)            → Zero-fill rectangle rows for one selected EGA plane
-gfx_blit_sprite_masked_clipped_active_page (was sub_7B31) → Blit masked planar sprite to active page with row clipping
-gfx_blit_masked_plane_aligned_clipped (was sub_7B8B)      → Draw one masked aligned plane row-span with clip skip path
-gfx_blit_masked_plane_shift4_clipped (was sub_7BEF)       → Draw one masked shift-4 plane row-span with clip skip path
-gfx_blit_sprite_masked_bottom_clipped_active_page (was sub_7C79) → Blit masked planar sprite to active page with bottom-edge clipping
-gfx_blit_masked_plane_aligned_bottom_clipped (was sub_7CCD)      → Draw one masked aligned plane row-span for bottom-clipped sprite path
-gfx_blit_masked_plane_shift4_bottom_clipped (was sub_7D31)       → Draw one masked shift-4 plane row-span for bottom-clipped sprite path
-hud_draw_two_digit_counter (was sub_3A5F)                        → Draw two-digit HUD counter glyphs (tens then ones) on both pages
-hud_increment_lives_bcd_clamped (was sub_45A6)                   → Increment lives BCD counter up to 99 and redraw HUD lives field
-hud_set_data_disk_icon_collected (was sub_4870)                  → Set data-disk collected flag and render its HUD icon with pickup SFX
-hud_bcd_decrement_cx (was sub_489E)                              → Decrement packed BCD value in CX with borrow from low to high digit
-hud_decrement_word_25202_bcd (was sub_48AA)                      → Decrement word_25202 packed BCD counter and redraw HUD field at 0x90
-hud_decrement_lives_bcd (was sub_48BF)                           → Decrement lives packed BCD counter and redraw HUD lives field
-ent_normalize_runtime_y_magnitudes (was sub_48D4)               → Convert signed runtime Y values to positive magnitudes for active entries
-ent_copy_descriptor_to_runtime_slot (was sub_4A70)              → Copy spawn descriptor record into runtime slot and initialize state fields
-ent_deactivate_runtime_slot (was sub_4C06)                      → Clear runtime slot active flag and sync descriptor state/position fields
-ent_build_runtime_slots_for_viewport (was sub_49AD)             → Build up to 6 active runtime slots from descriptors intersecting viewport
-ent_move_x_and_bounce (was sub_5A4E)                            → Attempt horizontal move, flipping travel direction when tile collision blocks step
-ent_apply_gravity_and_move_y (was sub_5A99)                     → Integrate vertical velocity with gravity clamp and resolve tile collisions
-ent_move_y_and_bounce (was sub_5B01)                            → Advance vertical motion and invert vertical velocity when collision limits are hit
-ent_move_y_with_probe_and_bounce (was sub_5B7B)                 → Advance vertical motion using probe collision check, bouncing on contact
-ent_move_x_with_range_probe_and_bounce (was sub_5BAC)           → Attempt horizontal move using range-based tile probe, then bounce on collision
-ent_probe_x_collision_strict (was sub_5BF7)                     → Strict X collision probe against high-threshold blocking tiles
-ent_probe_x_collision_range (was sub_5C3E)                      → X collision probe accepting bounded tile range as passable
-ent_probe_tile_above_threshold (was sub_5C91)                   → Probe tile at pixel position and pass only when tile id exceeds threshold DI
-ent_probe_tile_range_in_viewport (was sub_5CA1)                 → Probe tile in viewport Y-range and pass when tile id falls within allowed range
-ent_set_horizontal_chase_direction_to_comic (was sub_5CCF)      → Set horizontal travel direction flag toward Comic X coordinate
-spawn_player_projectile (was sub_5CEB)                          → Allocate and initialize next projectile slot from Comic position/facing
-ui_draw_menu_frame (was sub_5F86)                               → Clear page and draw framed menu border/header glyph layout
-load_room_effect_script_and_trigger_ranges (was sub_198E)       → Load per-room ISR script pointer and tile-trigger range tables
-check_word_is_ffff_or_0005 (was sub_1BFB)                      → Return clear when word at CS:BX equals 0xFFFF or 0x0005
-update_level5_memory_signature (was sub_1C0B)                   → Recompute level-5 memory signature/check word from fixed memory regions
-io_load_rle_resource_to_e978 (was sub_1FA4)                     → Open file, read packed stream, and unpack RLE data into E978h buffer
-io_read_file_to_seg001_0600_resource (was sub_1FFE)             → Read full file into seg001:0600h resource scratch buffer
-io_read_file_to_seg5e_base (was sub_2022)                       → Read full file into seg_5E base buffer (offset 0000h)
-io_read_xor25_block_9ec0 (was sub_2049)                         → Read 0x0C00 bytes at 9EC0h and decode with XOR 0x25
-load_room_tilemap_from_resource_buffer (was sub_2072)           → Validate resource id and unpack selected room tilemap into active buffers
-gfx_draw_tile_id_at_pixel_xy (was sub_1E09)                     → Draw one 16x16 tile id at pixel-aligned room coordinates across EGA planes
-gfx_render_room_tilemap_to_active_buffers (was sub_1E86)        → Render full room tilemap from 9A8h indices into active room graphics buffers
-gfx_copy_16x16_tile_plane_to_active_page (was sub_1F72)         → Copy one 16x16 tile plane row-strided from DS:SI to current ES:DI target
-gfx_copy_16x16_tile_plane_to_segment (was sub_1F89)             → Copy one 16x16 tile plane to caller-selected destination segment
-gfx_disable_retrace_palette_script (was sub_22B)                → Disable retrace-time palette/script runner by clearing immediate and latched flags
-gfx_enable_retrace_palette_script (was sub_238)                 → Enable retrace-time palette/script runner on next present/flip
-gfx_load_ega_palette_16_from_table (was sub_15D)                → Load 16 EGA attribute entries from DS:DX table during vertical retrace
-input_wait_for_scancode_event (was sub_599)                     → Block until ISR reports a key event and return scancode in AL
-input_wait_for_joystick_or_key_confirm (was sub_424)            → Wait for joystick-button confirm transition or keyboard abort during calibration prompts
-input_capture_unique_key_binding_and_echo (was sub_54B)         → Capture a non-duplicate control key binding and print its name label
-camera_update_y_follow_comic_clamped (was sub_2B8E)             → Keep camera Y origin within follow band around comic_y, clamped to room bounds
-player_cycle_mode_selection (was sub_327D)                      → Cycle inventory/mode index with availability checks and apply related physics toggles
-player_start_state4_action_animation (was sub_30C6)             → Start facing-aware state-4 action animation when horizontal bounds allow it
-player_start_attack_animation (was sub_3468)                    → Start facing-aware attack animation when horizontal bounds allow it
-player_start_timed_overlay_sprite (was sub_3610)                → Latch an overlay sprite id and start 8-tick gated draw above comic
-check_comic_near_room_event_anchor (was sub_362A)               → Check proximity to room-event anchor and arm event state when comic is near
-update_room_event_anchor_motion (was sub_36C0)                  → Advance room-event anchor position/state and release comic into physics when blocked
-update_room_event_anchor_sprite (was sub_378E)                  → Draw room-event anchor sprite and reseed anchor position when it exits past comic
-ent_process_interaction_script_and_queue_message (was sub_6806) → Dispatch per-object interaction script state and queue context message text
-hud_add_bcd_counter_from_tens_value (was sub_6D95)              → Fallthrough entry that maps AL into tens digit then runs low-digit BCD counter add loop
-intro_repeat_draw_with_offset_4_3 (was sub_71FE)               → Repeat intro sprite draw/present loop with (-4,+3) positional offset
-intro_repeat_draw_with_offset_8_6 (was sub_721B)               → Repeat intro sprite draw/present loop with (-8,+6) positional offset
-intro_repeat_draw_with_offset_12_8 (was sub_7238)              → Repeat intro sprite draw/present loop with (-12,+8) positional offset
-
-Key Patterns:
-- Port 0x3C4/0x3C5 → Sequencer (Map Mask for write plane selection)
-- Port 0x3CE/0x3CF → Graphics Controller (Read Map Select)
-- Port 0x3DA → Input Status Register (vertical retrace check)
-- Video Buffer 0x0000 → Onscreen buffer
-- Video Buffer 0x2000 → Offscreen rendering buffer
-```
-
-### Palette and Mode
-```
-INT 10h, AX=000Dh           → Set EGA 320×200 16-color mode
-INT 10h, AX=0F00h           → Get current video mode
-INT 10h, AX=1000h           → Set palette register
-```
-
-## Game Logic
-
-### Main Game Loop
-```
-game_loop (was sub_35DE)    → Main game loop (FRAGMENTED function)
-                              - Fragment 1: 3167 - 4276 (Dispatcher, Physics, Trigger logic)
-                              - Fragment 2: 4598 - 4823 (Player Death, Airborne movement)
-                              - Fragment 3: 4989 - 5043 (Player Animation)
-                              - Fragment 4: 5240 - 5380 (Player State Check)
-                              - Fragment 5: 5410 - 5555 (Attack Animation)
-                              - Fragment 6: 5653 - 5694 (Special Logic 1)
-                              - Fragment 7: 5872 - 6004 (Special Logic 2, Distance-based logic)
-
-Loop Structure:
-1. Wait for game tick: call wait_n_ticks
-2. Clear BIOS keyboard buffer: loc_2341 (clears 0040:001A)
-3. Dispatch state handlers: loc_275C, handle_airborne_movement, update_player_physics, handle_player_animation, handle_attack_animation, etc.
-4. Input handling: loc_2341 block (if no state active)
-5. Update projectiles: update_projectiles (Projectile Update Loop - movement, collision, and interaction)
-6. Scan viewport entities/interactions: ent_update_entities_in_viewport
-7. Draw sprites: draw_sprite
-8. Repeat
-```
-
-### Player Character
-```
-comic_x                     → ds:6C6h / word_256A6 (Line 111536) - X position
-comic_y                     → ds:6C8h / word_256A8 (Line 111537) - Y position
-comic_x_vel                 → ds:892h / word_25872 (Line 111984) - Horizontal velocity
-comic_y_vel                 → ds:894h / word_25874 (Line 111986) - Vertical velocity
-comic_state                 → ds:8AEh / byte_2588E (Line 112006) - 0=idle, 1=move, 2=jump/fall, 3=die, 6=attack
-comic_is_physics_active     → ds:897h / byte_25877 (Line 111989)
-comic_jump_counter          → ds:898h / byte_25878 (Line 111990) - Ticks remaining in jump
-comic_is_animation_active   → ds:8A3h / byte_25883 (Line 111999)
-comic_is_attack_active      → ds:8A7h / byte_25887 (Line 112003)
-comic_facing                → ds:8ADh / byte_2588D (Line 112005) - 1=right, 2=left
-comic_hp                    → ds:8EDh / byte_258CD (Line 112068) - Health points (max 12)
-comic_num_lives             → ds:28Fh / word_2526F (Line 110468) - Remaining lives
-comic_firepower             → ds:1FCh / byte_251FC (Line 110355) - Firepower level (max 6, active shots)
-comic_gems                  → ds:204h / word_25204 (Line 110362) - Gem count (Extra life at 100)
-comic_score_low             → ds:202h / word_25202 (Line 110361) - Partial score/treasure
-```
-
-### HUD Meter Helpers
-```
-byte_258CA / byte_258CB     → Paired HUD animation counters for glyph-based meter effects
-byte_258CC                  → HUD animation lockout / flash timer gate
-
-hud_c_meter_reset (was sub_3A92)         → Reset C-glyph meter state and redraw baseline
-hud_star_meter_reset (was sub_3AA0)      → Reset *-glyph meter state and redraw baseline
-hud_star_meter_step_up (was sub_3ACE)    → Increment *-glyph meter animation one step
-hud_star_meter_step_down (was sub_3B12)  → Decrement *-glyph meter animation one step
-hud_c_meter_step_up (was sub_3B51)       → Increment C-glyph meter animation one step
-hud_c_meter_step_down (was sub_3B8C)     → Decrement C-glyph meter animation one step
-```
-
-Movement and Collision Functions:
-- sub_2BDC                 → move_player_left (Line 4335)
-- sub_2C39                 → move_player_right (Line 4363)
-- sub_2C9D                 → check_floor_collision (Line 4421)
-- move_left_step_grounded (was sub_2BF7)      → Apply grounded left movement with collision and viewport scroll
-- move_right_step_grounded (was sub_2C54)     → Apply grounded right movement with collision and viewport scroll
-- move_left_step_airborne (was sub_3026)      → Apply airborne left drift with collision and viewport scroll
-- move_right_step_airborne (was sub_305E)     → Apply airborne right drift with collision and viewport scroll
-- check_airborne_side_clear (was sub_309D)    → Test lateral tile clearance for airborne horizontal movement
-- tile_check_horizontal_step_clear (was sub_2D61)         → Check horizontal step clearance against tile/blocking thresholds
-- tile_handle_collision_mode2_trigger (was sub_2D31)      → Handle collision-trigger table for mode-2 floor-check context
-- check_airborne_path_clear (was sub_2FEE)     → Check airborne path against tile/ceiling boundaries
-- check_airborne_tile_threshold (was sub_3019) → Compare airborne tile against blocking threshold
-- sub_1CFE                 → get_tile_at_pixels (Line 2544) - AX=x, BX=y, returns tile type in AX
-- sub_18E0                 → setup_render_viewport (Line 2179)
-- sub_1B8D                 → load_resource (Line 2337)
-```
-
-### Entity Management
-```
-Enemy Runtime Structure (8-byte active list at unk_256E0):
-Offset  Size    Description
-+0x00   word    X position (screen/world-relative in current room context)
-+0x02   word    Y position
-+0x04   word    Runtime flags / mapped object index (bit 8000h used as state)
-+0x06   word    Sprite/object pointer/id used by draw path
-
-Mapped Object Structure (12-byte source table at unk_25AD0):
-Offset  Size    Description
-+0x00   word    Room X index
-+0x02   word    Room Y index
-+0x04   word    Object X
-+0x06   word    Object Y
-+0x08   word    Sprite/object pointer
-+0x0A   word    Flags (bit 8000h propagated into runtime flags)
-
-Identified Functions:
-- ent_build_room_entity_list (was sub_1A63)         → Build active room entity list from mapped object table
-- ent_update_entities_in_viewport (was sub_437B)    → Scan active entities, draw visible ones, handle proximity interactions
-- ent_update_object_behaviors (was sub_4B25)        → Tick/update mapped world object behaviors and activation states
-- ent_spawn_transient_slot (was sub_3181)           → Spawn a transient runtime slot and register it in the active list
-- ent_update_transient_slots (was sub_31EB)         → Update/transient-slot animation, draw, and cleanup loop
-- update_projectiles (was sub_5D5F)                 → Update projectile movement/collision and impact effects
-- ent_deactivate_at_coords (was sub_4579)           → Clear active entity flag by exact (x,y) match
-- ent_activate_slot_into_runtime (was sub_46E6)     → Confirm selected inventory/runtime slot, move mapped object into active runtime list, and consume the source slot
-
-Still to promote with higher confidence:
-- handle_enemies            → Confirm split between mapped-object behavior tick and active-runtime interaction tick
-- handle_item               → Item-specific animation/collision dispatcher
-- spawn_enemy               → Respawn/path-dependent enemy creation routine(s)
-```
-
-## File I/O
-
-### Resource Loading
-```
-Pattern (INT 21h DOS calls):
-AX=3D00h                    → Open file (read-only)
-AX=3F00h                    → Read from file
-AX=3E00h                    → Close file
-
-Resource Files:
-- data.0, data.1            → Graphics/sprite data
-- frdata.0, frdata.1        → Level layout data
-- frdemo.0, frdemo.1, frdemo.2 → Demo sequences
-- frpak.003 - frpak.007     → Packed resource archives
-
-Functions (to locate):
-- load_level                → Load .PT/.TT2 map files
-- load_fullscreen_graphic   → Load .EGA graphics
-- load_shp_files            → Load .SHP sprite animations
-- rle_decode                → Decompress RLE graphics
-```
-
-## Sound System
-
-### PC Speaker Sound
-```
-Confirmed in comic2.asm:
-
-INT 3 vector install:
-- sub_9C9 writes vector 03h to loc_8C7
-- sub_A5E restores original vector on shutdown
-
-INT 3 command handler (loc_8C7):
-- AL=0 → speaker gate ON mode (byte_248=1), then speaker output forced OFF until playback enables it
-- AL=1 → queue/play request if CL priority >= byte_248+1
-         stores sound stream pointer in byte_248+2 and source segment in byte_248+6
-- AL=2 → speaker gate OFF mode (byte_248=0), output forced OFF
-- AL=3 → hard stop (byte_247=0, byte_248+1=0), output forced OFF
-- AL=4 → query playback active flag (returns AL=byte_247)
-
-Timer-driven playback (INT 08h hook loc_683):
-- When byte_247=1, consumes word stream from ES:[byte_248+2]
-- Stream format appears to be repeating pairs:
-  word pitch_divisor, word tick_duration
-- pitch_divisor=0 terminates playback (byte_247=0)
-- Non-zero divisor programs PIT channel 2 via ports 43h/42h
-- Speaker enable/disable uses port 61h bits 0-1
-
-PIT Programming:
-- Port 0x43 → Command register
-- Port 0x40-0x42 → Counter channels
-- Port 0x61 → PC speaker enable/disable
-- Frequency = 1,193,182 / divisor
-
-Known effect stream pointers at call sites (AX=1, CX=priority, INT 3):
-- BX=00DBh (used during intro/startup)
-- BX=965Eh (damage/hazard path at loc_2DC6)
-- BX=9676h (jump/airborne transitions at loc_2E4F and loc_2E96)
-- BX=96B6h (intro/startup)
-
-Confidence:
-- INT 3 command semantics: High
-- Stream pair format (divisor,duration): High
-- Effect-to-event names beyond listed call sites: Medium/Low
-```
-
-## Data Segments
-
-### Segment Overview
-```
-seg000 (CODE)               → Lines 32-16486 - Game logic
-seg001 (STRINGS)            → Lines 16486-48559 - Messages, prompts
-seg002 (STACK)              → Lines 48559-48567 - Stack space
-seg003 (DATA)               → Lines 48567-97662 - Game state variables
-seg004 (GRAPHICS)           → Lines 97662-109829 - Palette, sprite data
-seg005 (DATA)               → Lines 109829-153617 - More game data
-seg006-seg009               → Additional segments
-```
-
-### Important String Data (seg001)
-```
-Line 16486+:
-- "Calibrate Joystick"
-- "Center Joystick and Press Button"
-- "Move Left  : "
-- "Move Right : "
-- "Jump       : "
-- "Trigger    : "
-
-Line 149305:
-- "  G A M E  S E L E C T I O N  "
-- "       SAVE GAME "
-```
-
-## Assembly Patterns to Search For
-
-### EGA Plane Selection (Write)
-```asm
-mov dx, 0x3C4      ; Sequencer Index register
-mov al, 2          ; Map Mask register number
-out dx, al
-inc dx             ; Point to data register
-mov al, [plane]    ; Plane mask: 1,2,4,8 for planes 0-3
-out dx, al
-```
-
-### EGA Plane Selection (Read)
-```asm
-mov dx, 0x3CE      ; Graphics Controller Index
-mov al, 4          ; Read Map Select register
-out dx, al
-inc dx             ; Point to data register
-mov al, [plane]    ; Plane index: 0-3
-out dx, al
-```
-
-### Vertical Retrace Wait
-```asm
-mov dx, 0x3DA      ; Input Status Register 1
-.wait_loop:
-  in al, dx
-  test al, 8       ; Test bit 3 (vertical retrace)
-  jz .wait_loop
-```
-
-### Sprite Blitting Loop (4 Planes)
-```asm
-mov ah, 1          ; Plane 0 mask
-call blit_plane
-mov ah, 2          ; Plane 1 mask
-call blit_plane
-mov ah, 4          ; Plane 2 mask
-call blit_plane
-mov ah, 8          ; Plane 3 mask
-call blit_plane
-```
-
-### PIT Counter Read
-```asm
-mov al, 0
-out 0x43, al       ; Latch counter command
-in al, 0x40        ; Read low byte
-mov ah, al
-in al, 0x40        ; Read high byte
-xchg ah, al        ; AX now has counter value
-```
-
-## Next Analysis Tasks
-
-1. [ ] Locate main game loop exact structure
-2. [ ] Find player state variable block
-3. [ ] Identify enemy AI functions
-4. [ ] Map collision detection code
-5. [ ] Locate level data parser
-6. [ ] Find sprite animation tables
-7. [ ] Identify save/load game functions
-8. [ ] Map sound effect data tables
-9. [ ] Document level format
-10. [ ] Create complete memory map
-
-## Notes
-
-- Comic 2 appears to be same engine as Comic 1 with enhancements
-- Fragmented functions indicate complex control flow or anti-debugging
-- File shows signs of being unpacked (note: "unpacked.exe")
-- 13 levels vs 8 in Comic 1 (larger game)
-- New save game system (not just passwords like Comic 1)
-- Enhanced joystick calibration routines
 
 ---
-*Generated: 2026-03-07*
-*Status: Initial function mapping complete*
-*Next: Deep dive into game loop and entity system*
+
+## Graphics & Video Functions
+
+### EGA Palette, Paging, and Blitting
+```text
+1000:015D (Line  197) vid_set_ega_palette          → (gfx_load_ega_palette_16_from_table) Load 16 EGA attribute registers from DS:DX on vertical retrace
+1000:0185 (Line  231) vid_fade_screen              → Startup check for FRPAK.002 / FRPAK.007 before entering intro
+1000:01C0 (Line  258) ui_intro_cutscene_setup      → Check disk files and jump to play_intro_cinematic (1000:7164)
+1000:022B (Line  320) vid_set_active_page_0        → (gfx_disable_retrace_palette_script) Clear cs:0x022A and cs:0x0229 to disable ISR palette cycling
+1000:0238 (Line  330) vid_set_active_page_1        → (gfx_enable_retrace_palette_script) Arm cs:0x0229=1 so next page flip enables ISR palette cycling
+1000:02B4 (Line  436) vid_init_screen_pages        → (gfx_startup_graphics_and_menu_probe) Blit startup screen from SEG_PALETTE, play jingle, run key/joystick prompt
+1000:1D2C (Line 2041) map_draw_background          → (gfx_render_viewport_4plane) Setup viewport rows and copy all 4 planes to active VRAM page
+1000:1DC0 (Line 2106) map_draw_tile_column         → (gfx_copy_viewport_plane) Copy visible 13-word (208px) × 160-row viewport for one plane to A000h
+1000:1E09 (Line 2154) map_draw_tile_row            → (gfx_draw_tile_id_at_pixel_xy) Draw one 16x16 tile ID (CL) at room pixel (AX, BX) into active room buffers
+1000:1E86 (Line 2214) map_render_full_screen       → (gfx_render_room_tilemap_to_active_buffers) Render full room tilemap from ds:0x09A8 into offscreen buffers (A000:4000 & SEG_BUFFER_1..4)
+1000:1F72 (Line 2323) map_set_tile_attr            → (gfx_copy_16x16_tile_plane_to_active_page) Copy one 16x16 tile plane to A000h offscreen cache
+1000:1F89 (Line 2342) map_clear_tile_attr          → (gfx_copy_16x16_tile_plane_to_segment) Copy one 16x16 tile plane to SEG_BUFFER_1..4
+1000:4339 (Line 5862) vid_set_write_mode_0         → (ega_set_map_mask) Set EGA Sequencer Map Mask (port 3C4h index 2) to AL
+1000:434B (Line 5875) loc_434b (db block)          → Clear 8x8 glyph box at (BX, CX) on active page
+1000:7741 (Line 9360) vid_init_ega_regs            → (gfx_init_double_buffer_pages) Set CRTC start=0x0000 and offscreen draw page cs:0x773F=0x2000
+1000:774E (Line 9371) vid_wait_vblank              → (gfx_present_and_flip_page) Latch cs:0x022A, set CRTC start to cs:0x773F on retrace, and XOR cs:0x773F with 0x2000
+1000:7765 (Line 9384) vid_wait_not_vblank          → (gfx_copy_page_4plane) Copy 0x1F40 bytes per plane (full 320x200 page) from A000:SI to A000:DI
+1000:77A3 (Line 9425) vid_clear_page               → (gfx_blit_sprite_masked_active_page) Blit masked planar sprite at (AX, BX) from DS:SI to active page (aligned or shift-4)
+1000:77F2 (Line 9473) vid_fill_plane               → (gfx_blit_masked_plane_aligned) Draw one masked plane row-span for byte-aligned X
+1000:7833 (Line 9519) vid_set_read_plane           → (gfx_blit_sprite_masked_shift4_dispatch) Dispatch 4 planes for 4-pixel-shifted masked sprite
+1000:7849 (Line 9536) vid_copy_page                → (gfx_blit_masked_plane_shift4) Draw one masked plane row-span with 4-bit nibble shift
+1000:78C6 (Line 9616) vid_set_map_mask             → (gfx_blit_sprite_opaque_offset_both_pages) Blit opaque sprite (with mask-offset header) to both VRAM pages
+1000:78E1 (Line 9635) vid_set_bit_mask             → (gfx_blit_sprite_opaque_offset_active_page) Blit opaque sprite (with mask-offset header) to active page
+1000:790C (Line 9666) vid_set_write_mode_2         → (gfx_blit_sprite_opaque_both_pages) Blit opaque planar sprite to both VRAM pages
+1000:7927 (Line 9685) vid_restore_write_mode       → (gfx_blit_sprite_opaque_active_page) Blit opaque planar sprite to DI page
+1000:7962 (Line 9723) vid_set_color_compare        → (gfx_blit_sprite_plane_rows) Copy one opaque sprite plane row-span with 0x28 byte stride
+1000:7990 (Line 9761) vid_load_default_palette     → (gfx_load_and_blit_opaque_file) Read file into SEG_SCRATCH:0600h and opaque-RLE blit to ES:DI
+1000:7999 (Line 9773) vid_load_alt_palette         → (gfx_load_and_blit_masked_file) Read file into SEG_SCRATCH:0600h and masked-OR RLE blit to ES:DI
+1000:79A2 (Line 9785) vid_set_overscan_color       → (io_read_file_to_seg001_0600) Open/read/close file DS:DX into SEG_SCRATCH:0600h
+1000:79C7 (Line 9808) vid_load_palette_buffer      → (gfx_rle_blit_opaque_4plane) Decode 4-plane packetized RLE stream (opaque copy) to ES:DI
+1000:79ED (Line 9830) vid_cycle_palette_step       → (gfx_rle_decode_copy_rowspan) Decode one plane of packetized RLE stream (copy)
+1000:7A13 (Line 9859) vid_apply_palette            → (gfx_rle_blit_masked_or_4plane) Decode 4-plane packetized RLE stream (OR-composite) to ES:DI
+1000:7A39 (Line 9881) vid_dim_palette              → (gfx_rle_decode_or_rowspan) Decode one plane of packetized RLE stream (OR-composite)
+1000:7A68 (Line 9917) vid_out_dx_ax                → (ega_select_plane_read_write) Program EGA Sequencer Map Mask (1<<CL) and GC Read Map Select (CL)
+1000:7A89 (Line 9944) vid_in_status                → (gfx_set_crtc_start_on_retrace) Wait for display enable, program CRTC Start High (3D4h idx 0Ch) = AH, wait for vertical retrace
+1000:7AAB (Line 9972) vid_setup_blit_rect          → (gfx_clear_rect_both_pages) Zero-fill rectangular region on both VRAM pages
+1000:7AC8 (Line 9993) vid_set_data_rotate          → (gfx_clear_rect_active_page) Zero-fill rectangular region (AX=x, BX=y, CX=w, DX=h) on page DI
+1000:7B03 (Line 10030) vid_reset_data_rotate       → (gfx_clear_rect_plane_rows) Zero-fill rectangle rows for plane CL
+1000:7B31 (Line 10068) vid_blit_tile_aligned       → (gfx_blit_sprite_masked_top_clipped) Masked sprite blitter with top-edge row clipping
+1000:7B8B (Line 10121) vid_blit_tile_shifted       → (gfx_blit_masked_plane_aligned_top_clipped) Aligned plane blitter with top-clip skip
+1000:7BD9 (Line 10172) vid_blit_glyph_aligned      → (gfx_blit_masked_shift4_top_clipped_dispatch) Shift-4 plane dispatch with top-clip skip
+1000:7BEF (Line 10189) vid_blit_glyph_shifted      → (gfx_blit_masked_plane_shift4_top_clipped) Shift-4 plane blitter with top-clip skip
+1000:7C79 (Line 10276) vid_blit_sprite_masked_aligned → (gfx_blit_sprite_masked_bottom_clipped) Masked sprite blitter with bottom-edge row clipping
+1000:7CCD (Line 10325) vid_blit_sprite_masked_shifted → (gfx_blit_masked_plane_aligned_bottom_clipped) Aligned plane blitter with bottom-clip skip
+1000:7D1B (Line 10376) vid_blit_small_sprite_aligned  → (gfx_blit_masked_shift4_bottom_clipped_dispatch) Shift-4 plane dispatch with bottom-clip skip
+1000:7D31 (Line 10393) vid_blit_small_sprite_shifted  → (gfx_blit_masked_plane_shift4_bottom_clipped) Shift-4 plane blitter with bottom-clip skip
+1000:7DBB (Line 10480) vid_blit_planar_block       → (draw_sprite_clipped) Convert world (AX, BX) to viewport coords, clip top/bottom against 208x160 window, and blit masked sprite from cs:0x005E:SI
+```
+
+---
+
+## Room Transitions, Intro, UI, and Config
+
+### Room Transition & Finale Sequences
+```text
+1000:20FE (Line 2567) game_start_room              → Enter doorway/transition: play transition effect, load target stage/room, place Comic at exit doorway, enter game_main_loop
+1000:21B8 (Line 2650) game_respawn_player          → Teleport/respawn transition to Stage 5 Room 3 at (0x28, 0x60)
+1000:21F2 (Line 2672) game_victory_sequence        → Trigger finale transition, verify Disk 1, and restart title/intro flow
+1000:2205 (Line 2685) game_over_sequence           → Play transition SFX, load mapped transition target from ds:0x06F4 table, and resume game_main_loop
+1000:2253 (Line 2701) game_switch_room             → Teleport to selected stage/room from stage selection menu (ds:0x021A)
+1000:227B (Line 2720) spr_animate_player           → (game_init_room_and_hud) Reset meters, clamp fuel, load room, center camera, and enter game_main_loop
+1000:2323 (Line 2779) spr_set_player_frame         → Setup initial coordinates (0x288, 0x70) for stage selected in menu and jump to 1000:227B
+1000:3BC6 (Line 5306) snd_play_pickup              → (room_transition_draw_header) Play SFX 0x965E, draw transition header sprite 0x48D6, and present one tick
+1000:3C13 (Line 5322) snd_play_blast               → (room_transition_reveal_sequence_a) Multi-step 2x2 quad room reveal sequence (variant A, SFX 0x973C)
+1000:3CB1 (Line 5364) snd_play_hit                 → (room_transition_reveal_sequence_b) Multi-step 2x2 quad room reveal sequence (variant B, SFX 0x973C)
+1000:3D3A (Line 5393) loc_3d3a (db block)          → (room_transition_draw_reveal_quad) Draw 2x2 reveal quad from transition frame indices
+1000:3D7B (Line 5397) loc_3d7b (db block)          → (room_transition_blit_reveal_quad_4plane) Blit one reveal quad tile across 4 planes
+1000:3D90 (Line 5399) loc_3d90 (db block)          → (room_transition_blit_reveal_column_plane) Per-plane reveal column blit (16 rows)
+1000:3DA1 (Line 5400) loc_3da1 (db block)          → (room_transition_clear_reveal_box) Clear 0x20x0x20 box at transition-relative coordinates
+1000:3DB6 (Line 5408) snd_play_jump                → (room_transition_present_frame) Update visible entities, flip page on vblank, and wait 1 tick
+1000:3DC3 (Line 5414) loc_3dc3 (db block)          → (sprite_frame_table_offset) Convert frame index in AX to 128-byte tile offset at ds:0x13A8
+1000:3DD7 (Line 5415) loc_3dd7 (db block)          → (viewport_xy_to_di) Convert viewport-relative (AX, BX) to VRAM offset in DI
+1000:3DFB (Line 5424) spr_render_explosion         → (draw_player_sprite) Draw facing-specific standing Comic sprite at (comic_x, comic_y)
+1000:3E1F (Line 5443) snd_play_door_open           → (room_transition_player_entry_sequence) Staged player-entry materialization sweep (SFX 0x9764)
+1000:3E98 (Line 5470) snd_play_teleport            → (room_transition_player_exit_sequence) Staged player-exit dematerialization sweep (SFX 0x97CC)
+1000:3F0A (Line 5498) snd_play_level_music         → (room_transition_palette_wave) Animated sprite wave sweep during transition (SFX 0x9834)
+1000:401B (Line 5537) math_random_byte             → (event_draw_stacked_sprite_rise) Draw rising stacked sprites during boss/object event resolution (SFX 0x9894)
+1000:4073 (Line 5559) math_calc_distance           → (event_transition_camera_bob_step) Single camera vertical bob step with background & entity redraw
+1000:409C (Line 5581) boss_update_state            → (event_finale_transition_sequence) Finale sequence with camera shake, rising sprites, and handoff to Stage 0 Room 7
+```
+
+### UI, Menus, Savegames, and Copy Protection
+```text
+1000:39AD (Line 5085) hud_draw_lives               → (ui_show_pause_quit_prompt) Show modal pause/game-over message box, wait for key (Q to quit to menu)
+1000:4206 (Line 5694) ui_draw_window_box           → (ui_draw_framed_message_from_stream) Draw centered bordered dialog box from `[width, height, text...]` stream at DS:SI
+1000:42D4 (Line 5794) ui_clear_window              → (ui_draw_string_8x8) Draw NUL-terminated 8x8 string at (AX, BX)
+1000:42E8 (Line 5815) ui_draw_window_border        → (ui_draw_glyph_8x8) Draw one 8x8 glyph (AL - 0x20) at (BX, CX) from font table at cs:0x005E:0xA6F4 and advance BX by 8
+1000:5F86 (Line 7368) loc_5f86 (db block)          → (ui_draw_menu_frame) Clear screen and draw framed menu border and title header
+1000:6011 (Line 7376) loc_6011 (db block)          → (ui_select_next_valid_option) Advance to next selectable option index
+1000:6021 (Line 7377) loc_6021 (db block)          → (ui_select_prev_valid_option) Move to previous selectable option index
+1000:6030 (Line 7378) loc_6030 (db block)          → (ui_is_option_selectable) Test whether option index is selectable
+1000:606B (Line 7382) loc_606b (db block)          → (ui_render_option_list) Render player roster / medal awards / menu option list
+1000:615C (Line 7397) loc_615c (db block)          → (ui_option_list_input_loop) Handle option-list navigation, confirm, and cancel input loop
+1000:61C8 (Line 7410) input_poll_devices           → (ui_edit_selected_option_text) Inline keyboard text editor for entering new player name (INT 16h)
+1000:62A4 (Line 7509) file_load_keys_def           → (cfg_load_options_or_defaults) Load 102-byte FR.CFG into ds:0x9C94 or zero-initialize defaults
+1000:631A (Line 7548) file_save_high_scores        → (cfg_save_options) Write 102-byte ds:0x9C94 table to FR.CFG
+1000:633C (Line 7570) file_load_high_scores        → (savegame_write_snapshot) Save mapped object table (cs:0x0AF0) and player state (ds:0x0210..0x028F) to GAME.00x
+1000:636F (Line 7594) loc_636f (db block)          → (savegame_read_snapshot) Load mapped object table and player state from GAME.00x (verifies 0x0150 header word)
+1000:63AB (Line 7598) loc_63ab (db block)          → End-of-session award/medal calculation and "DO YOU WISH SAVE YOUR PROGRESS?" prompt
+1000:64F5 (Line 7620) loc_64f5 (db block)          → (ui_draw_completion_delta_hint) Draw "YOU HAVE EARNED A MEDAL!! / N MEDALS!" notification
+1000:6545 (Line 7632) sys_generate_system_hash     → (cfg_compute_hardware_seed) Hash BIOS ROM (C000:0000, F000:0000, F000:FF80) to generate copy-protection seed
+1000:65EF (Line 7711) file_check_config_exists     → (io_verify_disk1_or_prompt_retry) Verify DISK1 file presence or prompt "INSERT DISK 1..."
+1000:65FD (Line 7720) loc_65fd (db block)          → (io_verify_disk2_or_prompt_retry) Verify DISK2 file presence or prompt "INSERT DISK 2..."
+1000:660B (Line 7727) file_save_config             → (io_open_file_or_prompt_retry) Attempt file open (DS:DI); on failure show modal prompt (DS:SI) until retry succeeds or Esc exits
+1000:6668 (Line 7757) game_save_load_menu          → (ui_stage_selection_menu) Load frdata.0 / frdata.1 and run 6-zone stage selection menu (NATURE, MAGIC, TIME, ICE, TECHNO, DREAMS)
+1000:677A (Line 7854) ui_draw_slot_info            → (ui_render_stage_selection_panel) Render the 6 zone icons, highlight box, and zone title for stage selection
+1000:6806 (Line 7911) game_execute_script          → (ent_process_interaction_script_and_queue_message) Dispatch per-NPC/object dialogue script and queue message from ds:0x9EC0
+1000:6DF4 (Line 8514) ui_main_menu                 → (cfg_run_integrity_challenge) Check saved BIOS hash in FR.CFG; if mismatched, run one-time password challenge screen
+1000:6F47 (Line 8658) ui_high_scores_screen        → (cfg_draw_integrity_challenge_screen) Draw "PASSWORD ENTRY SCREEN" frame, instructions, and grid coordinate prompt (e.g. A,123-)
+1000:7057 (Line 8773) ui_instructions_screen       → (cfg_input_challenge_code) Input 5-digit challenge code on the Password Entry Screen
+```
+
+### Intro Cinematic Sequence
+```text
+1000:7164 (Line 8858) ui_story_screen              → (play_intro_cinematic) Play scripted intro sequence (loads frdemo.0, frpak.003..006, frdemo.1..2)
+1000:71FE (Line 8916) ui_draw_story_page_1         → (intro_repeat_draw_with_offset_4_3) Repeat intro sprite draw/present loop with (-4, +3) offset
+1000:721B (Line 8943) ui_draw_story_page_2         → (intro_repeat_draw_with_offset_8_6) Repeat intro sprite draw/present loop with (-8, +6) offset
+1000:7238 (Line 8970) ui_draw_story_page_3         → (intro_repeat_draw_with_offset_12_8) Repeat intro sprite draw/present loop with (-12, +8) offset
+1000:7255 (Line 8997) ui_wait_for_keypress         → (gfx_copy_backbuffer_to_active_page) Copy A000:6000h backbuffer into current active draw page
+1000:7261 (Line 9008) ui_fade_in_story_page        → (intro_draw_sprite_and_present) Draw intro sprite frame, flip page, and wait 1 tick
+1000:7278 (Line 9022) ui_wait_retrace_ticks        → (wait_ticks_or_abort) Wait AX ticks unless key pressed (aborts intro and jumps to menu/title exit)
+1000:7298 (Line 9043) ui_title_screen              → Continuation of intro cinematic (loads frpak.003/004, runs split wipe and Comic walk/flash animations)
+1000:74E1 (Line 9170) ui_draw_title_stars          → (intro_wipe_split_buffers_step) Compose one horizontal wipe step splitting columns between A000:4000h and A000:6000h
+1000:752A (Line 9206) ui_update_title_star         → (gfx_copy_rect_all_planes) Copy rectangle across all 4 EGA planes
+1000:7553 (Line 9234) math_lfsr_random             → (gfx_copy_rect_rows_stride40) Copy DX-byte rows for 0xA0 lines with 0x28 byte stride
+1000:756D (Line 9253) loc_756d (db block)          → (intro_draw_overlay_with_comic) Copy 6000h backbuffer, draw overlay sprite + Comic sprite, and flip page
+1000:75AD (Line 9263) ui_draw_title_logo           → (intro_flash_comic_with_optional_overlay) Run 10-frame Comic flash loop with optional overlay sprite and SFX 0xAC92
+1000:7622 (Line 9311) ui_clear_title_logo          → (intro_draw_comic_walk_frame) Advance Comic walk animation frame (ds:0x08AF) and draw at (comic_x, comic_y)
+```
+
+---
+
+## Gameplay Logic, Physics, HUD, and Entities
+
+### Main Game Loop
+```text
+1000:2341 (Line 2793) game_main_loop               → Master gameplay loop (see CORE_ENGINE.md for full state machine breakdown)
+```
+
+### Player Physics, Movement, and Actions
+```text
+1000:18E0 (Line 1581) spr_render_player            → (setup_render_viewport) Center camera scroll_x/scroll_y on Comic, check Stage 2/9 scripted event triggers, and build monster slots (1000:49AD)
+1000:1CFE (Line 2011) map_get_tile_at              → (get_tile_at_pixels) Convert pixel (AX, BX) to tile (X>>4, Y>>4) and look up tile ID from ds:0x02A0 row pointers
+1000:2A10 (Line 3417) player_update_physics        → (update_player_physics) Grounded/airborne jump & gravity integration, lateral acceleration, ceiling/floor landing
+1000:2B8E (Line 3557) player_check_ground_collision → (camera_update_y_follow_comic_clamped) Adjust scroll_y (ds:0x06C4) to keep Comic within vertical follow band [0x30..0x50]
+1000:2BDC (Line 3598) player_check_ceiling_collision → (move_player_left) Set left facing (ds:0x08AD=2) and step left via 1000:2BF7
+1000:2BF7 (Line 3614) player_check_wall_collision_left → (move_left_step_grounded) Step left 8px, check room left boundary & tile clearance (1000:2D61), scroll camera left
+1000:2C32 (Line 3643) player_stop_x                → Zero horizontal velocity (ds:0x0892 = 0)
+1000:2C39 (Line 3653) player_check_wall_collision_right → (move_player_right) Set right facing (ds:0x08AD=1) and step right via 1000:2C54
+1000:2C54 (Line 3669) player_check_climbing        → (move_right_step_grounded) Step right 8px, check room right boundary & tile clearance (1000:2D61), scroll camera right
+1000:2C9D (Line 3702) player_check_swimming        → (check_floor_collision) Check tiles at (AX, BX) and (AX+16, BX) against threshold DI; invoke tile-trigger ranges if armed
+1000:2D06 (Line 3755) player_move_left             → (handle_tile_trigger_range_1) If tile AL is in [ds:0x06D6..0x06D7], spawn transient tile replacement from ds:0x06D8
+1000:2D31 (Line 3785) player_move_right            → (handle_tile_trigger_range_2) If tile AL is in [ds:0x06E2..0x06E3], spawn transient tile replacement from ds:0x06E4
+1000:2D61 (Line 3816) player_do_jump               → (tile_check_horizontal_step_clear) Check lateral step clearance at (AX, comic_y+13) and row below against ds:0x0292 / ds:0x0294
+1000:2DC6 (Line 3868) player_stop_jump             → (handle_water_entry_or_hazard) Enter/exit swimming mode (ds:0x089D) with splash overlay and SFX 0x965E / 0x9676
+1000:2EDC (Line 3905) player_process_controls      → (handle_swimming_movement) Underwater movement, buoyancy, ceiling/floor checks, and surface exit
+1000:2FEE (Line 4018) player_take_damage           → (check_airborne_path_clear) Check vertical tile clearance across player width while swimming
+1000:3019 (Line 4048) player_add_health            → (check_airborne_tile_threshold) Test if tile at (AX, BX) is within water tile threshold ds:0x0296
+1000:3026 (Line 4063) player_check_hazard_collision → (move_left_step_airborne) Underwater/airborne leftward step (8px) with lateral check (1000:309D) and camera scroll
+1000:3057 (Line 4089) player_zero_score_delta      → Zero horizontal velocity (ds:0x0892 = 0)
+1000:305E (Line 4099) player_check_crush           → (move_right_step_airborne) Underwater/airborne rightward step (8px) with lateral check (1000:309D) and camera scroll
+1000:309D (Line 4130) player_fall_death            → (check_airborne_side_clear) Check lateral tile clearance at comic_y and comic_y+15 against ds:0x0294
+1000:30C6 (Line 4156) player_fire_projectile       → (player_start_state4_action_animation) Start 3-tick Mode 1 (Wand) animation (ds:0x08A3=1, ds:0x08AE=4)
+1000:3107 (Line 4183) proj_init_trajectory         → (handle_player_animation) Update Mode 1 (Wand) animation and transform target tile in [ds:0x06CA..0x06CB] via ds:0x06CC table
+1000:327D (Line 4355) proj_check_monster_hit       → (player_cycle_mode_selection) Cycle active mode ds:0x0896 (0..3) checking unlock flags ds:0x021D..0x021F and toggle hover ds:0x08A6
+1000:330F (Line 4414) ent_update_all               → (handle_jetpack_hover_mode) State-5 hover/jetpack physics (ds:0x08A6=1), consuming fuel ds:0x0222 every 4th tick
+1000:3468 (Line 4539) ent_spawn_enemy              → (player_start_attack_animation) Start 3-tick Mode 3 (Pickaxe) animation (ds:0x08A7=1, ds:0x08AE=6)
+1000:34A9 (Line 4566) ent_update_ai                → (handle_attack_animation) Update Mode 3 (Pickaxe) animation and transform matching entity at ds:0x0700 via ds:0x0946 table
+1000:35DE (Line 4694) ent_check_player_contact     → (check_horizontal_room_edge_transition) Check if Comic reached a horizontal room-edge transition zone (ds:0x06F2/0x06F4) and jump to 1000:2205
+1000:3610 (Line 4722) ent_destroy                  → (player_start_timed_overlay_sprite) Latch overlay sprite AX into ds:0x091F for 8 ticks (ds:0x091E=8) and play SFX 0x96AE
+1000:362A (Line 4739) ent_check_tile_collision     → (check_comic_near_room_event_anchor) Check Comic proximity to Stage 2 carrier (ds:0x0928/0x092A) and latch ds:0x0924=2
+1000:3657 (Line 4765) ent_turn_around              → (handle_stage2_carrier_mounted) Update Comic while riding Stage 2 carrier (jump dismount, edge transition, camera scroll)
+1000:36C0 (Line 4806) item_collect_pickup          → (update_room_event_anchor_motion) Advance Stage 2 carrier position along guide tiles (0x19..0x1B) and release Comic if blocked
+1000:378E (Line 4889) hud_render_all               → (update_room_event_anchor_sprite) Draw Stage 2 carrier sprite and reseed its position when offscreen
+1000:385F (Line 4966) hud_update_score             → (handle_stage9_cart_mounted) Latch and update Stage 9 rail/minecart ride (ds:0x092C=2, ds:0x0930/0x0932)
+```
+
+### HUD & Counters
+```text
+1000:3A17 (Line 5102) hud_draw_item_icon           → (hud_update_mode_icons) Draw deselected and active mode icons at X=0x100 from table ds:0x9710
+1000:3A5F (Line 5132) hud_draw_shield_bar          → (hud_draw_two_digit_counter) Draw packed BCD two-digit counter CX (CH=tens, CL=ones) at (AX, BX) on both pages
+1000:3A92 (Line 5162) hud_draw_keys                → (hud_star_meter_reset) Reset shield *-meter counter (ds:0x08EB=0) and draw empty baseline at (0x100, 0x43)
+1000:3AA0 (Line 5174) hud_draw_digits              → (hud_c_meter_reset) Reset blaster C-meter counter (ds:0x08EA=0) and draw empty baseline at (0x100, 0x2A)
+1000:3ACE (Line 5203) hud_draw_number_word         → (hud_c_meter_step_up) Recharge blaster C-meter (ds:0x08EA, max 23) by one step and draw glyph at Y=0x2A
+1000:3B12 (Line 5239) hud_draw_char                → (hud_c_meter_step_down) Decrement blaster C-meter (ds:0x08EA) by one step and redraw glyph at Y=0x2A
+1000:3B51 (Line 5272) hud_flash_item               → (hud_star_meter_step_up) Increment shield *-meter (ds:0x08EB, max 12) by one step and draw glyph at Y=0x43
+1000:3B8C (Line 5296) loc_3b8c (db block)          → (hud_star_meter_step_down) Decrement shield *-meter (ds:0x08EB) by one step and redraw glyph at Y=0x43
+1000:45A6 (Line 6058) snd_play_dialog_beep         → (hud_increment_lives_bcd_clamped) Play extra-life SFX 0x9904, increment lives BCD (ds:0x028F) up to 99, redraw at (0x120, 0xA9)
+1000:4870 (Line 6224) snd_play_chest_open          → (hud_set_wand_icon_collected) Play SFX 0x98E0, set ds:0x021D=1 (wand unlocked), draw icon at (0xF0, 0x77)
+1000:489E (Line 6238) item_check_has_item          → (hud_bcd_decrement_cx) Decrement packed BCD word in CX with decimal borrow
+1000:48AA (Line 6252) item_add_to_inventory        → (hud_decrement_fuel_bcd) Decrement packed BCD fuel counter ds:0x0222 and redraw at (0x120, 0x90)
+1000:48BF (Line 6260) loc_48bf (db block)          → (hud_decrement_lives_bcd) Decrement packed BCD lives counter ds:0x028F and redraw at (0x120, 0xA9)
+1000:6D95 (Line 8453) loc_6d95 (db block)          → (hud_add_bcd_counter_from_tens_value) Shift AL to AH (tens) and add into 6-digit BCD score at ds:0x0934
+1000:6DA4 (Line 8459) ui_prompt_yes_no             → (hud_add_bcd_counter_from_low_digit) Add AX (AH=tens, AL=ones) into BCD score chain at ds:0x0934..0x0938 and redraw at Y=0x10
+1000:6DE7 (Line 8501) snd_play_cursor_move         → (hud_add_bcd_counter_from_mid_digit) Add AX into middle BCD score pair (ds:0x0936) and redraw
+```
+
+### Entity, Pickup, and Monster AI System
+```text
+1000:1A63 (Line 1724) map_spawn_room_entities      → (ent_build_room_entity_list) Load room doorway/edge/monster pointers from CS stage table (cs:0x16A8), populate active entity list at ds:0x0700 from cs:0x0AF0 for current (stage, subroom), and clear projectiles/transients
+1000:3181 (Line 4235) proj_spawn_burst             → (ent_spawn_transient_slot) Allocate a 9-byte transient tile-swap/explosion slot at ds:0x08B2 (max 6)
+1000:31EB (Line 4292) proj_update_all              → (ent_update_transient_slots) Advance 3-frame animations for active transient slots at ds:0x08B2, restore/commit tile IDs when finished
+1000:437B (Line 5884) ui_draw_text_string          → (ent_update_entities_in_viewport) Scan active room entities at ds:0x0700, draw visible sprites, and on Comic contact dispatch pickup handlers via table at cs:0x4367 or Add item to inventory slots ds:0x0239
+1000:451C (Line 5987) ui_draw_dialog_message       → (ent_draw_mapped_slot_or_placeholder) Draw inventory slot AX (from ds:0x0239) at (8 + 16*slot, 0xB1) on both pages, or clear 16x16 box if empty
+1000:4579 (Line 6033) ui_erase_dialog              → (ent_deactivate_at_coords) Clear bit 15 (0x8000) of active entity at exact (AX, BX) in ds:0x0700
+1000:46E6 (Line 6089) game_pause_handler           → (ent_activate_slot_into_runtime) Inventory selection loop (Left/Right moves cursor ds:0x0890, Fire drops/activates item into ds:0x0700 or places clock in Stage 11 Room 7, Home/'G' exits)
+1000:48D4 (Line 6268) item_remove_from_inventory   → (ent_normalize_runtime_y_magnitudes) Convert negative Y values in ds:0x0700 back to positive magnitudes
+1000:49AD (Line 6299) spr_render_monster           → (ent_build_runtime_slots_for_viewport) Build up to 6 active 32-byte monster behavior slots at cs:0x48ED from room monster descriptors (ds:0x06F8) intersecting viewport
+1000:4A70 (Line 6376) spr_get_monster_frame        → (ent_copy_descriptor_to_runtime_slot) Copy 16-byte monster archetype header into cs:0x48ED slot and initialize position/state
+1000:4AE3 (Line 6416) loc_4ae3 (db block)          → 33-entry word jump table of monster AI behavior handlers (indexed by `behavior_state - 1`, covering `1000:50E7`..`1000:59C9`)
+1000:4B25 (Line 6427) vid_flip_buffers             → (ent_update_object_behaviors) Master monster update loop: ticks active slots at cs:0x48ED and spawns newly scrolled-in descriptors
+1000:4C06 (Line 6526) math_clamp_coords            → (ent_deactivate_runtime_slot) Deactivate monster slot (`[cs:SI+6]=0`) and reset source descriptor coordinates
+1000:4C25 (Line 6541) map_scroll_camera            → (ent_kill_monster_and_award_score) Spawn destruction puffs at monster position, play SFX 0x9A25, award score via 1000:6DE7
+1000:4CC1 (Line 6591) map_check_room_bounds        → (ent_damage_boss_or_special_enemy) Handle projectile hit on `type_flags.hi == 1` boss/special enemy (decrements HP ds:0x9A22)
+1000:4D41 (Line 6645) boss_render_sprites          → (ent_handle_player_monster_contact) Handle Comic contact with monster slot: triggers NPC dialogue (1000:6806), spring/platform bounce (0x7B..0x7F), or player shield damage & death
+1000:4F15 (Line 6782) ent_render_all               → (ent_tick_and_collide_slot) Dispatch monster AI handler from cs:0x4AE3, cull offscreen slots, test projectile hits (ds:0x08EE) and player bounding-box contact
+1000:5090 (Line 6932) spr_render_water_ripple      → (ent_advance_anim_and_draw) Advance monster animation tick (`[cs:SI+1Ah]`), select directional frame table (`+0Ch` or `+0Eh`), and blit via 1000:7DBB
+
+Monster AI Movement & Collision Helpers (in db block 1000:50E7 - 1000:5CEA):
+1000:5A4E (Line 7120) loc_5a4e                     → (ent_move_x_and_bounce) Attempt horizontal step BX; flip direction (`[cs:SI+18h]`) on tile collision
+1000:5A99 (Line 7125) loc_5a99                     → (ent_apply_gravity_and_move_y) Integrate vertical velocity (`+16h`, clamped to 12) and resolve floor/ceiling collision
+1000:5B01 (Line 7131) loc_5b01                     → (ent_move_y_and_bounce) Advance vertical motion and invert Y velocity on collision or viewport edge
+1000:5B7B (Line 7139) loc_5b7b                     → (ent_move_y_with_probe_and_bounce) Advance vertical motion using range probe, bouncing on contact
+1000:5BAC (Line 7142) loc_5bac                     → (ent_move_x_with_range_probe_and_bounce) Horizontal move using range-based tile probe
+1000:5BF7 (Line 7147) loc_5bf7                     → (ent_probe_x_collision_strict) Strict X collision probe against solid threshold ds:0x0292
+1000:5C3E (Line 7151) loc_5c3e                     → (ent_probe_x_collision_range) X collision probe accepting bounded tile range `(ds:0x0292..ds:0x0296]`
+1000:5C91 (Line 7156) loc_5c91                     → (ent_probe_tile_above_threshold) Probe tile at (AX, BX) and pass when tile ID > DI
+1000:5CA1 (Line 7157) loc_5ca1                     → (ent_probe_tile_range_in_viewport) Probe tile in viewport Y-range against `(ds:0x0294..ds:0x0296]`
+1000:5CCF (Line 7160) loc_5ccf                     → (ent_set_horizontal_chase_direction_to_comic) Set monster horizontal direction (`[cs:SI+18h]`) toward `comic_x`
+
+Player Projectiles:
+1000:5CEB (Line 7169) map_update_animated_tiles    → (spawn_player_projectile) Allocate free projectile slot in ds:0x08EE (up to ds:0x021C) and play SFX 0x9A80
+1000:5D5F (Line 7219) map_redraw_dirty_tiles       → (update_projectiles) Advance projectiles in ds:0x08EE, apply corkscrew wave, check tile collisions (1000:2D06), and draw sprite 0xA4A6 / 0xA4D4
+```
+
+---
+
+## File I/O & Resource Streaming
+
+```text
+1000:198E (Line 1644) map_init_tileset             → (load_room_effect_script_and_trigger_ranges) Load per-stage retrace palette script pointer (cs:0x0278) and 3 tile-trigger replacement tables (ds:0x06CA, 0x06D6, 0x06E2) from cs:0x16A8
+1000:1B8D (Line 1825) map_load_room                → (load_resource) Load stage AX (0..14) via tuple table at ds:0x93EC (.0, .1, .2, .3 files) and unpack subroom BX
+1000:1BFB (Line 1882) util_calc_stride             → (check_word_is_ffff_or_0005) Return CF=0 if word at [cs:BX] is 0xFFFF or 0x0005
+1000:1C0B (Line 1899) map_parse_room_header        → (update_level5_memory_signature) Anti-tamper / copy-protection check when entering Stage 5: verifies BIOS hash against FR.CFG (ds:0x9CF8) and sets stage portal table pointer ds:0x93A8
+1000:1FA4 (Line 2364) file_load_pack_rle           → (io_load_rle_resource_to_13a8) Read 6-byte tile threshold header into ds:0x0292..0x0296, read RLE stream into SEG_SCRATCH:0600h, and unpack signed-RLE tileset into ds:0x13A8
+1000:1FFE (Line 2417) file_load_raw_mask           → (io_read_file_to_seg_scratch_0600) Read `.1` stage room-tilemap bundle into SEG_SCRATCH:0600h
+1000:2022 (Line 2441) file_load_tileset            → (io_read_file_to_seg5e_base) Read `.2` stage sprite/graphics blob into segment `[cs:0x005E]:0000h` (`SEG_PALETTE`)
+1000:2049 (Line 2463) file_load_entity_data        → (io_read_xor25_block_9ec0) Read 0x0C00 bytes from `.3` stage dialogue file into ds:0x9EC0 and decode with XOR 0x25
+1000:2072 (Line 2489) ent_init_monsters            → (load_room_tilemap_from_resource_buffer) Validate stage ID at SEG_SCRATCH:0602h, read 6-byte subroom entry BX (`tile_w`, `tile_h`, `rle_off`), unpack signed-RLE room tilemap into ds:0x09A8, and populate row pointers at ds:0x02A0
+```
+
+---
+
+## Sound System (`snd_api_int03` & `isr_timer_sound_int08`)
+
+### PC Speaker Architecture
+```text
+INT 3 vector install:
+- sys_install_interrupts (1000:09C9) hooks vector 03h to snd_api_int03 (1000:08C7)
+- sys_restore_all_interrupts (1000:0A5E) restores original vector on exit
+
+INT 3 command handler (snd_api_int03 at 1000:08C7):
+- AL=0 → speaker gate ON mode (cs:0x0248 = 1), speaker output forced OFF until next note
+- AL=1 → queue/play sound stream at DS:BX if priority CL >= cs:0x0249
+         stores priority in cs:0x0249, playing flag cs:0x0247 = 1, offset in cs:0x024A,
+         segment in cs:0x024E, and initial note counter cs:0x024C = 1
+- AL=2 → speaker gate OFF / mute mode (cs:0x0248 = 0), speaker output forced OFF
+- AL=3 → hard stop (cs:0x0247 = 0, cs:0x0249 = 0), speaker output forced OFF
+- AL=4 → query playback active flag (returns AX = cs:0x0247)
+
+Timer-driven playback (isr_timer_sound_int08 at 1000:0683, lines 970-1007):
+- When cs:0x0247 == 1, decrements note counter cs:0x024C each 18.2 Hz tick
+- When counter reaches 0, reads next word pair from ES:[cs:0x024A]:
+  word pitch_divisor, word tick_duration
+- pitch_divisor == 0 terminates playback (cs:0x0247 = 0, cs:0x0249 = 0, port 61h bits 0-1 cleared)
+- Non-zero divisor programs PIT channel 2 (port 43h = B6h, port 42h = low, high)
+  and enables speaker output (port 61h |= 03h) if cs:0x0248 == 1
+```
+
+---
+
+## Segment & Data Layout (`comic2_standalone.asm` & `comic2_data.asm`)
+
+| Segment Constant | Compile Seg | Relocated Seg | File & Line Range | Purpose |
+|------------------|-------------|---------------|-------------------|---------|
+| `.header` | - | - | `comic2_standalone.asm` 13-62 | 512-byte MS-DOS MZ header & 30 relocation entries |
+| `.text` (`CS`) | `0x0000` | `0x1000` | `comic2_standalone.asm` 64-11941 | All executable code (`0x0000..0x7E49`), mapped object table (`0x0AF0`), runtime monster slots (`0x48ED`), and stage descriptor/trigger tables (`0x7E4A..0xD5CF`) |
+| `SEG_SCRATCH` | `0x0D5D` | `0x1D5D` | `comic2_data.asm` 12-30 | Joystick/key setup strings (`0x0000..0x05FF`) and 34,000-byte RLE/file scratch buffer (`0x0600..0x8ACF`) |
+| `SEG_STACK` | `0x160A` | `0x260A` | `comic2_data.asm` 36-1903 | Runtime stack (`SP = 0x07D0`) plus embedded 8x8 font & core player/UI sprite graphics |
+| `SEG_PALETTE` | `0x2206` | `0x3206` | `comic2_data.asm` 1909-2670 | Title/intro RLE planar streams (`0x0CDC`, `0x1CD0`) & dynamic `.2` stage sprite buffer (`[cs:0x005E]`) |
+| `SEG_DATA` (`DS`) | `0x24FE` | `0x34FE` | `comic2_data.asm` 2677-3069 | Master game state variables, filenames, sound streams, and buffers (`0x0000..0xACDF`) |
+| `SEG_BUFFER_1..4` | `0x2FCC..0x47CC` | `0x3FCC..0x57CC` | Runtime RAM beyond load image | Four 32KB offscreen EGA plane buffers for room tilemap rendering |
