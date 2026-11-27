@@ -1146,7 +1146,8 @@ void room_transition_player_exit_sequence(RuntimeState &state) {
 
 void camera_update_x_follow_comic_clamped(RuntimeState &state,
                                           std::int32_t viewport_width,
-                                          std::int32_t room_width) {
+                                          std::int32_t room_width,
+                                          std::int32_t center_offset) {
   if (viewport_width <= 0) {
     state.camera_x = 0;
     return;
@@ -1155,13 +1156,14 @@ void camera_update_x_follow_comic_clamped(RuntimeState &state,
   const std::int32_t room_pixels = std::max<std::int32_t>(room_width, 0);
   const std::int32_t max_camera_x =
       std::max<std::int32_t>(0, room_pixels - viewport_width);
-  const std::int32_t target_x = state.player.x - viewport_width / 2;
+  const std::int32_t target_x = state.player.x - center_offset;
   state.camera_x = std::clamp(target_x, 0, max_camera_x);
 }
 
 void camera_update_y_follow_comic_clamped(RuntimeState &state,
                                           std::int32_t viewport_height,
-                                          std::int32_t room_height) {
+                                          std::int32_t room_height,
+                                          std::int32_t center_offset) {
   if (viewport_height <= 0) {
     state.camera_y = 0;
     return;
@@ -1170,7 +1172,7 @@ void camera_update_y_follow_comic_clamped(RuntimeState &state,
   const std::int32_t room_pixels = std::max<std::int32_t>(room_height, 0);
   const std::int32_t max_camera_y =
       std::max<std::int32_t>(0, room_pixels - viewport_height);
-  const std::int32_t target_y = state.player.y - viewport_height / 2;
+  const std::int32_t target_y = state.player.y - center_offset;
   state.camera_y = std::clamp(target_y, 0, max_camera_y);
 }
 

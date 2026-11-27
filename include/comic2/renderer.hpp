@@ -254,11 +254,15 @@ void room_transition_draw_reveal_quad(EgaPlanarSurface &surface,
                                       std::uint8_t color);
 void room_transition_player_entry_sequence(RuntimeState &state);
 void room_transition_player_exit_sequence(RuntimeState &state);
-void camera_update_x_follow_comic_clamped(RuntimeState &state,
-                                          std::int32_t viewport_width,
-                                          std::int32_t room_width);
-void camera_update_y_follow_comic_clamped(RuntimeState &state,
-                                          std::int32_t viewport_height,
-                                          std::int32_t room_height);
+// Original ASM centering offsets (sub AX,0x60 / sub AX,0x40 at 0x18F2/0x1910):
+// camera = clamp(player - offset, 0, room - viewport).
+inline constexpr std::int32_t kCameraCenterOffsetX = 0x60;
+inline constexpr std::int32_t kCameraCenterOffsetY = 0x40;
+void camera_update_x_follow_comic_clamped(
+    RuntimeState &state, std::int32_t viewport_width, std::int32_t room_width,
+    std::int32_t center_offset = kCameraCenterOffsetX);
+void camera_update_y_follow_comic_clamped(
+    RuntimeState &state, std::int32_t viewport_height, std::int32_t room_height,
+    std::int32_t center_offset = kCameraCenterOffsetY);
 
 } // namespace comic2

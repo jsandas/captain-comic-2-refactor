@@ -1129,6 +1129,7 @@ SoundPlaybackResult handle_sound_command(SoundPlaybackState &state,
     state.is_enabled = false;
     break;
   case SoundCommand::Stop:
+    state.stop_requested = true;
     state.is_playing = false;
     state.priority = 0;
     state.tick_remaining = 0;
@@ -1203,9 +1204,9 @@ void flush_audio_events(RuntimeState &state, IAudioBackend *backend) {
     return;
   }
 
-  if (!state.audio.sound.is_playing && state.audio.pending_events.empty()) {
+  if (state.audio.sound.stop_requested) {
+    state.audio.sound.stop_requested = false;
     backend->stop();
-    return;
   }
 
   for (const auto event : state.audio.pending_events) {

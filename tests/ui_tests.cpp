@@ -1423,7 +1423,7 @@ void test_startup_demo_backstory_and_config_options_screens() {
          "MainMenuTheme must be playing while in player selection Menu");
 
   // Confirming slot 0 ("COMIC") stops menu music, loads GAME.001 (Level 0
-  // Room 0 at authentic spawn x=568, y=80, camera_x=472, camera_y=0), displays
+  // Room 0 at authentic spawn x=568, y=80, camera_x=472, camera_y=16), displays
   // the FRPAK.001 game UI first, and then blits the 208x160 gameplay window
   comic2::update_game_lifecycle(state, press_enter);
   expect(state.ui.lifecycle_state == comic2::GameLifecycleState::Gameplay &&
@@ -1434,9 +1434,9 @@ void test_startup_demo_backstory_and_config_options_screens() {
   expect(state.player.x == 568 && state.player.y == 80,
          "New player save slot must spawn at authentic Level 0 Room 0 position "
          "(568, 80)");
-  expect(state.camera_x == 464 && state.camera_y == 0,
-         "Initial camera must center on Comic's starting position (camera_x = "
-         "568 - 104 = 464)");
+  expect(state.camera_x == 472 && state.camera_y == 16,
+         "Initial camera must center on Comic starting position (camera_x = "
+         "568 - 96 = 472, camera_y = 80 - 64 = 16)");
   expect(state.player.fireball_meter_counter == 0U &&
              state.player.shield_meter_subbars == 0U &&
              state.player.shield_fill_countdown == 12U,

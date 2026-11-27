@@ -1221,10 +1221,14 @@ void hud_render_overlay(EgaPlanarSurface &surface, const RuntimeState &state) {
 
     // 4. Four 2-digit 8x16 LED counters at X = 0x120 (288), Y = 0x5E, 0x77,
     // 0x90, 0xA9 (1000:183a..1870, hud_draw_shield_bar at 1000:3a5f):
-    // - Row 0 (Y = 0x5E = 94): Blastola Cola (firepower) count
-    // - Row 1 (Y = 0x77 = 119): Gem count
-    // - Row 2 (Y = 0x90 = 144): Fuel count
-    // - Row 3 (Y = 0xA9 = 169): Lives count
+    // - Row 0 (Y = 0x5E = 94): byte [DS:0x021C]. UNVERIFIED mapping to
+    //   Blastola Cola/firepower: no writes to it found in disassembly, and
+    //   1000:4FD0 (mov CL,[0x21C]) uses it as an entity-table (0x8EE) loop
+    //   bound, so the "cola" semantics are a plausible guess only.
+    // - Row 1 (Y = 0x77 = 119): word [DS:0x0224]. UNVERIFIED mapping to gems
+    //   (no writes found in disassembly).
+    // - Row 2 (Y = 0x90 = 144): Fuel count (corroborated)
+    // - Row 3 (Y = 0xA9 = 169): Lives count (corroborated)
     blit_two_digit_8x16(0x120U, 0x5EU, state.player.firepower);
     blit_two_digit_8x16(0x120U, 0x77U, state.player.gems);
     blit_two_digit_8x16(0x120U, 0x90U, state.player.fuel);

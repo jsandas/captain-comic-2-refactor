@@ -191,7 +191,8 @@ void advance_transition_state(RuntimeState &state) {
 
   camera_update_y_follow_comic_clamped(
       state, kViewportHeightPixels,
-      std::max<std::int32_t>(0, state.room_grid.tile_h * 16));
+      std::max<std::int32_t>(0, state.room_grid.tile_h * 16),
+      kCameraCenterOffsetY);
 }
 
 void apply_default_airborne_physics(RuntimeState &state) {
@@ -519,10 +520,12 @@ void handle_level_transition(RuntimeState &state) {
                                 : kViewportHeightPixels;
   camera_update_x_follow_comic_clamped(
       candidate_state, vp_w,
-      std::max<std::int32_t>(0, candidate_state.room_grid.tile_w * 16));
+      std::max<std::int32_t>(0, candidate_state.room_grid.tile_w * 16),
+      kCameraCenterOffsetX);
   camera_update_y_follow_comic_clamped(
       candidate_state, vp_h,
-      std::max<std::int32_t>(0, candidate_state.room_grid.tile_h * 16));
+      std::max<std::int32_t>(0, candidate_state.room_grid.tile_h * 16),
+      kCameraCenterOffsetY);
 
   state.transition_state = candidate_state.transition_state;
 
@@ -584,13 +587,15 @@ void handle_airborne_physics(RuntimeState &state) {
     camera_update_x_follow_comic_clamped(
         state, vp_w,
         std::max<std::int32_t>(
-            0, static_cast<std::int32_t>(state.room_grid.tile_w) * 16));
+            0, static_cast<std::int32_t>(state.room_grid.tile_w) * 16),
+        kCameraCenterOffsetX);
   }
   if (state.bezel_frame.has_value() && state.room_grid.tile_h > 0) {
     camera_update_y_follow_comic_clamped(
         state, kPlayfieldHeight,
         std::max<std::int32_t>(
-            0, static_cast<std::int32_t>(state.room_grid.tile_h) * 16));
+            0, static_cast<std::int32_t>(state.room_grid.tile_h) * 16),
+        kCameraCenterOffsetY);
   }
   state.player.is_physics_active = state.player.is_airborne;
 }
@@ -626,13 +631,15 @@ void handle_grounded_physics(RuntimeState &state) {
     camera_update_x_follow_comic_clamped(
         state, vp_w,
         std::max<std::int32_t>(
-            0, static_cast<std::int32_t>(state.room_grid.tile_w) * 16));
+            0, static_cast<std::int32_t>(state.room_grid.tile_w) * 16),
+        kCameraCenterOffsetX);
   }
   if (state.bezel_frame.has_value() && state.room_grid.tile_h > 0) {
     camera_update_y_follow_comic_clamped(
         state, kPlayfieldHeight,
         std::max<std::int32_t>(
-            0, static_cast<std::int32_t>(state.room_grid.tile_h) * 16));
+            0, static_cast<std::int32_t>(state.room_grid.tile_h) * 16),
+        kCameraCenterOffsetY);
   }
   state.player.is_physics_active = state.player.is_airborne;
 }
