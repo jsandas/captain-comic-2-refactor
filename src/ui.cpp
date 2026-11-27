@@ -597,26 +597,26 @@ Ega4PlaneImage make_8x15_mode_bar_image(bool selected) {
 // Planes 0 and 1 are 0x00; Planes 2 and 3 carry the bitmap (EGA color 0x0C,
 // bright red on a black 8x16 cell).
 constexpr std::uint8_t kHudDigit8x16Bitmaps[10][16] = {
-    {0x3C, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x00,
-     0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x3C, 0x00}, // 0 (0x996A)
-    {0x00, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x00,
-     0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x00, 0x00}, // 1 (0x99AE)
-    {0x3C, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x3C,
-     0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x3C, 0x00}, // 2 (0x99F2)
-    {0x3C, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x3C,
-     0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x3C, 0x00}, // 3 (0x9A36)
-    {0x00, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x3C,
-     0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x00, 0x00}, // 4 (0x9A7A)
-    {0x3C, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x3C,
-     0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x3C, 0x00}, // 5 (0x9ABE)
-    {0x3C, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x3C,
-     0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x3C, 0x00}, // 6 (0x9B02)
-    {0x3C, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x00,
-     0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x00, 0x00}, // 7 (0x9B46)
-    {0x3C, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x3C,
-     0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x3C, 0x00}, // 8 (0x9B8A)
-    {0x3C, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x3C,
-     0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x3C, 0x00}, // 9 (0x9BCE)
+    {0x3C, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x00, 0x42, 0x42, 0x42, 0x42,
+     0x42, 0x42, 0x3C, 0x00}, // 0 (0x996A)
+    {0x00, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x00, 0x02, 0x02, 0x02, 0x02,
+     0x02, 0x02, 0x00, 0x00}, // 1 (0x99AE)
+    {0x3C, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x3C, 0x40, 0x40, 0x40, 0x40,
+     0x40, 0x40, 0x3C, 0x00}, // 2 (0x99F2)
+    {0x3C, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x3C, 0x02, 0x02, 0x02, 0x02,
+     0x02, 0x02, 0x3C, 0x00}, // 3 (0x9A36)
+    {0x00, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x3C, 0x02, 0x02, 0x02, 0x02,
+     0x02, 0x02, 0x00, 0x00}, // 4 (0x9A7A)
+    {0x3C, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x3C, 0x02, 0x02, 0x02, 0x02,
+     0x02, 0x02, 0x3C, 0x00}, // 5 (0x9ABE)
+    {0x3C, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x3C, 0x42, 0x42, 0x42, 0x42,
+     0x42, 0x42, 0x3C, 0x00}, // 6 (0x9B02)
+    {0x3C, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x00, 0x02, 0x02, 0x02, 0x02,
+     0x02, 0x02, 0x00, 0x00}, // 7 (0x9B46)
+    {0x3C, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x3C, 0x42, 0x42, 0x42, 0x42,
+     0x42, 0x42, 0x3C, 0x00}, // 8 (0x9B8A)
+    {0x3C, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x3C, 0x02, 0x02, 0x02, 0x02,
+     0x02, 0x02, 0x3C, 0x00}, // 9 (0x9BCE)
 };
 
 Ega4PlaneImage make_8x16_hud_digit_image(std::uint8_t digit) {
@@ -659,21 +659,137 @@ Ega4PlaneImage make_8x16_meter_cell_image(std::uint8_t lit_subbars) {
 // (SEG_STACK:0xA28E at 0x12D5E, 4 color planes)
 constexpr std::array<std::uint8_t, 128> kHudInventoryKeyIconPlanes = {
     // Plane 0
-    0x3f, 0xfc, 0x3e, 0x7c, 0x3e, 0x7c, 0x3e, 0x7c, 0x3e, 0x7c, 0x3e,
-    0x7c, 0x20, 0x04, 0x20, 0x04, 0x3e, 0x7c, 0x3e, 0x7c, 0x3e, 0x7c,
-    0x1e, 0x78, 0x1e, 0x78, 0x0e, 0x70, 0x06, 0x60, 0x03, 0xc0,
+    0x3f,
+    0xfc,
+    0x3e,
+    0x7c,
+    0x3e,
+    0x7c,
+    0x3e,
+    0x7c,
+    0x3e,
+    0x7c,
+    0x3e,
+    0x7c,
+    0x20,
+    0x04,
+    0x20,
+    0x04,
+    0x3e,
+    0x7c,
+    0x3e,
+    0x7c,
+    0x3e,
+    0x7c,
+    0x1e,
+    0x78,
+    0x1e,
+    0x78,
+    0x0e,
+    0x70,
+    0x06,
+    0x60,
+    0x03,
+    0xc0,
     // Plane 1
-    0x15, 0x54, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x04, 0x00,
-    0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x04,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x15,
+    0x54,
+    0x00,
+    0x00,
+    0x00,
+    0x04,
+    0x00,
+    0x00,
+    0x00,
+    0x04,
+    0x00,
+    0x00,
+    0x00,
+    0x04,
+    0x00,
+    0x00,
+    0x00,
+    0x04,
+    0x00,
+    0x00,
+    0x00,
+    0x04,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
     // Plane 2
-    0x00, 0x00, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x01,
-    0x80, 0x1f, 0xf8, 0x1f, 0xf8, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80,
-    0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x00, 0x00,
+    0x00,
+    0x00,
+    0x01,
+    0x80,
+    0x01,
+    0x80,
+    0x01,
+    0x80,
+    0x01,
+    0x80,
+    0x01,
+    0x80,
+    0x1f,
+    0xf8,
+    0x1f,
+    0xf8,
+    0x01,
+    0x80,
+    0x01,
+    0x80,
+    0x01,
+    0x80,
+    0x01,
+    0x80,
+    0x01,
+    0x80,
+    0x01,
+    0x80,
+    0x01,
+    0x80,
+    0x00,
+    0x00,
     // Plane 3
-    0x3f, 0xfc, 0x1e, 0xfc, 0x1e, 0xfc, 0x1e, 0xfc, 0x1e, 0xfc, 0x1e,
-    0xfc, 0x1e, 0xfc, 0x00, 0x04, 0x1e, 0xfc, 0x1e, 0xfc, 0x1e, 0xfc,
-    0x0e, 0xf8, 0x0e, 0xf8, 0x06, 0xf0, 0x02, 0xe0, 0x00, 0x00,
+    0x3f,
+    0xfc,
+    0x1e,
+    0xfc,
+    0x1e,
+    0xfc,
+    0x1e,
+    0xfc,
+    0x1e,
+    0xfc,
+    0x1e,
+    0xfc,
+    0x1e,
+    0xfc,
+    0x00,
+    0x04,
+    0x1e,
+    0xfc,
+    0x1e,
+    0xfc,
+    0x1e,
+    0xfc,
+    0x0e,
+    0xf8,
+    0x0e,
+    0xf8,
+    0x06,
+    0xf0,
+    0x02,
+    0xe0,
+    0x00,
+    0x00,
 };
 
 void write_bcd_digit(EgaPlanarSurface &surface, std::size_t x, std::size_t y,
@@ -1060,8 +1176,8 @@ void hud_render_overlay(EgaPlanarSurface &surface, const RuntimeState &state) {
       }
     };
 
-    // 1. Score (8 digits inside the FRPAK.001 score box at X = 240..296, Y = 16)
-    // Authentic coordinates: X = 0xF0..0x128 (240..296), Y = 0x10 (16).
+    // 1. Score (8 digits inside the FRPAK.001 score box at X = 240..296, Y =
+    // 16) Authentic coordinates: X = 0xF0..0x128 (240..296), Y = 0x10 (16).
     {
       const std::uint32_t full_score =
           (static_cast<std::uint32_t>(state.player.score_high) << 16U) |
@@ -1078,14 +1194,15 @@ void hud_render_overlay(EgaPlanarSurface &surface, const RuntimeState &state) {
       }
     }
 
-    // 2. Fireball meter (6 cells of 8x16 at X = 0x100..0x128 (256..296), Y = 0x2A (42))
-    // Lights up to 12 half-bars when blaster is charged (1000:3aa0..3b50).
+    // 2. Fireball meter (6 cells of 8x16 at X = 0x100..0x128 (256..296), Y =
+    // 0x2A (42)) Lights up to 12 half-bars when blaster is charged
+    // (1000:3aa0..3b50).
     {
       std::uint8_t fireball_subbars = 0U;
       if (state.player.firepower > 0U) {
-        const int active_shots = static_cast<int>(std::count_if(
-            state.projectiles.begin(), state.projectiles.end(),
-            [](const ProjectileState &p) { return p.active; }));
+        const int active_shots = static_cast<int>(
+            std::count_if(state.projectiles.begin(), state.projectiles.end(),
+                          [](const ProjectileState &p) { return p.active; }));
         const int drain =
             static_cast<int>(state.player.weapon_cooldown) + active_shots * 2;
         fireball_subbars =
@@ -1094,16 +1211,17 @@ void hud_render_overlay(EgaPlanarSurface &surface, const RuntimeState &state) {
       blit_meter_bar_6cells(0x100U, 0x2AU, fireball_subbars);
     }
 
-    // 3. Shield meter (6 cells of 8x16 at X = 0x100..0x128 (256..296), Y = 0x43 (67))
-    // Lights up 0..12 half-bars matching Comic's 12-unit shield/HP (1000:3a92, 1000:3b51).
+    // 3. Shield meter (6 cells of 8x16 at X = 0x100..0x128 (256..296), Y = 0x43
+    // (67)) Lights up 0..12 half-bars matching Comic's 12-unit shield/HP
+    // (1000:3a92, 1000:3b51).
     {
       const std::uint8_t shield_subbars =
           std::min<std::uint8_t>(12U, state.player.hp);
       blit_meter_bar_6cells(0x100U, 0x43U, shield_subbars);
     }
 
-    // 4. Four 2-digit 8x16 LED counters at X = 0x120 (288), Y = 0x5E, 0x77, 0x90, 0xA9
-    // (1000:183a..1870, hud_draw_shield_bar at 1000:3a5f):
+    // 4. Four 2-digit 8x16 LED counters at X = 0x120 (288), Y = 0x5E, 0x77,
+    // 0x90, 0xA9 (1000:183a..1870, hud_draw_shield_bar at 1000:3a5f):
     // - Row 0 (Y = 0x5E = 94): Blastola Cola (firepower) count
     // - Row 1 (Y = 0x77 = 119): Gem count
     // - Row 2 (Y = 0x90 = 144): Fuel count
@@ -1568,6 +1686,15 @@ bool ui_enter_new_player(RuntimeState &state, const std::string &player_name) {
   state.ui.editing_player_name = false;
   ui_init_player_slot_menu(state);
   state.ui.selected_option_index = target_slot;
+
+  // Initialize new player starting position to the authentic Level 0 Room 0
+  // spawn (0x0238, 0x0050) when still at the default bootstrap coordinates.
+  if (state.current_level == 0U && state.current_room == 0U &&
+      state.player.x == 64 && state.player.y == 96) {
+    state.player.x = 568; // 0x0238 (Level 0 Room 0 spawn X)
+    state.player.y = 80;  // 0x0050 (Level 0 Room 0 spawn Y)
+    state.player.facing_right = true;
+  }
 
   savegame_write_snapshot(state, state.saved_snapshot_bytes);
   if (!state.ui.persistence_dir.empty()) {
@@ -2236,12 +2363,30 @@ bool transition_game_lifecycle(RuntimeState &state,
     }
     break;
   case GameLifecycleState::Gameplay:
+    if (state.ui.lifecycle_state == GameLifecycleState::Menu) {
+      // Authentic post-menu selection sound stop (1000:5EEA: mov AX, 3; int 3).
+      state.audio.pending_events.clear();
+      handle_sound_command(state.audio.sound, SoundCommand::Stop, 0U, 0U, 0U);
+    }
     state.ui.menu_state = MenuState::None;
     state.ui.player_slot_menu_active = false;
     state.player.is_physics_active = true;
     if (state.room_grid.tile_data.empty() && !state.assets_root.empty()) {
       load_room_tilemap_from_asset_root(
           state, state.assets_root, state.current_level, state.current_room);
+    }
+    if (state.ui.lifecycle_state == GameLifecycleState::Menu &&
+        state.room_grid.tile_w > 0U && state.room_grid.tile_h > 0U) {
+      // Position camera on Comic's spawn coordinates (spr_render_player at
+      // 1000:18EC..1925).
+      const std::int32_t vp_w =
+          state.bezel_frame.has_value() ? kPlayfieldWidth : 320;
+      const std::int32_t vp_h =
+          state.bezel_frame.has_value() ? kPlayfieldHeight : 200;
+      camera_update_x_follow_comic_clamped(
+          state, vp_w, static_cast<std::int32_t>(state.room_grid.tile_w) * 16);
+      camera_update_y_follow_comic_clamped(
+          state, vp_h, static_cast<std::int32_t>(state.room_grid.tile_h) * 16);
     }
     if (state.ui.modal_prompt == "Room Event Triggered" ||
         state.ui.room_event_modal_active) {
@@ -2533,14 +2678,40 @@ bool update_game_lifecycle(RuntimeState &state, const InputState &input,
             loaded_save = savegame_read_slot_file(state, state.assets_root,
                                                   state.ui.active_player_slot);
           }
-          if (!loaded_save) {
+          if (!loaded_save ||
+              (state.current_level == 0U && state.current_room == 0U &&
+               state.player.x == 64 && state.player.y == 96)) {
             state.current_level = 0U;
             state.current_room = 0U;
+            state.player.x = 568; // 0x0238
+            state.player.y = 80;  // 0x0050
+            state.player.facing_right = true;
           }
+          // Authentic post-load player setup (1000:182C & 1000:2281..22F6).
+          state.player.hp = 12U;
+          if (state.player.fuel < 25U) {
+            state.player.fuel = 25U;
+          }
+          if (state.player.lives == 0U) {
+            state.player.lives = 4U;
+          }
+          state.player.x_vel = 0;
+          state.player.y_vel = 0;
+          state.player.is_airborne = false;
+          state.player.animation_state = 0U;
+          state.player.invuln_ticks = 0U;
           if (!state.assets_root.empty()) {
             load_room_tilemap_from_asset_root(state, state.assets_root,
                                               state.current_level,
                                               state.current_room);
+          }
+          if (state.bezel_frame.has_value()) {
+            // Display FRPAK.001 game UI + HUD for 1 tick first (1000:16F9..18DF
+            // + timer_delay_ticks(1) at 1000:170E), then blit the 208x160
+            // gameplay window with Comic at the starting position (1000:227B ->
+            // 1000:2300 spr_render_player).
+            state.ui.gameplay_ui_pre_blit_ticks = 1U;
+            state.ui.gameplay_initial_spawn_pending = true;
           }
           return transition_game_lifecycle(state, GameLifecycleState::Gameplay);
         }
@@ -2575,6 +2746,10 @@ bool update_game_lifecycle(RuntimeState &state, const InputState &input,
     }
     if (state.player.hp == 0 && state.player.lives == 0) {
       return transition_game_lifecycle(state, GameLifecycleState::GameOver);
+    }
+    if (state.ui.gameplay_initial_spawn_pending) {
+      state.ui.gameplay_initial_spawn_pending = false;
+      return true;
     }
     if (dispatcher != nullptr) {
       state.input = input;
@@ -2648,6 +2823,18 @@ void render_game_lifecycle_frame(EgaPlanarSurface &surface,
     ui_render_game_selection_panel(surface, state);
     break;
   case GameLifecycleState::Gameplay:
+    if (state.ui.gameplay_ui_pre_blit_ticks > 0U) {
+      --state.ui.gameplay_ui_pre_blit_ticks;
+      if (state.bezel_frame.has_value() &&
+          state.bezel_frame->width_bytes <= surface.row_stride_bytes() &&
+          state.bezel_frame->height_rows <=
+              static_cast<std::uint16_t>(surface.height_rows())) {
+        load_ega_palette_table(state, make_default_ega_palette());
+        gfx_rle_blit_opaque_4plane(surface, 0, 0, *state.bezel_frame);
+        hud_render_overlay(surface, state);
+        break;
+      }
+    }
     render_bootstrap_surface(surface, state);
     break;
   case GameLifecycleState::Save:

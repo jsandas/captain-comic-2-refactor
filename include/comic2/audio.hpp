@@ -146,6 +146,7 @@ public:
 
   virtual bool initialize() = 0;
   virtual void enqueue_event(AudioEvent event) = 0;
+  virtual void stop() {}
   virtual void update() = 0;
   virtual void shutdown() = 0;
 

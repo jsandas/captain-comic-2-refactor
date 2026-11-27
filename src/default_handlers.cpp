@@ -493,12 +493,12 @@ void handle_level_transition(RuntimeState &state) {
   candidate_state.transition_state.frame_index = 0;
   candidate_state.transition_state.tick_count = 0;
   room_transition_player_entry_sequence(candidate_state);
-  const std::int32_t vp_w =
-      candidate_state.bezel_frame.has_value() ? kPlayfieldWidth
-                                              : kViewportWidthPixels;
-  const std::int32_t vp_h =
-      candidate_state.bezel_frame.has_value() ? kPlayfieldHeight
-                                              : kViewportHeightPixels;
+  const std::int32_t vp_w = candidate_state.bezel_frame.has_value()
+                                ? kPlayfieldWidth
+                                : kViewportWidthPixels;
+  const std::int32_t vp_h = candidate_state.bezel_frame.has_value()
+                                ? kPlayfieldHeight
+                                : kViewportHeightPixels;
   camera_update_x_follow_comic_clamped(
       candidate_state, vp_w,
       std::max<std::int32_t>(0, candidate_state.room_grid.tile_w * 16));

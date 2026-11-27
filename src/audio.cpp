@@ -719,6 +719,14 @@ public:
     }
   }
 
+  void stop() override {
+    sound_driver_.stop();
+    phase_ = 0.0;
+    if (available_ && device_id_ != 0) {
+      SDL_ClearQueuedAudio(device_id_);
+    }
+  }
+
   void update() override {
     if (!available_ || device_id_ == 0) {
       return;
@@ -1192,6 +1200,11 @@ void queue_audio_event(RuntimeState &state, AudioEvent event) {
 void flush_audio_events(RuntimeState &state, IAudioBackend *backend) {
   if (backend == nullptr) {
     state.audio.pending_events.clear();
+    return;
+  }
+
+  if (!state.audio.sound.is_playing && state.audio.pending_events.empty()) {
+    backend->stop();
     return;
   }
 

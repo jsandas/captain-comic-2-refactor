@@ -240,6 +240,8 @@ struct UiState {
   bool title_music_started = false;
   bool joystick_calibration_active = false;
   std::uint8_t joystick_calibration_step = 0;
+  std::uint8_t gameplay_ui_pre_blit_ticks = 0;
+  bool gameplay_initial_spawn_pending = false;
 };
 
 struct RuntimeState {
