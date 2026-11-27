@@ -424,6 +424,9 @@ void reset_player_state_for_level_entry(RuntimeState &state) {
 
 void reset_player_respawn_state(RuntimeState &state) {
   state.player.hp = 12;
+  state.player.fireball_meter_counter = 0;
+  state.player.shield_meter_subbars = 0;
+  state.player.shield_fill_countdown = 12;
   state.player.x = 160;
   state.player.y = 160;
   state.player.x_vel = 0;
@@ -521,6 +524,9 @@ void handle_level_transition(RuntimeState &state) {
   }
 
   if (loaded) {
+    candidate_state.player.fireball_meter_counter = 0U;
+    candidate_state.player.shield_meter_subbars = 0U;
+    candidate_state.player.shield_fill_countdown = 12U;
     state = std::move(candidate_state);
     queue_audio_event(state, AudioEvent::LevelStart);
   } else {

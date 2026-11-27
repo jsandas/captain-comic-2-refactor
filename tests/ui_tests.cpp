@@ -1437,6 +1437,11 @@ void test_startup_demo_backstory_and_config_options_screens() {
   expect(state.camera_x == 464 && state.camera_y == 0,
          "Initial camera must center on Comic's starting position (camera_x = "
          "568 - 104 = 464)");
+  expect(state.player.fireball_meter_counter == 0U &&
+             state.player.shield_meter_subbars == 0U &&
+             state.player.shield_fill_countdown == 12U,
+         "Room entry must initialize [0x8ea]=0, [0x8eb]=0, and [0x8ed]=12 "
+         "(1000:227b..2281)");
   expect(state.ui.gameplay_ui_pre_blit_ticks == 1U &&
              state.ui.gameplay_initial_spawn_pending,
          "Selecting player save slot must stage 1-tick FRPAK.001 UI pre-blit "

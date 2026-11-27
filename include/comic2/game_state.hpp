@@ -103,6 +103,15 @@ struct PlayerState {
   std::uint8_t damage_recoil_ticks = 0;
   std::uint8_t weapon_cooldown =
       0; // [DS:0x08a8] firing rate limiter cooldown timer
+  std::uint8_t fireball_meter_counter =
+      23; // [DS:0x08ea] 0..23 fireball meter counter (hud_draw_number_word /
+          // hud_draw_char at 1000:3ace..3b50)
+  std::uint8_t shield_meter_subbars =
+      12; // [DS:0x08eb] 0..12 lit shield sub-bars (hud_flash_item at
+          // 1000:3b51..3bc5)
+  std::uint8_t shield_fill_countdown =
+      0; // [DS:0x08ed] 12-tick room-entry/pickup shield fill countdown
+         // (1000:2281, decremented at 1000:29d0)
 
   // Confirmed inventory and equipment fields from comic2_data.asm (DS:0x08ae -
   // 0x08b6):

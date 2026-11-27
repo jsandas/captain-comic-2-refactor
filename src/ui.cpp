@@ -1196,28 +1196,26 @@ void hud_render_overlay(EgaPlanarSurface &surface, const RuntimeState &state) {
     }
 
     // 2. Fireball meter (6 cells of 8x16 at X = 0x100..0x128 (256..296), Y =
-    // 0x2A (42)) Lights up to 12 half-bars when blaster is charged
-    // (1000:3aa0..3b50).
+    // 0x2A (42)). Driven by [DS:0x08ea] (0..23): hud_draw_number_word
+    // (1000:3ace) and hud_draw_char (1000:3b12) update one half-bar on each
+    // even transition of [0x8ea] (0->1, 2->3, ..., 22->23), lighting
+    // ([0x8ea] + 1) / 2 sub-bars (0..12).
     {
-      std::uint8_t fireball_subbars = 0U;
-      if (state.player.firepower > 0U) {
-        const int active_shots = static_cast<int>(
-            std::count_if(state.projectiles.begin(), state.projectiles.end(),
-                          [](const ProjectileState &p) { return p.active; }));
-        const int drain =
-            static_cast<int>(state.player.weapon_cooldown) + active_shots * 2;
-        fireball_subbars =
-            static_cast<std::uint8_t>(std::clamp(12 - drain, 0, 12));
-      }
+      const std::uint8_t clamped_counter =
+          std::min<std::uint8_t>(0x17U, state.player.fireball_meter_counter);
+      const std::uint8_t fireball_subbars =
+          static_cast<std::uint8_t>((clamped_counter + 1U) / 2U);
       blit_meter_bar_6cells(0x100U, 0x2AU, fireball_subbars);
     }
 
     // 3. Shield meter (6 cells of 8x16 at X = 0x100..0x128 (256..296), Y = 0x43
-    // (67)) Lights up 0..12 half-bars matching Comic's 12-unit shield/HP
-    // (1000:3a92, 1000:3b51).
+    // (67)). Driven by [DS:0x08eb] (0..12 lit sub-bars), filled 1 sub-bar per
+    // tick by hud_flash_item (1000:3b51) while the room-entry/pickup countdown
+    // [DS:0x08ed] = 12 (1000:2281) decrements at 1000:29c9..29d4, and
+    // decremented on damage via 1000:3b8c (1000:4ddc..4e15).
     {
       const std::uint8_t shield_subbars =
-          std::min<std::uint8_t>(12U, state.player.hp);
+          std::min<std::uint8_t>(12U, state.player.shield_meter_subbars);
       blit_meter_bar_6cells(0x100U, 0x43U, shield_subbars);
     }
 
@@ -2688,7 +2686,12 @@ bool update_game_lifecycle(RuntimeState &state, const InputState &input,
             state.player.y = 80;  // 0x0050
             state.player.facing_right = true;
           }
-          // Authentic post-load player setup (1000:182C & 1000:2281..22F6).
+          // Authentic post-load player setup (1000:182C & 1000:227B..22F6):
+          // hud_draw_digits (1000:3aa0) sets [0x8ea]=0, hud_draw_keys
+          // (1000:3a92) sets [0x8eb]=0, and 1000:2281 sets [0x8ed]=12.
+          state.player.fireball_meter_counter = 0U;
+          state.player.shield_meter_subbars = 0U;
+          state.player.shield_fill_countdown = 12U;
           state.player.hp = 12U;
           if (state.player.fuel < 25U) {
             state.player.fuel = 25U;
