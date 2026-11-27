@@ -477,6 +477,49 @@ make_projectile_placeholder_sprite(const ProjectileState &projectile) {
 
 } // namespace
 
+void gfx_blit_masked_sprite(EgaPlanarSurface &dest, std::int32_t x_pixels,
+                            std::int32_t y_rows,
+                            const MaskedSpriteRecord &record) {
+  if (!is_valid_masked_sprite_record(record)) {
+    return;
+  }
+
+  const std::size_t width_bytes =
+      (static_cast<std::size_t>(record.width_pixels) + 7U) / 8U;
+  const std::size_t width_px = width_bytes * 8U;
+  const std::size_t height_px = static_cast<std::size_t>(record.height_rows);
+
+  for (std::size_t row = 0; row < height_px; ++row) {
+    const std::int32_t dy = y_rows + static_cast<std::int32_t>(row);
+    if (dy < 0 || dy >= static_cast<std::int32_t>(dest.height_rows())) {
+      continue;
+    }
+    const std::size_t row_off = row * width_bytes;
+    for (std::size_t sx = 0; sx < width_px; ++sx) {
+      const std::int32_t dx = x_pixels + static_cast<std::int32_t>(sx);
+      if (dx < 0 || dx >= static_cast<std::int32_t>(dest.width_pixels())) {
+        continue;
+      }
+      const std::size_t sbyte = sx / 8U;
+      const std::uint8_t sbit = static_cast<std::uint8_t>(7U - (sx % 8U));
+      const std::uint8_t mask_val = record.mask_bytes[row_off + sbyte];
+      const bool keep_bg = ((mask_val >> sbit) & 0x1U) != 0U;
+
+      std::uint8_t sprite_color = 0U;
+      for (std::size_t plane = 0; plane < 4U; ++plane) {
+        if (((record.planes[plane][row_off + sbyte] >> sbit) & 0x1U) != 0U) {
+          sprite_color |= static_cast<std::uint8_t>(1U << plane);
+        }
+      }
+
+      const std::uint8_t bg_color =
+          keep_bg ? read_surface_color(dest, dx, dy) : 0U;
+      set_surface_pixel(dest, dx, dy,
+                        static_cast<std::uint8_t>(bg_color | sprite_color));
+    }
+  }
+}
+
 void gfx_rle_blit_opaque_4plane(EgaPlanarSurface &dest, std::size_t x_pixels,
                                 std::size_t y_rows,
                                 const Ega4PlaneImage &image_data) {
@@ -838,6 +881,73 @@ std::array<std::array<std::uint8_t, 4>, 16> make_default_ega_palette() {
       {255, 255, 50, 255},  // 14: Yellow
       {255, 255, 255, 255}, // 15: White
   }};
+}
+
+std::array<std::array<std::uint8_t, 4>, 16>
+make_ega_palette_from_registers(const std::array<std::uint8_t, 16> &registers) {
+  const auto base = make_default_ega_palette();
+  std::array<std::array<std::uint8_t, 4>, 16> out{};
+  for (std::size_t i = 0; i < 16U; ++i) {
+    const std::uint8_t reg = registers[i];
+    const std::size_t idx =
+        static_cast<std::size_t>((reg & 0x07U) | ((reg & 0x10U) >> 1U));
+    out[i] = base[idx];
+  }
+  return out;
+}
+
+std::array<std::array<std::uint8_t, 4>, 16> make_ega_palette_ds_0013() {
+  static constexpr std::array<std::uint8_t, 16> kRegs = {
+      0x00, 0x10, 0x07, 0x17, 0x01, 0x01, 0x01, 0x01,
+      0x11, 0x11, 0x11, 0x11, 0x00, 0x00, 0x00, 0x00,
+  };
+  return make_ega_palette_from_registers(kRegs);
+}
+
+std::array<std::array<std::uint8_t, 4>, 16> make_ega_palette_ds_0024() {
+  static constexpr std::array<std::uint8_t, 16> kRegs = {
+      0x00, 0x10, 0x07, 0x17, 0x06, 0x06, 0x06, 0x06,
+      0x16, 0x16, 0x16, 0x16, 0x14, 0x14, 0x14, 0x14,
+  };
+  return make_ega_palette_from_registers(kRegs);
+}
+
+std::array<std::array<std::uint8_t, 4>, 16> make_ega_palette_ds_abc0() {
+  static constexpr std::array<std::uint8_t, 16> kRegs = {
+      0x00, 0x10, 0x07, 0x17, 0x01, 0x02, 0x03, 0x04,
+      0x05, 0x06, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16,
+  };
+  return make_ega_palette_from_registers(kRegs);
+}
+
+std::array<std::array<std::uint8_t, 4>, 16>
+make_ega_palette_ds_abd1(std::uint16_t cycle_tick, bool post_wipe) {
+  std::array<std::uint8_t, 16> regs = {
+      0x00, 0x01, 0x02, 0x00, 0x04, 0x00, 0x06, 0x07,
+      0x10, 0x11, 0x12, 0x13, 0x14, 0x00, 0x16, 0x17,
+  };
+  if (!post_wipe) {
+    // cs:0x7106 pre-wipe star twinkle on indices 3, 5, 13
+    const bool phase = (cycle_tick % 2U) == 0U;
+    regs[3] = phase ? 0x10U : 0x00U;
+    regs[5] = phase ? 0x10U : 0x00U;
+    regs[13] = phase ? 0x00U : 0x10U;
+  } else {
+    // cs:0x7120 post-wipe pulsing lights on indices 3, 5, 13
+    const bool bright = (cycle_tick % 3U) == 2U;
+    regs[3] = bright ? 0x12U : 0x02U;
+    regs[5] = bright ? 0x16U : 0x06U;
+    regs[13] = bright ? 0x14U : 0x04U;
+  }
+  return make_ega_palette_from_registers(regs);
+}
+
+std::array<std::array<std::uint8_t, 4>, 16> make_ega_palette_ds_abe2() {
+  static constexpr std::array<std::uint8_t, 16> kRegs = {
+      0x00, 0x10, 0x07, 0x17, 0x02, 0x02, 0x02, 0x02,
+      0x12, 0x12, 0x12, 0x12, 0x14, 0x14, 0x14, 0x14,
+  };
+  return make_ega_palette_from_registers(kRegs);
 }
 
 std::array<std::array<std::uint8_t, 4>, 16> make_black_palette_mask() {

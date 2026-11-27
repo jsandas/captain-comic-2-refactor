@@ -41,6 +41,30 @@ SDL_Scancode dos_to_sdl_scancode(std::uint8_t dos_scancode) {
   switch (dos_scancode) {
   case 0x01:
     return SDL_SCANCODE_ESCAPE;
+  case 0x02:
+    return SDL_SCANCODE_1;
+  case 0x03:
+    return SDL_SCANCODE_2;
+  case 0x04:
+    return SDL_SCANCODE_3;
+  case 0x05:
+    return SDL_SCANCODE_4;
+  case 0x06:
+    return SDL_SCANCODE_5;
+  case 0x07:
+    return SDL_SCANCODE_6;
+  case 0x08:
+    return SDL_SCANCODE_7;
+  case 0x09:
+    return SDL_SCANCODE_8;
+  case 0x0A:
+    return SDL_SCANCODE_9;
+  case 0x0B:
+    return SDL_SCANCODE_0;
+  case 0x0C:
+    return SDL_SCANCODE_MINUS;
+  case 0x0D:
+    return SDL_SCANCODE_EQUALS;
   case 0x0E:
     return SDL_SCANCODE_BACKSPACE;
   case 0x0F:
@@ -65,6 +89,10 @@ SDL_Scancode dos_to_sdl_scancode(std::uint8_t dos_scancode) {
     return SDL_SCANCODE_O;
   case 0x19:
     return SDL_SCANCODE_P;
+  case 0x1A:
+    return SDL_SCANCODE_LEFTBRACKET;
+  case 0x1B:
+    return SDL_SCANCODE_RIGHTBRACKET;
   case 0x1C:
     return SDL_SCANCODE_RETURN;
   case 0x1D:
@@ -87,8 +115,16 @@ SDL_Scancode dos_to_sdl_scancode(std::uint8_t dos_scancode) {
     return SDL_SCANCODE_K;
   case 0x26:
     return SDL_SCANCODE_L;
+  case 0x27:
+    return SDL_SCANCODE_SEMICOLON;
+  case 0x28:
+    return SDL_SCANCODE_APOSTROPHE;
+  case 0x29:
+    return SDL_SCANCODE_GRAVE;
   case 0x2A:
     return SDL_SCANCODE_LSHIFT;
+  case 0x2B:
+    return SDL_SCANCODE_BACKSLASH;
   case 0x2C:
     return SDL_SCANCODE_Z;
   case 0x2D:
@@ -103,24 +139,108 @@ SDL_Scancode dos_to_sdl_scancode(std::uint8_t dos_scancode) {
     return SDL_SCANCODE_N;
   case 0x32:
     return SDL_SCANCODE_M;
+  case 0x33:
+    return SDL_SCANCODE_COMMA;
+  case 0x34:
+    return SDL_SCANCODE_PERIOD;
+  case 0x35:
+    return SDL_SCANCODE_SLASH;
   case 0x36:
     return SDL_SCANCODE_RSHIFT;
+  case 0x37:
+    return SDL_SCANCODE_KP_MULTIPLY;
   case 0x38:
     return SDL_SCANCODE_LALT;
   case 0x39:
     return SDL_SCANCODE_SPACE;
+  case 0x3A:
+    return SDL_SCANCODE_CAPSLOCK;
+  case 0x3B:
+    return SDL_SCANCODE_F1;
+  case 0x3C:
+    return SDL_SCANCODE_F2;
+  case 0x3D:
+    return SDL_SCANCODE_F3;
+  case 0x3E:
+    return SDL_SCANCODE_F4;
+  case 0x3F:
+    return SDL_SCANCODE_F5;
+  case 0x40:
+    return SDL_SCANCODE_F6;
+  case 0x41:
+    return SDL_SCANCODE_F7;
+  case 0x42:
+    return SDL_SCANCODE_F8;
+  case 0x43:
+    return SDL_SCANCODE_F9;
+  case 0x44:
+    return SDL_SCANCODE_F10;
+  case 0x45:
+    return SDL_SCANCODE_NUMLOCKCLEAR;
+  case 0x46:
+    return SDL_SCANCODE_SCROLLLOCK;
+  case 0x47:
+    return SDL_SCANCODE_HOME;
   case 0x48:
     return SDL_SCANCODE_UP;
+  case 0x49:
+    return SDL_SCANCODE_PAGEUP;
+  case 0x4A:
+    return SDL_SCANCODE_KP_MINUS;
   case 0x4B:
     return SDL_SCANCODE_LEFT;
+  case 0x4C:
+    return SDL_SCANCODE_KP_5;
   case 0x4D:
     return SDL_SCANCODE_RIGHT;
+  case 0x4E:
+    return SDL_SCANCODE_KP_PLUS;
+  case 0x4F:
+    return SDL_SCANCODE_END;
   case 0x50:
     return SDL_SCANCODE_DOWN;
+  case 0x51:
+    return SDL_SCANCODE_PAGEDOWN;
   case 0x52:
     return SDL_SCANCODE_INSERT;
   default:
     return SDL_SCANCODE_UNKNOWN;
+  }
+}
+
+std::uint8_t sdl_to_dos_scancode(SDL_Scancode sc) {
+  for (std::uint8_t dos = 0x01U; dos <= 0x52U; ++dos) {
+    if (dos_to_sdl_scancode(dos) == sc) {
+      return dos;
+    }
+  }
+  switch (sc) {
+  case SDL_SCANCODE_KP_ENTER:
+    return 0x1CU;
+  case SDL_SCANCODE_RCTRL:
+    return 0x1DU;
+  case SDL_SCANCODE_RALT:
+    return 0x38U;
+  case SDL_SCANCODE_KP_7:
+    return 0x47U;
+  case SDL_SCANCODE_KP_8:
+    return 0x48U;
+  case SDL_SCANCODE_KP_9:
+    return 0x49U;
+  case SDL_SCANCODE_KP_4:
+    return 0x4BU;
+  case SDL_SCANCODE_KP_6:
+    return 0x4DU;
+  case SDL_SCANCODE_KP_1:
+    return 0x4FU;
+  case SDL_SCANCODE_KP_2:
+    return 0x50U;
+  case SDL_SCANCODE_KP_3:
+    return 0x51U;
+  case SDL_SCANCODE_KP_0:
+    return 0x52U;
+  default:
+    return 0U;
   }
 }
 #endif
@@ -255,6 +375,10 @@ bool KeyboardInputHandler::poll_events(InputState &input) {
     input.down_pressed = false;
     input.fire_pressed = false;
     input.mode_activate_pressed = false;
+    input.pause_pressed = false;
+    input.any_key_pressed = false;
+    input.sdl_keyboard_active = true;
+    input.last_dos_scancode = 0;
 
     const SDL_Scancode custom_left = dos_to_sdl_scancode(impl_->bindings.left);
     const SDL_Scancode custom_right =
@@ -272,10 +396,16 @@ bool KeyboardInputHandler::poll_events(InputState &input) {
         break;
 
       case SDL_KEYDOWN:
-        if (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
-          impl_->quit_requested = true;
-        } else if (custom_left != SDL_SCANCODE_UNKNOWN &&
-                   event.key.keysym.scancode == custom_left) {
+        if (event.key.repeat == 0) {
+          input.any_key_pressed = true;
+          const std::uint8_t dos_sc =
+              sdl_to_dos_scancode(event.key.keysym.scancode);
+          if (dos_sc != 0U) {
+            input.last_dos_scancode = dos_sc;
+          }
+        }
+        if (custom_left != SDL_SCANCODE_UNKNOWN &&
+            event.key.keysym.scancode == custom_left) {
           input.left_pressed = true;
         } else if (custom_right != SDL_SCANCODE_UNKNOWN &&
                    event.key.keysym.scancode == custom_right) {
@@ -380,11 +510,16 @@ bool KeyboardInputHandler::poll_events(InputState &input) {
   input.fire_pressed = read_env_bool("COMIC2_INPUT_FIRE");
   input.mode_activate_pressed = read_env_bool("COMIC2_INPUT_MODE_ACTIVATE");
   input.teleport_pressed = read_env_bool("COMIC2_INPUT_TELEPORT");
+  input.any_key_pressed = false;
+  input.sdl_keyboard_active = false;
+  input.last_dos_scancode = 0;
 
   if (const char *scancode_env = std::getenv("COMIC2_INPUT_SCANCODE");
       scancode_env != nullptr && *scancode_env != '\0') {
     const auto scancode =
         static_cast<std::uint8_t>(std::strtoul(scancode_env, nullptr, 0));
+    input.last_dos_scancode = scancode;
+    input.any_key_pressed = (scancode != 0U);
     apply_dos_scancode_to_input(input, scancode, impl_->bindings);
   }
 

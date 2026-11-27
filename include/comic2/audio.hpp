@@ -29,6 +29,8 @@ enum class AudioEvent {
   VictoryFanfare,
   ModalPrompt,
   IntroFlash,
+  IntroOverlay,
+  IntroFlashB,
   ItemActivate,
 };
 

@@ -69,6 +69,12 @@ decode_frdata1_sprites(std::span<const std::uint8_t> payload);
 std::optional<Ega4PlaneImage>
 load_frpak_fullscreen(const std::filesystem::path &path);
 
+const Ega4PlaneImage &get_embedded_starfield_screen();
+const Ega4PlaneImage &get_embedded_credits_overlay();
+const Ega4PlaneImage &get_embedded_config_prompt_overlay();
+const std::vector<MaskedSpriteRecord> &get_embedded_comic_walk_sprites();
+const std::vector<MaskedSpriteRecord> &get_embedded_menu_sprites();
+
 void load_ui_assets(RuntimeState &state,
                     const std::filesystem::path &asset_root);
 

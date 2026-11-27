@@ -45,6 +45,9 @@ struct InputState {
   bool mode_activate_pressed = false;
   bool teleport_pressed = false;
   bool pause_pressed = false;
+  bool any_key_pressed = false;
+  bool sdl_keyboard_active = false;
+  std::uint8_t last_dos_scancode = 0;
 
   bool operator==(const InputState &) const = default;
 };
@@ -232,6 +235,10 @@ struct UiState {
   bool key_rebinding_active = false;
   std::size_t key_rebinding_step = 0;
   DosKeyBindings pending_key_bindings{};
+  std::uint16_t startup_demo_tick = 0;
+  bool title_music_started = false;
+  bool joystick_calibration_active = false;
+  std::uint8_t joystick_calibration_step = 0;
 };
 
 struct RuntimeState {
@@ -258,6 +265,14 @@ struct RuntimeState {
   std::optional<Ega4PlaneImage> victory_screen;
   std::optional<Ega4PlaneImage> menu_panel;
   std::vector<MaskedSpriteRecord> menu_buttons;
+  std::optional<Ega4PlaneImage> starfield_screen;
+  std::optional<Ega4PlaneImage> credits_overlay;
+  std::optional<Ega4PlaneImage> config_prompt_overlay;
+  std::vector<MaskedSpriteRecord> demo_ship_sprites;
+  std::vector<MaskedSpriteRecord> demo_flash_sprites;
+  std::vector<Ega4PlaneImage> demo_overlay_images;
+  std::vector<MaskedSpriteRecord> demo_beam_sprites;
+  std::vector<MaskedSpriteRecord> demo_walk_sprites;
 
   PlayerState player;
   InputState input;
