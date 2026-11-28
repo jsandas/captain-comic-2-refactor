@@ -131,8 +131,10 @@ void test_entity_runtime_deterministic_activation() {
 
 void test_tile_collision_deterministic_query() {
   comic2::TileCollisionConfig config;
+  // Authentic probe semantics (1000:2c9d): solid when tile id <= threshold.
+  expect(comic2::tile_meets_threshold(0x00, 0x01), "Gate A threshold mismatch");
   expect(comic2::tile_meets_threshold(0x01, 0x01), "Gate A threshold mismatch");
-  expect(!comic2::tile_meets_threshold(0x00, 0x01),
+  expect(!comic2::tile_meets_threshold(0x02, 0x01),
          "Gate A threshold mismatch");
   expect(comic2::is_hazard_tile(0xF0, config), "Gate A hazard mismatch");
   expect(!comic2::is_hazard_tile(0x80, config), "Gate A hazard mismatch");

@@ -713,14 +713,16 @@ void test_render_bootstrap_frame_hides_player_on_invuln_blink_frames() {
 
   comic2::MemoryFramePresenter visible_presenter;
   comic2::render_bootstrap_frame(visible_presenter, state);
+  // Probe a pixel inside Comic's sprite body (the sprite's very corner is
+  // transparent padding).
   const auto visible_color =
-      read_color_index(visible_presenter.last_frame(), 0, 0);
+      read_color_index(visible_presenter.last_frame(), 8, 8);
 
   state.player.invuln_ticks = 3;
   comic2::MemoryFramePresenter hidden_presenter;
   comic2::render_bootstrap_frame(hidden_presenter, state);
   const auto hidden_color =
-      read_color_index(hidden_presenter.last_frame(), 0, 0);
+      read_color_index(hidden_presenter.last_frame(), 8, 8);
 
   check(
       visible_color != hidden_color,
@@ -804,7 +806,9 @@ void test_render_bootstrap_frame_asset_backed_hash_regression() {
         "asset-backed bootstrap render should present a frame");
   const auto hash =
       comic2::validation::hash_surface_planes(presenter.last_frame());
-  constexpr std::uint64_t kExpectedHash = 0x1f693466a2ef8a45ULL;
+  // Golden hash updated after the player sprite fix: the player now renders
+  // the authentic EXE-embedded Comic frames instead of level-sheet record 0.
+  constexpr std::uint64_t kExpectedHash = 0xc4dfd1f0a61c0eaaULL;
   check(hash == kExpectedHash,
         "asset-backed bootstrap frame hash regression mismatch");
 }
@@ -991,40 +995,31 @@ void test_render_bootstrap_frame_renders_level_sprite_with_tileset_and_bezel() {
   }
   state.level_tileset = {tile};
 
-  // Populate 16 valid player sprite records in level_sprites where sprite 0
-  // has color 0x09 (plane 0 and plane 3 set) across a 16x24 sprite.
-  state.level_sprites.resize(16);
-  for (auto &rec : state.level_sprites) {
-    rec.width_pixels = 16U;
-    rec.height_rows = 24U;
-    rec.mask_bytes.assign(48U, 0xFFU);
-    for (auto &plane : rec.planes) {
-      plane.assign(48U, 0x00U);
-    }
-    rec.planes[0].assign(48U, 0xFFU);
-    rec.planes[3].assign(48U, 0xFFU);
-  }
-
+  // The player renders the EXE-embedded Comic frames (three facing right,
+  // three facing left); level_sprites entries are monster/prop graphics and
+  // are no longer used for the player, so none are populated here.
   comic2::MemoryFramePresenter presenter;
   comic2::render_bootstrap_frame(presenter, state);
 
   check(presenter.has_frame(), "frame must be presented");
   const auto &frame = presenter.last_frame();
+  // Probe a pixel inside Comic's sprite body: the sprite's top-left corner is
+  // transparent padding, so read 8px right / 16px down of the player origin.
   const auto sprite_pixel = read_color_index(
-      frame, static_cast<std::size_t>(state.player.x + comic2::kPlayfieldX),
-      static_cast<std::size_t>(state.player.y + comic2::kPlayfieldY));
-  check(sprite_pixel == 0x09U,
-        "player level_sprite should render with bezel viewport offset even "
+      frame, static_cast<std::size_t>(state.player.x + comic2::kPlayfieldX + 8),
+      static_cast<std::size_t>(state.player.y + comic2::kPlayfieldY + 16));
+  check(sprite_pixel != 0x00U,
+        "player sprite should render with bezel viewport offset even "
         "when level_tileset background is active");
   const auto unoffset_pixel =
-      read_color_index(frame, static_cast<std::size_t>(state.player.x),
-                       static_cast<std::size_t>(state.player.y));
+      read_color_index(frame, static_cast<std::size_t>(state.player.x + 8),
+                       static_cast<std::size_t>(state.player.y + 16));
   check(unoffset_pixel == 0x00U,
-        "player level_sprite should not render at unoffset coordinates when "
+        "player sprite should not render at unoffset coordinates when "
         "bezel is active");
 }
 
-void test_render_bootstrap_frame_rejects_oversized_level_sprite_records() {
+void test_render_bootstrap_frame_ignores_level_sprites_for_player() {
   auto state = comic2::make_default_runtime_state();
   state.player.x = 16;
   state.player.y = 24;
@@ -1051,11 +1046,15 @@ void test_render_bootstrap_frame_rejects_oversized_level_sprite_records() {
         "oversized level sprite record should fall back without throwing or "
         "blitting out of bounds");
   const auto &frame = presenter.last_frame();
-  const auto marker_pixel =
-      read_color_index(frame, static_cast<std::size_t>(state.player.x),
-                       static_cast<std::size_t>(state.player.y));
-  check(marker_pixel == 0x0CU,
-        "oversized level sprite should fall back to player marker");
+  // The player must render the embedded Comic sprite, not the oversized
+  // level_sprites entry: probe a painted body pixel (8px right, 16px down of
+  // the sprite origin; the sprite's top-left is transparent padding).
+  const auto body_pixel =
+      read_color_index(frame, static_cast<std::size_t>(state.player.x + 8),
+                       static_cast<std::size_t>(state.player.y + 16));
+  check(body_pixel != 0x00U,
+        "player should render the embedded Comic sprite regardless of "
+        "level_sprites contents");
 }
 
 void test_render_bootstrap_frame_forwards_dynamic_palette_to_presenter() {
@@ -1073,7 +1072,10 @@ void test_render_bootstrap_frame_forwards_dynamic_palette_to_presenter() {
 
   state.player.lantern_equipped = true;
   comic2::render_bootstrap_frame(presenter, state);
-  check(presenter.last_palette() == comic2::make_default_ega_palette(),
+  auto expected_palette = comic2::make_default_ega_palette();
+  comic2::apply_level_palette_script(expected_palette, state.current_level,
+                                     state.palette.cycle_ticks);
+  check(presenter.last_palette() == expected_palette,
         "equipping lantern should forward standard EGA palette to presenter");
 }
 
@@ -1143,7 +1145,7 @@ void run_bootstrap_wiring_tests() {
   test_scene_bootstrap_does_not_commit_failed_candidate_state();
   test_scene_bootstrap_falls_back_with_missing_assets();
   test_render_bootstrap_frame_renders_level_sprite_with_tileset_and_bezel();
-  test_render_bootstrap_frame_rejects_oversized_level_sprite_records();
+  test_render_bootstrap_frame_ignores_level_sprites_for_player();
   test_render_bootstrap_frame_forwards_dynamic_palette_to_presenter();
   test_render_loop_drives_live_frontend_lifecycle();
 }

@@ -188,6 +188,9 @@ struct RoomEventScriptState {
 struct EgaPaletteState {
   bool loaded = false;
   std::array<std::array<std::uint8_t, 4>, 16> entries{};
+  // 18.2 Hz PIT ticks driving the per-level retrace palette script
+  // (cs:0x0278, e.g. animated waterfalls on registers 3/5/13).
+  std::uint32_t cycle_ticks = 0;
 
   bool operator==(const EgaPaletteState &) const = default;
 };
@@ -263,6 +266,8 @@ struct RuntimeState {
 
   RoomTileGrid room_grid;
   std::array<std::uint16_t, 2> tile_hazard_bounds{0, 0};
+  // Solid wall/ceiling threshold (ds:0x0292) from the tileset header word 0.
+  std::uint16_t tile_ceiling_threshold{0};
   std::vector<Ega4PlaneImage> level_tileset;
   std::vector<MaskedSpriteRecord> level_sprites;
   std::vector<std::uint8_t> level_script_bytes;

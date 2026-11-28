@@ -22,7 +22,8 @@ constexpr std::int16_t kViewportWidthPixels = 320;
 constexpr std::int16_t kViewportHeightPixels = 200;
 constexpr std::int16_t kPlayerHeightPixels = 32;
 constexpr TileCollisionConfig kDefaultCollision{
-    .solid_tile_threshold = 0x01,
+    .floor_tile_threshold = 0x2A,
+    .ceiling_tile_threshold = 0x1C,
     .hazard_tile_min = 0xF0,
     .hazard_tile_max = 0xFF,
 };
@@ -56,11 +57,11 @@ void clamp_player_vertical_bounds(RuntimeState &state) {
 }
 
 void update_room_transition_from_player_bounds(RuntimeState &state) {
+  const std::int16_t room_width =
+      state.room_grid.tile_w > 0
+          ? static_cast<std::int16_t>(state.room_grid.tile_w * 16)
+          : static_cast<std::int16_t>(kViewportWidthPixels);
   if (state.level_data != nullptr) {
-    const std::int16_t room_width =
-        state.room_grid.tile_w > 0
-            ? static_cast<std::int16_t>(state.room_grid.tile_w * 16)
-            : static_cast<std::int16_t>(kViewportWidthPixels);
 
     std::optional<RoomTransitionZone> matched_zone =
         check_room_transition_zone(state.current_level, state.current_room,
@@ -126,7 +127,7 @@ void update_room_transition_from_player_bounds(RuntimeState &state) {
     return;
   }
 
-  if (state.player.x >= kViewportWidthPixels) {
+  if (state.player.x >= room_width) {
     state.pending_room_transition = PendingRoomTransition{
         .target_room = static_cast<std::uint16_t>(state.current_room + 1),
         .target_player_x = 0,

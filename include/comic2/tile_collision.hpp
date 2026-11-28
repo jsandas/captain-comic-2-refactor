@@ -9,13 +9,24 @@
 namespace comic2 {
 
 struct TileCollisionConfig {
-  std::uint8_t solid_tile_threshold = 0x01;
+  // Authentic semantics (player_check_swimming / check_floor_collision,
+  // 1000:2c9d, and CORE_ENGINE.md ds:0x0292-0x0296): a tile is SOLID when
+  // tile_id <= threshold, not the reverse. The per-level thresholds live in
+  // the tileset (.0) header: word 0 = solid wall/ceiling (ds:0x0292), word 1
+  // = solid floor (ds:0x0294), word 2 = water/hazard top (ds:0x0296). Level 1
+  // ships 28/42/51. The defaults here are level 1's floor/ceiling values and
+  // are overridden at runtime by load_room_tilemap_from_asset_root.
+  std::uint8_t floor_tile_threshold = 0x2A;   // ds:0x0294 (42)
+  std::uint8_t ceiling_tile_threshold = 0x1C; // ds:0x0292 (28)
   std::uint8_t hazard_tile_min = 0xF0;
   std::uint8_t hazard_tile_max = 0xFF;
 };
 
-// Authentic tile IDs
-inline constexpr std::uint8_t kPassableTileId = 0x00;
+// Authentic tile IDs. The "passable" replacement tile is the level-1
+// background tile id (0x50): the per-level tile-trigger tables (touch_trigger
+// values 57/80/139 for ids 26-28) map broken/opened special tiles to
+// background ids above the floor threshold so they read as passable.
+inline constexpr std::uint8_t kPassableTileId = 0x50;
 inline constexpr std::uint8_t kGrateTileId = 0x1A;
 inline constexpr std::uint8_t kLockedDoorTileId = 0x1B;
 inline constexpr std::uint8_t kWarpBeaconTileId = 0x1C;

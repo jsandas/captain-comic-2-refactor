@@ -16,9 +16,10 @@ comic2::RoomTileGrid make_flat_floor_grid() {
   grid.tile_w = 2;
   grid.tile_h = 2;
   grid.row_pointers = {0, 2};
+  // 0x50 = passable background (above the floor threshold), 0x02 = solid.
   grid.tile_data = {
-      0x00,
-      0x00,
+      0x50,
+      0x50,
       0x02,
       0x02,
   };
@@ -30,8 +31,9 @@ comic2::RoomTileGrid make_three_row_floor_grid() {
   grid.tile_w = 2;
   grid.tile_h = 4;
   grid.row_pointers = {0, 2, 4, 6};
+  // 0x80 = passable background (id above the floor threshold), 0x02 = solid.
   grid.tile_data = {
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00,
+      0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x02, 0x80,
   };
   return grid;
 }
@@ -192,7 +194,7 @@ void test_grounded_physics_respects_tile_height_without_ground_y() {
   state.player.is_physics_active = true;
 
   const comic2::TileCollisionConfig collision{
-      .solid_tile_threshold = 2,
+      .floor_tile_threshold = 2,
   };
 
   comic2::apply_grounded_physics_tick(state, comic2::PlayerMotionConfig{},
@@ -218,7 +220,7 @@ void test_grounded_physics_does_not_snap_when_rising() {
   state.player.is_physics_active = true;
 
   const comic2::TileCollisionConfig collision{
-      .solid_tile_threshold = 2,
+      .floor_tile_threshold = 2,
   };
 
   comic2::apply_grounded_physics_tick(state, comic2::PlayerMotionConfig{},
@@ -356,7 +358,7 @@ void test_verified_dos_feet_probe_tile_collision() {
   comic2::RuntimeState state;
   state.room_grid =
       make_flat_floor_grid(); // 2x2 grid, row 0: {0,0}, row 1 (y>=16): {2,2}
-  const comic2::TileCollisionConfig collision{.solid_tile_threshold = 2};
+  const comic2::TileCollisionConfig collision{.floor_tile_threshold = 2};
   const comic2::PlayerMotionConfig dos_motion =
       comic2::make_original_dos_motion_config();
 
@@ -396,7 +398,7 @@ void test_verified_dos_feet_probe_tile_collision() {
 void test_confirmed_inventory_fields_and_boots_effect() {
   comic2::RuntimeState state;
   state.room_grid = make_flat_floor_grid();
-  const comic2::TileCollisionConfig collision{.solid_tile_threshold = 2};
+  const comic2::TileCollisionConfig collision{.floor_tile_threshold = 2};
   const comic2::PlayerMotionConfig base_motion{};
 
   expect(!state.player.boots_equipped, "boots should be unequipped by default");
@@ -472,7 +474,7 @@ void test_confirmed_inventory_fields_and_boots_effect() {
 
 void test_max_air_drift_enforcement_and_accumulation() {
   comic2::RuntimeState state;
-  const comic2::TileCollisionConfig collision{.solid_tile_threshold = 2};
+  const comic2::TileCollisionConfig collision{.floor_tile_threshold = 2};
 
   // 1. Direct step mode: air_drift_step (10) clamped by max_air_drift (5)
   comic2::PlayerMotionConfig clamped_motion{

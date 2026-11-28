@@ -90,14 +90,19 @@ bool player_check_jump_tile_collision(const RuntimeState &state,
                                       const TileCollisionConfig &collision,
                                       const PlayerMotionConfig &motion) {
   // Probes tile at feet level (matches player_do_jump 1000:2d61 probe at Y +
-  // 0xD)
+  // 0xD). Authentic probe semantics (1000:2c9d): the tile blocks when
+  // tile_id <= the solid/ceiling threshold (ds:0x0292).
   const std::int16_t probe_y =
       static_cast<std::int16_t>(test_y + motion.feet_probe_offset_y);
   const auto tile = get_tile_at_pixels(state.room_grid, test_x, probe_y);
   if (!tile.has_value()) {
     return false;
   }
-  return *tile >= collision.solid_tile_threshold;
+  const std::uint16_t ceiling =
+      state.tile_ceiling_threshold != 0U
+          ? state.tile_ceiling_threshold
+          : static_cast<std::uint16_t>(collision.ceiling_tile_threshold);
+  return *tile <= ceiling;
 }
 
 void apply_input_tick(RuntimeState &state, const PlayerMotionConfig &motion) {
@@ -246,6 +251,24 @@ void apply_airborne_physics_tick(RuntimeState &state,
   }
 
   state.player.y += state.player.y_vel;
+
+  // Ceiling stop (player_update_physics 1000:2a9e..2ac5): while rising, a
+  // solid tile at the head (tile <= ds:0x0292) zeroes the rise and snaps the
+  // anchor back down to (y & ~15) + 10.
+  if (state.player.y_vel < 0) {
+    const auto head_tile =
+        get_tile_at_pixels(state.room_grid, state.player.x, state.player.y);
+    const std::uint16_t ceiling =
+        state.tile_ceiling_threshold != 0U
+            ? state.tile_ceiling_threshold
+            : static_cast<std::uint16_t>(collision.ceiling_tile_threshold);
+    if (head_tile.has_value() && *head_tile <= ceiling) {
+      state.player.y_vel = 0;
+      state.player.y =
+          static_cast<std::int16_t>((state.player.y & 0xFFF0) + 10);
+    }
+  }
+
   state.player.y_vel = static_cast<std::int16_t>(std::min<std::int32_t>(
       state.player.y_vel + effective_motion.gravity_per_tick,
       effective_motion.max_fall_speed));

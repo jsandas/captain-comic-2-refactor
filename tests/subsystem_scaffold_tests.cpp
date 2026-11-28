@@ -1508,41 +1508,50 @@ void test_phase11_player_animation_state_mapping_contract() {
            "player animation contract should map to the expected sprite index");
   };
 
+  // Embedded Comic frame set: three frames facing right (0-2) followed by the
+  // mirrored three facing left (3-5). Walk wraps over the 3-frame cycle,
+  // airborne poses use the mid-stride frame, everything else uses frame 0.
   assert_index(static_cast<std::uint8_t>(comic2::PlayerAnimationState::Idle), 0,
                true, 0U);
   assert_index(
       static_cast<std::uint8_t>(comic2::PlayerAnimationState::WalkCycle), 0,
-      true, 1U);
+      true, 0U);
   assert_index(
       static_cast<std::uint8_t>(comic2::PlayerAnimationState::WalkCycle), 1,
+      true, 1U);
+  assert_index(
+      static_cast<std::uint8_t>(comic2::PlayerAnimationState::WalkCycle), 2,
       true, 2U);
   assert_index(
-      static_cast<std::uint8_t>(comic2::PlayerAnimationState::WalkCycle), 2,
-      true, 3U);
+      static_cast<std::uint8_t>(comic2::PlayerAnimationState::WalkCycle), 3,
+      true, 0U);
   assert_index(
       static_cast<std::uint8_t>(comic2::PlayerAnimationState::JumpRise), 0,
-      true, 4U);
+      true, 1U);
+  assert_index(
+      static_cast<std::uint8_t>(comic2::PlayerAnimationState::JumpFall), 0,
+      true, 1U);
   assert_index(static_cast<std::uint8_t>(comic2::PlayerAnimationState::Attack),
-               0, true, 5U);
+               0, true, 0U);
   assert_index(static_cast<std::uint8_t>(comic2::PlayerAnimationState::Hurt), 0,
-               true, 6U);
+               true, 0U);
   assert_index(static_cast<std::uint8_t>(comic2::PlayerAnimationState::Death),
-               0, true, 7U);
+               0, true, 0U);
 
   assert_index(static_cast<std::uint8_t>(comic2::PlayerAnimationState::Idle), 0,
-               false, 8U);
+               false, 3U);
   assert_index(
       static_cast<std::uint8_t>(comic2::PlayerAnimationState::WalkCycle), 2,
-      false, 11U);
+      false, 5U);
   assert_index(
       static_cast<std::uint8_t>(comic2::PlayerAnimationState::JumpRise), 0,
-      false, 12U);
+      false, 4U);
   assert_index(static_cast<std::uint8_t>(comic2::PlayerAnimationState::Attack),
-               0, false, 13U);
+               0, false, 3U);
   assert_index(static_cast<std::uint8_t>(comic2::PlayerAnimationState::Hurt), 0,
-               false, 14U);
+               false, 3U);
   assert_index(static_cast<std::uint8_t>(comic2::PlayerAnimationState::Death),
-               0, false, 15U);
+               0, false, 3U);
 }
 
 void test_phase11_fr000_all_rooms_layouts_tile_bounds_and_entities() {

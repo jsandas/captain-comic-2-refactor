@@ -23,77 +23,54 @@
 namespace comic2 {
 
 namespace {
+// Comic's in-game frame set is the EXE-embedded walk sprite block
+// (kSegStackComicWalkSprites: three frames facing right + the mirrored three
+// facing left). The per-level sprite sheet records are monster/prop graphics
+// (level 1's records 0-2 are the walking-plant entity frames) and must not be
+// used for the player.
+constexpr std::size_t kComicFacingFrames = 3U;
+
+std::size_t comic_facing_base(const RuntimeState &state) {
+  return state.player.facing_right ? 0U : kComicFacingFrames;
+}
+
+std::size_t comic_pose_index(const RuntimeState &state) {
+  const auto animation_state =
+      static_cast<PlayerAnimationState>(state.player.animation_state);
+  switch (animation_state) {
+  case PlayerAnimationState::WalkCycle:
+    return static_cast<std::size_t>(state.player.animation_frame) %
+           kComicFacingFrames;
+  case PlayerAnimationState::JumpRise:
+  case PlayerAnimationState::JumpFall:
+    return 1U;
+  default:
+    return 0U;
+  }
+}
+
 std::size_t fallback_player_sprite_frame_index(const RuntimeState &state) {
   const auto animation_state =
       static_cast<PlayerAnimationState>(state.player.animation_state);
-  const auto facing_offset = state.player.facing_right ? 0U : 8U;
-
   switch (animation_state) {
   case PlayerAnimationState::WalkCycle:
-    return static_cast<std::size_t>(state.player.animation_frame) +
-           facing_offset;
+    return static_cast<std::size_t>(state.player.animation_frame) %
+           kComicFacingFrames;
   case PlayerAnimationState::JumpRise:
   case PlayerAnimationState::JumpFall:
-    return 4U + facing_offset;
-  case PlayerAnimationState::Attack:
-    return 5U + facing_offset;
-  case PlayerAnimationState::Hurt:
-    return 6U + facing_offset;
-  case PlayerAnimationState::Death:
-    return 7U + facing_offset;
-  case PlayerAnimationState::Idle:
+    return 1U;
   default:
-    return static_cast<std::size_t>(state.player.hp % 4U) + facing_offset;
+    return 0U;
   }
 }
 
 bool has_valid_player_sprite_sheet(const RuntimeState &state) {
-  if (state.level_sprites.size() < 16U) {
-    return false;
-  }
-
-  return std::all_of(state.level_sprites.begin(), state.level_sprites.end(),
-                     [](const MaskedSpriteRecord &sprite) {
-                       return sprite.width_pixels > 0U &&
-                              sprite.height_rows > 0U &&
-                              !sprite.mask_bytes.empty() &&
-                              !sprite.planes[0].empty();
-                     });
+  (void)state;
+  return get_embedded_comic_walk_sprites().size() >= kComicFacingFrames * 2U;
 }
 
 std::size_t mapped_player_sprite_frame_index(const RuntimeState &state) {
-  const auto animation_state =
-      static_cast<PlayerAnimationState>(state.player.animation_state);
-  const auto facing_offset = state.player.facing_right ? 0U : 8U;
-
-  std::size_t base_index = 0U;
-  switch (animation_state) {
-  case PlayerAnimationState::Idle:
-    base_index = 0U;
-    break;
-  case PlayerAnimationState::WalkCycle:
-    base_index =
-        1U + (static_cast<std::size_t>(state.player.animation_frame) % 3U);
-    break;
-  case PlayerAnimationState::JumpRise:
-  case PlayerAnimationState::JumpFall:
-    base_index = 4U;
-    break;
-  case PlayerAnimationState::Attack:
-    base_index = 5U;
-    break;
-  case PlayerAnimationState::Hurt:
-    base_index = 6U;
-    break;
-  case PlayerAnimationState::Death:
-    base_index = 7U;
-    break;
-  default:
-    base_index = 0U;
-    break;
-  }
-
-  return base_index + facing_offset;
+  return comic_facing_base(state) + comic_pose_index(state);
 }
 
 bool draw_level_sprite_record(EgaPlanarSurface &frame,
@@ -101,11 +78,12 @@ bool draw_level_sprite_record(EgaPlanarSurface &frame,
                               std::size_t sprite_index,
                               std::int32_t x_offset = 0,
                               std::int32_t y_offset = 0) {
-  if (sprite_index >= state.level_sprites.size()) {
+  const auto &comic_frames = get_embedded_comic_walk_sprites();
+  if (sprite_index >= comic_frames.size()) {
     return false;
   }
 
-  const auto &record = state.level_sprites[sprite_index];
+  const auto &record = comic_frames[sprite_index];
   const std::size_t width_bytes =
       (static_cast<std::size_t>(record.width_pixels) + 7U) / 8U;
   const std::size_t plane_bytes =
@@ -492,6 +470,49 @@ bool extract_tile_from_asset(const Ega4PlaneImage &atlas,
   return true;
 }
 
+// Draws a 16x16 tile clipped to [clip_x0, clip_x1) x [clip_y0, clip_y1) so
+// partially visible tiles at the viewport edges are rendered (sub-tile scroll).
+void blit_tile_clipped(EgaPlanarSurface &frame, std::int32_t px0,
+                       std::int32_t py0, const Ega4PlaneImage &tile,
+                       std::int32_t clip_x0, std::int32_t clip_y0,
+                       std::int32_t clip_x1, std::int32_t clip_y1) {
+  if (px0 >= clip_x0 && py0 >= clip_y0 && px0 + kTileSizePixels <= clip_x1 &&
+      py0 + kTileSizePixels <= clip_y1 && (px0 % 8) == 0) {
+    gfx_rle_blit_opaque_4plane(frame, static_cast<std::size_t>(px0),
+                               static_cast<std::size_t>(py0), tile);
+    return;
+  }
+  const std::int32_t fw = static_cast<std::int32_t>(frame.width_pixels());
+  const std::int32_t fh = static_cast<std::int32_t>(frame.height_rows());
+  const std::int32_t x_begin = std::max({px0, clip_x0, 0});
+  const std::int32_t x_end =
+      std::min({px0 + static_cast<std::int32_t>(kTileSizePixels), clip_x1, fw});
+  const std::int32_t y_begin = std::max({py0, clip_y0, 0});
+  const std::int32_t y_end =
+      std::min({py0 + static_cast<std::int32_t>(kTileSizePixels), clip_y1, fh});
+  for (std::int32_t y = y_begin; y < y_end; ++y) {
+    const std::size_t src_row = static_cast<std::size_t>(y - py0);
+    for (std::int32_t x = x_begin; x < x_end; ++x) {
+      const std::size_t sx = static_cast<std::size_t>(x - px0);
+      const std::size_t src_idx = src_row * tile.width_bytes + sx / 8U;
+      const std::uint8_t src_mask =
+          static_cast<std::uint8_t>(0x80U >> (sx % 8U));
+      const std::size_t dst_byte = static_cast<std::size_t>(x / 8);
+      const std::uint8_t dst_mask = static_cast<std::uint8_t>(0x80U >> (x % 8));
+      for (std::size_t plane = 0; plane < 4; ++plane) {
+        std::uint8_t v =
+            frame.get_plane_byte(plane, dst_byte, static_cast<std::size_t>(y));
+        if (tile.planes[plane][src_idx] & src_mask) {
+          v = static_cast<std::uint8_t>(v | dst_mask);
+        } else {
+          v = static_cast<std::uint8_t>(v & ~dst_mask);
+        }
+        frame.set_plane_byte(plane, dst_byte, static_cast<std::size_t>(y), v);
+      }
+    }
+  }
+}
+
 bool draw_room_tilemap_from_level_tileset(EgaPlanarSurface &frame,
                                           const RuntimeState &state,
                                           std::int32_t x_offset = 0,
@@ -512,50 +533,35 @@ bool draw_room_tilemap_from_level_tileset(EgaPlanarSurface &frame,
       (clip_h > 0 ? clip_h
                   : static_cast<std::int32_t>(frame.height_rows()) - y_offset);
 
-  const std::size_t visible_tiles_x =
-      static_cast<std::size_t>(vp_right - x_offset) / kTileSizePixels;
+  const std::int32_t cam_x = std::max<std::int32_t>(0, state.camera_x);
+  const std::int32_t cam_y = std::max<std::int32_t>(0, state.camera_y);
   const std::size_t start_tile_x =
-      state.camera_x > 0 ? static_cast<std::size_t>(state.camera_x) /
-                               static_cast<std::size_t>(kTileSizePixels)
-                         : 0U;
-  const std::size_t end_tile_x =
-      std::min(static_cast<std::size_t>(state.room_grid.tile_w),
-               start_tile_x + visible_tiles_x + 1U);
+      static_cast<std::size_t>(cam_x / kTileSizePixels);
+  const std::size_t start_tile_y =
+      static_cast<std::size_t>(cam_y / kTileSizePixels);
 
-  for (std::size_t tile_y = 0; tile_y < state.room_grid.tile_h; ++tile_y) {
+  for (std::size_t tile_y = start_tile_y; tile_y < state.room_grid.tile_h;
+       ++tile_y) {
     const std::int32_t py0 =
-        static_cast<std::int32_t>(tile_y * kTileSizePixels) - state.camera_y +
-        y_offset;
-
-    if (py0 + kTileSizePixels <= y_offset) {
-      continue; // tile entirely above viewport top
-    }
+        static_cast<std::int32_t>(tile_y * kTileSizePixels) - cam_y + y_offset;
     if (py0 >= vp_bottom) {
-      break; // all remaining tiles are below viewport bottom
-    }
-    if (py0 < y_offset) {
-      continue; // tile partially above viewport top (no sub-tile clip yet)
-    }
-    if (py0 + kTileSizePixels > vp_bottom) {
-      break; // tile partially below viewport bottom (no sub-tile clip yet)
+      break;
     }
 
-    for (std::size_t tile_x = start_tile_x; tile_x < end_tile_x; ++tile_x) {
+    for (std::size_t tile_x = start_tile_x; tile_x < state.room_grid.tile_w;
+         ++tile_x) {
+      const std::int32_t px0 =
+          static_cast<std::int32_t>(tile_x * kTileSizePixels) - cam_x +
+          x_offset;
+      if (px0 >= vp_right) {
+        break;
+      }
       const std::uint8_t tile_id = read_room_tile(state, tile_x, tile_y);
       if (tile_id >= state.level_tileset.size()) {
         return false;
       }
-
-      const std::int32_t px0 =
-          static_cast<std::int32_t>(tile_x * kTileSizePixels) - state.camera_x +
-          x_offset;
-      if (px0 < x_offset || px0 + kTileSizePixels > vp_right) {
-        continue;
-      }
-
-      gfx_rle_blit_opaque_4plane(frame, static_cast<std::size_t>(px0),
-                                 static_cast<std::size_t>(py0),
-                                 state.level_tileset[tile_id]);
+      blit_tile_clipped(frame, px0, py0, state.level_tileset[tile_id], x_offset,
+                        y_offset, vp_right, vp_bottom);
     }
   }
 
@@ -1114,7 +1120,6 @@ FrameLoopSummary run_render_loop(RuntimeState &state,
 
   std::vector<ReplaySnapshot> oracle_snapshots;
   auto next_tick = std::chrono::steady_clock::now();
-  bool was_airborne = state.player.is_airborne;
   std::uint8_t previous_hp = state.player.hp;
 
   for (int frame = 0; frame < frame_budget; ++frame) {
@@ -1169,6 +1174,9 @@ FrameLoopSummary run_render_loop(RuntimeState &state,
     summary.max_frame_time_us = std::max(summary.max_frame_time_us,
                                          static_cast<std::uint64_t>(tick_us));
 
+    // Two 18.2 Hz PIT ticks elapse per ~110 ms game frame.
+    state.palette.cycle_ticks += 2U;
+
     if (state.ui.lifecycle_enabled) {
       EgaPlanarSurface lifecycle_frame(320, 200);
       render_game_lifecycle_frame(lifecycle_frame, state);
@@ -1181,9 +1189,9 @@ FrameLoopSummary run_render_loop(RuntimeState &state,
     }
 
     if (audio_enabled) {
-      if (!was_airborne && state.player.is_airborne) {
-        queue_audio_event(state, AudioEvent::Jump);
-      }
+      // The jump sound is queued by the player controller at actual jump
+      // initiation (player_do_jump int3 at 1000:2476); do not queue it here
+      // from the airborne flag edge or ledge fall-triggers would beep too.
       if (previous_hp > 0 && state.player.hp == 0) {
         queue_audio_event(state, AudioEvent::Hazard);
       }
@@ -1208,7 +1216,6 @@ FrameLoopSummary run_render_loop(RuntimeState &state,
     summary.frames_rendered += 1;
     summary.ticks_processed += 1;
     summary.last_stage = current_stage;
-    was_airborne = state.player.is_airborne;
     previous_hp = state.player.hp;
 
     if (frame_interval.count() > 0) {
