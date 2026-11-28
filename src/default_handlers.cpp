@@ -22,7 +22,8 @@ constexpr std::int16_t kViewportWidthPixels = 320;
 constexpr std::int16_t kViewportHeightPixels = 200;
 constexpr std::int16_t kPlayerHeightPixels = 32;
 constexpr TileCollisionConfig kDefaultCollision{
-    .solid_tile_threshold = 0x01,
+    .floor_tile_threshold = 0x2A,
+    .ceiling_tile_threshold = 0x1C,
     .hazard_tile_min = 0xF0,
     .hazard_tile_max = 0xFF,
 };

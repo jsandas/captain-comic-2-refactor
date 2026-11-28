@@ -116,6 +116,7 @@ bool try_load_level_tileset_for_root(RuntimeState &state,
 
   state.level_tileset = decoded->tiles;
   state.tile_hazard_bounds = decoded->hazard_bounds;
+  state.tile_ceiling_threshold = decoded->ceiling_threshold;
 
   state.level_sprites.clear();
   if (!tuple->sprite_sheet_filename.empty()) {

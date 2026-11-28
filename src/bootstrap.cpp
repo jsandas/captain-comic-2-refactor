@@ -23,77 +23,54 @@
 namespace comic2 {
 
 namespace {
+// Comic's in-game frame set is the EXE-embedded walk sprite block
+// (kSegStackComicWalkSprites: three frames facing right + the mirrored three
+// facing left). The per-level sprite sheet records are monster/prop graphics
+// (level 1's records 0-2 are the walking-plant entity frames) and must not be
+// used for the player.
+constexpr std::size_t kComicFacingFrames = 3U;
+
+std::size_t comic_facing_base(const RuntimeState &state) {
+  return state.player.facing_right ? 0U : kComicFacingFrames;
+}
+
+std::size_t comic_pose_index(const RuntimeState &state) {
+  const auto animation_state =
+      static_cast<PlayerAnimationState>(state.player.animation_state);
+  switch (animation_state) {
+  case PlayerAnimationState::WalkCycle:
+    return static_cast<std::size_t>(state.player.animation_frame) %
+           kComicFacingFrames;
+  case PlayerAnimationState::JumpRise:
+  case PlayerAnimationState::JumpFall:
+    return 1U;
+  default:
+    return 0U;
+  }
+}
+
 std::size_t fallback_player_sprite_frame_index(const RuntimeState &state) {
   const auto animation_state =
       static_cast<PlayerAnimationState>(state.player.animation_state);
-  const auto facing_offset = state.player.facing_right ? 0U : 8U;
-
   switch (animation_state) {
   case PlayerAnimationState::WalkCycle:
-    return static_cast<std::size_t>(state.player.animation_frame) +
-           facing_offset;
+    return static_cast<std::size_t>(state.player.animation_frame) %
+           kComicFacingFrames;
   case PlayerAnimationState::JumpRise:
   case PlayerAnimationState::JumpFall:
-    return 4U + facing_offset;
-  case PlayerAnimationState::Attack:
-    return 5U + facing_offset;
-  case PlayerAnimationState::Hurt:
-    return 6U + facing_offset;
-  case PlayerAnimationState::Death:
-    return 7U + facing_offset;
-  case PlayerAnimationState::Idle:
+    return 1U;
   default:
-    return static_cast<std::size_t>(state.player.hp % 4U) + facing_offset;
+    return 0U;
   }
 }
 
 bool has_valid_player_sprite_sheet(const RuntimeState &state) {
-  if (state.level_sprites.size() < 16U) {
-    return false;
-  }
-
-  return std::all_of(state.level_sprites.begin(), state.level_sprites.end(),
-                     [](const MaskedSpriteRecord &sprite) {
-                       return sprite.width_pixels > 0U &&
-                              sprite.height_rows > 0U &&
-                              !sprite.mask_bytes.empty() &&
-                              !sprite.planes[0].empty();
-                     });
+  (void)state;
+  return get_embedded_comic_walk_sprites().size() >= kComicFacingFrames * 2U;
 }
 
 std::size_t mapped_player_sprite_frame_index(const RuntimeState &state) {
-  const auto animation_state =
-      static_cast<PlayerAnimationState>(state.player.animation_state);
-  const auto facing_offset = state.player.facing_right ? 0U : 8U;
-
-  std::size_t base_index = 0U;
-  switch (animation_state) {
-  case PlayerAnimationState::Idle:
-    base_index = 0U;
-    break;
-  case PlayerAnimationState::WalkCycle:
-    base_index =
-        1U + (static_cast<std::size_t>(state.player.animation_frame) % 3U);
-    break;
-  case PlayerAnimationState::JumpRise:
-  case PlayerAnimationState::JumpFall:
-    base_index = 4U;
-    break;
-  case PlayerAnimationState::Attack:
-    base_index = 5U;
-    break;
-  case PlayerAnimationState::Hurt:
-    base_index = 6U;
-    break;
-  case PlayerAnimationState::Death:
-    base_index = 7U;
-    break;
-  default:
-    base_index = 0U;
-    break;
-  }
-
-  return base_index + facing_offset;
+  return comic_facing_base(state) + comic_pose_index(state);
 }
 
 bool draw_level_sprite_record(EgaPlanarSurface &frame,
@@ -101,11 +78,12 @@ bool draw_level_sprite_record(EgaPlanarSurface &frame,
                               std::size_t sprite_index,
                               std::int32_t x_offset = 0,
                               std::int32_t y_offset = 0) {
-  if (sprite_index >= state.level_sprites.size()) {
+  const auto &comic_frames = get_embedded_comic_walk_sprites();
+  if (sprite_index >= comic_frames.size()) {
     return false;
   }
 
-  const auto &record = state.level_sprites[sprite_index];
+  const auto &record = comic_frames[sprite_index];
   const std::size_t width_bytes =
       (static_cast<std::size_t>(record.width_pixels) + 7U) / 8U;
   const std::size_t plane_bytes =
@@ -517,13 +495,13 @@ void blit_tile_clipped(EgaPlanarSurface &frame, std::int32_t px0,
     for (std::int32_t x = x_begin; x < x_end; ++x) {
       const std::size_t sx = static_cast<std::size_t>(x - px0);
       const std::size_t src_idx = src_row * tile.width_bytes + sx / 8U;
-      const std::uint8_t src_mask = static_cast<std::uint8_t>(0x80U >> (sx % 8U));
+      const std::uint8_t src_mask =
+          static_cast<std::uint8_t>(0x80U >> (sx % 8U));
       const std::size_t dst_byte = static_cast<std::size_t>(x / 8);
-      const std::uint8_t dst_mask =
-          static_cast<std::uint8_t>(0x80U >> (x % 8));
+      const std::uint8_t dst_mask = static_cast<std::uint8_t>(0x80U >> (x % 8));
       for (std::size_t plane = 0; plane < 4; ++plane) {
-        std::uint8_t v = frame.get_plane_byte(plane, dst_byte,
-                                              static_cast<std::size_t>(y));
+        std::uint8_t v =
+            frame.get_plane_byte(plane, dst_byte, static_cast<std::size_t>(y));
         if (tile.planes[plane][src_idx] & src_mask) {
           v = static_cast<std::uint8_t>(v | dst_mask);
         } else {
@@ -1142,7 +1120,6 @@ FrameLoopSummary run_render_loop(RuntimeState &state,
 
   std::vector<ReplaySnapshot> oracle_snapshots;
   auto next_tick = std::chrono::steady_clock::now();
-  bool was_airborne = state.player.is_airborne;
   std::uint8_t previous_hp = state.player.hp;
 
   for (int frame = 0; frame < frame_budget; ++frame) {
@@ -1212,9 +1189,9 @@ FrameLoopSummary run_render_loop(RuntimeState &state,
     }
 
     if (audio_enabled) {
-      if (!was_airborne && state.player.is_airborne) {
-        queue_audio_event(state, AudioEvent::Jump);
-      }
+      // The jump sound is queued by the player controller at actual jump
+      // initiation (player_do_jump int3 at 1000:2476); do not queue it here
+      // from the airborne flag edge or ledge fall-triggers would beep too.
       if (previous_hp > 0 && state.player.hp == 0) {
         queue_audio_event(state, AudioEvent::Hazard);
       }
@@ -1239,7 +1216,6 @@ FrameLoopSummary run_render_loop(RuntimeState &state,
     summary.frames_rendered += 1;
     summary.ticks_processed += 1;
     summary.last_stage = current_stage;
-    was_airborne = state.player.is_airborne;
     previous_hp = state.player.hp;
 
     if (frame_interval.count() > 0) {

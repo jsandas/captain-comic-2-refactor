@@ -184,12 +184,12 @@ void test_player_sprite_frame_selection_uses_animation_state() {
   state.player.animation_frame = 3;
 
   const auto frame = comic2::select_player_sprite_frame(state);
-  expect(frame == 3, "walk cycle frame should resolve to the current frame");
+  expect(frame == 0, "walk cycle frame should wrap over the 3-frame cycle");
 
   state.player.animation_state =
       static_cast<std::uint8_t>(comic2::PlayerAnimationState::JumpRise);
-  expect(comic2::select_player_sprite_frame(state) == 4,
-         "jump-rise state should resolve to the jump frame");
+  expect(comic2::select_player_sprite_frame(state) == 1,
+         "jump-rise state should resolve to the jump pose frame");
 }
 
 void test_player_sprite_frame_selection_uses_facing_direction() {
@@ -200,8 +200,8 @@ void test_player_sprite_frame_selection_uses_facing_direction() {
   state.player.facing_right = false;
 
   const auto frame = comic2::select_player_sprite_frame(state);
-  expect(frame == 10,
-         "left-facing walk cycle should use the mirrored frame offset");
+  expect(frame == 5,
+         "left-facing walk cycle should use the mirrored frame block");
 }
 
 void test_runtime_entity_render_prefers_level_sprite_record() {
@@ -454,9 +454,11 @@ void test_render_bootstrap_frame_draws_player_after_entities() {
   comic2::render_bootstrap_frame(presenter, state);
 
   const auto &frame = presenter.last_frame();
-  const auto pixel = read_surface_color(frame, 64, 96);
-  expect(pixel == 0x0C,
-         "player marker should overwrite entity pixels when drawn last");
+  // Comic's sprite has transparent padding at its top-left corner; probe the
+  // opaque mid-body pixel to verify the player draws over the entity.
+  const auto pixel = read_surface_color(frame, 72, 112);
+  expect(pixel != 0x03 && pixel != 0x00,
+         "player sprite should overwrite entity pixels when drawn last");
 }
 
 void test_default_ega_palette_and_black_mask() {

@@ -642,6 +642,15 @@ void test_gate_phase_92_audio_events_trigger_from_gameplay() {
   comic2::GameDispatcher dispatcher = comic2::make_default_game_dispatcher();
   comic2::MemoryFramePresenter presenter;
 
+  // Drive the jump through the environment input path: the SDL held-key poll
+  // would otherwise clear the synthesized jump press before the controller
+  // sees it (the controller queues the jump sound at initiation, matching
+  // player_do_jump 1000:2476).
+  setenv("COMIC2_FORCE_ENV_INPUT", "1", 1);
+  setenv("COMIC2_INPUT_JUMP", "1", 1);
+  setenv("COMIC2_INPUT_LEFT", "0", 1);
+  setenv("COMIC2_INPUT_RIGHT", "0", 1);
+
   state.player.jump_counter = 1;
   state.input.jump_pressed = true;
   state.input.left_pressed = false;
@@ -657,6 +666,9 @@ void test_gate_phase_92_audio_events_trigger_from_gameplay() {
       [](const auto event) { return event == comic2::AudioEvent::Jump; });
   expect(saw_jump,
          "Gate 9.2 audio integration should emit a jump sound from gameplay");
+
+  // Restore the input env so later tests start from a clean keyboard state.
+  setenv("COMIC2_INPUT_JUMP", "0", 1);
 }
 
 } // namespace
@@ -1613,14 +1625,15 @@ void test_gate_14a_boots_trajectory_and_firepower() {
   // Equipped boots: boosts jump capacity to 6 ticks, jump impulse -7.
   const comic2::PlayerMotionConfig dos_motion =
       comic2::make_original_dos_motion_config();
-  const comic2::TileCollisionConfig collision{.solid_tile_threshold = 2};
+  const comic2::TileCollisionConfig collision{.floor_tile_threshold = 2};
 
-  // Construct a room grid with solid floor at row 10 (y=160)
+  // Construct a room grid with solid floor at row 10 (y=160). 0x50 = passable
+  // background sky (above the floor threshold); 0x02 = solid floor.
   comic2::RoomTileGrid arena_grid;
   arena_grid.tile_w = 20;
   arena_grid.tile_h = 12;
   arena_grid.row_pointers.resize(12);
-  arena_grid.tile_data.assign(240, 0x00);
+  arena_grid.tile_data.assign(240, 0x50);
   for (std::size_t r = 0; r < 12; ++r) {
     arena_grid.row_pointers[r] = static_cast<std::uint16_t>(r * 20);
   }
@@ -2027,7 +2040,7 @@ void test_gate_14c_tile_modification() {
     state.room_grid.tile_data.assign(12, 0);
 
     const comic2::TileTransformationConfig config;
-    const comic2::TileCollisionConfig collision{.solid_tile_threshold = 1};
+    const comic2::TileCollisionConfig collision{.floor_tile_threshold = 0x2A};
 
     // Place an impassable metal grate at tile (1, 1) -> (16, 16)
     comic2::set_tile_at_coords(state.room_grid, 1, 1, config.grate_tile);
@@ -2082,7 +2095,7 @@ void test_gate_14c_tile_modification() {
     state.room_grid.tile_data.assign(12, 0);
 
     const comic2::TileTransformationConfig config;
-    const comic2::TileCollisionConfig collision{.solid_tile_threshold = 1};
+    const comic2::TileCollisionConfig collision{.floor_tile_threshold = 0x2A};
 
     // Place a locked door tile at tile (2, 1) -> (32, 16)
     comic2::set_tile_at_coords(state.room_grid, 2, 1, config.locked_door_tile);

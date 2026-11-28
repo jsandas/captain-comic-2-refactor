@@ -73,22 +73,27 @@ void test_has_floor_support_tile_grid_only() {
   state.room_grid = make_grid_fixture();
   state.player.x = 0;
   comic2::TileCollisionConfig config;
-  config.solid_tile_threshold = 2;
+  config.floor_tile_threshold = 2;
 
-  // feet probe at y=31 maps to tile row 1, id=5 (solid)
+  // Authentic probe semantics: a tile is solid when id <= threshold.
+  comic2::set_tile_at_coords(state.room_grid, 0, 0, 0x50); // passable
+  comic2::set_tile_at_coords(state.room_grid, 0, 1, 0x02); // solid
+  comic2::set_tile_at_coords(state.room_grid, 0, 2, 0x02); // solid
+
+  // feet probe at y=31 maps to tile row 1, id=2 (solid)
   state.player.y = -1;
   expect(comic2::has_floor_support(state, config),
          "should have support on solid tile");
 
-  // feet probe at y=32 maps to tile row 2, id=9 (solid)
+  // feet probe at y=32 maps to tile row 2, id=2 (solid)
   state.player.y = 0;
   expect(comic2::has_floor_support(state, config),
          "should have support on lower solid tile");
 
-  // feet probe at y=0 maps to tile row 0, id=1 (below threshold)
+  // feet probe at y=0 maps to tile row 0, id=0x50 (passable background)
   state.player.y = -32;
   expect(!comic2::has_floor_support(state, config),
-         "should not have support below threshold");
+         "should not have support on passable tile");
 
   // out of bounds below grid
   state.player.y = 48;
@@ -106,7 +111,8 @@ void test_resolve_ground_contact_snaps_to_tile_top() {
   state.player.is_physics_active = true;
 
   comic2::TileCollisionConfig config;
-  config.solid_tile_threshold = 2;
+  config.floor_tile_threshold = 2;
+  comic2::set_tile_at_coords(state.room_grid, 0, 2, 0x02); // solid floor
 
   const bool landed = comic2::resolve_ground_contact(state, config);
   expect(landed, "resolve_ground_contact should land on solid support");
@@ -138,12 +144,13 @@ void test_room_loader_builds_row_pointer_table() {
 }
 
 void test_tile_threshold_and_hazard_checks() {
+  // Authentic probe semantics (1000:2c9d): solid when tile id <= threshold.
   expect(comic2::tile_meets_threshold(7, 7),
          "tile equal to threshold should pass");
-  expect(comic2::tile_meets_threshold(8, 7),
-         "tile above threshold should pass");
-  expect(!comic2::tile_meets_threshold(6, 7),
-         "tile below threshold should fail");
+  expect(comic2::tile_meets_threshold(6, 7),
+         "tile below threshold should pass");
+  expect(!comic2::tile_meets_threshold(8, 7),
+         "tile above threshold should fail");
 
   comic2::TileCollisionConfig config;
   config.hazard_tile_min = 0xA0;
@@ -208,19 +215,21 @@ void test_set_tile_at_coords_and_pixels() {
 }
 
 void test_tile_passability_checks() {
-  comic2::TileCollisionConfig config{.solid_tile_threshold = 2};
-  expect(comic2::is_tile_passable(0, config), "tile 0 should be passable");
-  expect(comic2::is_tile_passable(1, config),
-         "tile 1 should be passable (< threshold 2)");
-  expect(!comic2::is_tile_passable(2, config),
-         "tile 2 should be impassable (>= threshold 2)");
+  comic2::TileCollisionConfig config{.floor_tile_threshold = 0x2A};
+  // Authentic semantics (1000:2c9d): solid when tile id <= threshold.
+  expect(comic2::is_tile_passable(0x50, config),
+         "background tile 0x50 should be passable");
+  expect(comic2::is_tile_passable(0x2B, config),
+         "tile 0x2B should be passable (> threshold 0x2A)");
+  expect(!comic2::is_tile_passable(0x2A, config),
+         "tile 0x2A should be impassable (<= threshold 0x2A)");
   expect(!comic2::is_tile_passable(comic2::kGrateTileId, config),
          "grate tile should be impassable");
   expect(!comic2::is_tile_passable(comic2::kLockedDoorTileId, config),
          "locked door tile should be impassable");
 
   comic2::RoomTileGrid grid = make_grid_fixture();
-  comic2::set_tile_at_coords(grid, 0, 0, 0);
+  comic2::set_tile_at_coords(grid, 0, 0, 0x50);
   expect(comic2::is_tile_passable_at_pixels(grid, 0, 0, config),
          "passable tile at origin");
   comic2::set_tile_at_coords(grid, 0, 0, comic2::kLockedDoorTileId);

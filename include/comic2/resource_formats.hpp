@@ -72,6 +72,8 @@ struct LevelResourceTuple {
 
 struct LevelTilesetDecode {
   std::array<std::uint16_t, 2> hazard_bounds{0, 0};
+  // Solid wall/ceiling threshold (ds:0x0292) from tileset header word 0.
+  std::uint16_t ceiling_threshold{0};
   std::vector<Ega4PlaneImage> tiles;
 
   bool operator==(const LevelTilesetDecode &) const = default;

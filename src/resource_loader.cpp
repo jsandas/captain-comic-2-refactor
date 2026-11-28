@@ -272,6 +272,10 @@ decode_level_tileset(std::span<const std::uint8_t> payload) {
   }
 
   LevelTilesetDecode decoded{};
+  // Header layout (file_load_pack_rle 1000:1fa4 loads 6 bytes into
+  // ds:0x0292..0x0296): word 0 = solid wall/ceiling threshold, word 1 = solid
+  // floor threshold, word 2 = water/hazard top threshold.
+  decoded.ceiling_threshold = read_u16(payload, 0);
   decoded.hazard_bounds[0] = read_u16(payload, 2);
   decoded.hazard_bounds[1] = read_u16(payload, 4);
 

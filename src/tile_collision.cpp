@@ -22,13 +22,31 @@ bool has_valid_room_grid(const RoomTileGrid &grid) {
          grid.row_pointers.size() >= grid.tile_h;
 }
 
+// Resolves the effective solid-floor threshold: the per-level value from the
+// tileset header (ds:0x0294, plumbed through state.tile_hazard_bounds[0])
+// wins when present, otherwise the config default applies.
+std::uint8_t effective_floor_threshold(const RuntimeState &state,
+                                       const TileCollisionConfig &config) {
+  if (state.tile_hazard_bounds[0] != 0U &&
+      state.tile_hazard_bounds[0] <= 0xFFU) {
+    return static_cast<std::uint8_t>(state.tile_hazard_bounds[0]);
+  }
+  return config.floor_tile_threshold;
+}
+
 bool is_solid_at_pixels(const RoomTileGrid &grid, std::int16_t pixel_x,
-                        std::int16_t pixel_y,
-                        const TileCollisionConfig &config) {
+                        std::int16_t pixel_y, const TileCollisionConfig &config,
+                        std::uint8_t floor_threshold) {
   const std::optional<std::uint8_t> tile_id =
       get_tile_at_pixels(grid, pixel_x, pixel_y);
-  return tile_id.has_value() &&
-         tile_meets_threshold(*tile_id, config.solid_tile_threshold);
+  if (!tile_id.has_value()) {
+    return false;
+  }
+  // Hazard tiles (spikes etc.) are solid ground that damages on contact.
+  if (is_hazard_tile(*tile_id, config)) {
+    return true;
+  }
+  return tile_meets_threshold(*tile_id, floor_threshold);
 }
 
 bool is_hazard_at_pixels(const RoomTileGrid &grid, std::int16_t pixel_x,
@@ -102,11 +120,12 @@ bool set_tile_at_pixels(RoomTileGrid &grid, std::int16_t pixel_x,
 }
 
 bool tile_meets_threshold(std::uint8_t tile_id, std::uint8_t threshold) {
-  return tile_id >= threshold;
+  // Authentic probe semantics (1000:2c9d): solid when tile_id <= threshold.
+  return tile_id <= threshold;
 }
 
 bool is_tile_passable(std::uint8_t tile_id, const TileCollisionConfig &config) {
-  return tile_id < config.solid_tile_threshold;
+  return tile_id > config.floor_tile_threshold;
 }
 
 bool is_tile_passable_at_pixels(const RoomTileGrid &grid, std::int16_t pixel_x,
@@ -152,6 +171,7 @@ bool has_floor_support(const RuntimeState &state,
     return false;
   }
 
+  const std::uint8_t floor_threshold = effective_floor_threshold(state, config);
   const std::int16_t probe_y =
       static_cast<std::int16_t>(state.player.y + kPlayerHeightPixels);
   const std::int16_t left_probe_x =
@@ -159,8 +179,10 @@ bool has_floor_support(const RuntimeState &state,
   const std::int16_t right_probe_x = static_cast<std::int16_t>(
       state.player.x + kPlayerWidthPixels - 1 - kFootProbeInsetPixels);
 
-  return is_solid_at_pixels(state.room_grid, left_probe_x, probe_y, config) ||
-         is_solid_at_pixels(state.room_grid, right_probe_x, probe_y, config);
+  return is_solid_at_pixels(state.room_grid, left_probe_x, probe_y, config,
+                            floor_threshold) ||
+         is_solid_at_pixels(state.room_grid, right_probe_x, probe_y, config,
+                            floor_threshold);
 }
 
 bool resolve_ground_contact(RuntimeState &state,
@@ -173,6 +195,7 @@ bool resolve_ground_contact(RuntimeState &state,
     return false;
   }
 
+  const std::uint8_t floor_threshold = effective_floor_threshold(state, config);
   const std::int16_t probe_y =
       static_cast<std::int16_t>(state.player.y + kPlayerHeightPixels);
   const std::int16_t left_probe_x =
@@ -180,10 +203,10 @@ bool resolve_ground_contact(RuntimeState &state,
   const std::int16_t right_probe_x = static_cast<std::int16_t>(
       state.player.x + kPlayerWidthPixels - 1 - kFootProbeInsetPixels);
 
-  const bool left_solid =
-      is_solid_at_pixels(state.room_grid, left_probe_x, probe_y, config);
-  const bool right_solid =
-      is_solid_at_pixels(state.room_grid, right_probe_x, probe_y, config);
+  const bool left_solid = is_solid_at_pixels(state.room_grid, left_probe_x,
+                                             probe_y, config, floor_threshold);
+  const bool right_solid = is_solid_at_pixels(state.room_grid, right_probe_x,
+                                              probe_y, config, floor_threshold);
   if (!left_solid && !right_solid) {
     return false;
   }
