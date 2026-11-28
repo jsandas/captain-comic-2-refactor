@@ -1073,7 +1073,10 @@ void test_render_bootstrap_frame_forwards_dynamic_palette_to_presenter() {
 
   state.player.lantern_equipped = true;
   comic2::render_bootstrap_frame(presenter, state);
-  check(presenter.last_palette() == comic2::make_default_ega_palette(),
+  auto expected_palette = comic2::make_default_ega_palette();
+  comic2::apply_level_palette_script(expected_palette, state.current_level,
+                                     state.palette.cycle_ticks);
+  check(presenter.last_palette() == expected_palette,
         "equipping lantern should forward standard EGA palette to presenter");
 }
 

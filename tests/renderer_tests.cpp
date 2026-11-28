@@ -492,7 +492,10 @@ void test_update_room_lighting_palette() {
   comic2::update_room_lighting_palette(state);
   expect(!comic2::is_black_palette_mask(state.palette),
          "lantern equipped must restore visible palette");
-  expect(state.palette.entries == comic2::make_default_ega_palette(),
+  auto expected_palette = comic2::make_default_ega_palette();
+  comic2::apply_level_palette_script(expected_palette, state.current_level,
+                                     state.palette.cycle_ticks);
+  expect(state.palette.entries == expected_palette,
          "palette must match standard visible EGA table");
 
   state.is_dark_room = false;

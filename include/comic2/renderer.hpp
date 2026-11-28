@@ -238,6 +238,9 @@ bool is_black_palette_mask(const EgaPaletteState &palette);
 // If is_dark_room and !player.lantern_equipped, applies black palette mask.
 // Otherwise, restores default visible EGA palette.
 void update_room_lighting_palette(RuntimeState &state);
+void apply_level_palette_script(
+    std::array<std::array<std::uint8_t, 4>, 16> &entries, std::uint16_t level,
+    std::uint32_t ticks);
 
 // Applies cavern darkness mask to playfield viewport on planar surface frame.
 // When is_dark_room is active and lantern is not equipped, masks the playfield

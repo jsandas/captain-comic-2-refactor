@@ -56,11 +56,11 @@ void clamp_player_vertical_bounds(RuntimeState &state) {
 }
 
 void update_room_transition_from_player_bounds(RuntimeState &state) {
+  const std::int16_t room_width =
+      state.room_grid.tile_w > 0
+          ? static_cast<std::int16_t>(state.room_grid.tile_w * 16)
+          : static_cast<std::int16_t>(kViewportWidthPixels);
   if (state.level_data != nullptr) {
-    const std::int16_t room_width =
-        state.room_grid.tile_w > 0
-            ? static_cast<std::int16_t>(state.room_grid.tile_w * 16)
-            : static_cast<std::int16_t>(kViewportWidthPixels);
 
     std::optional<RoomTransitionZone> matched_zone =
         check_room_transition_zone(state.current_level, state.current_room,
@@ -126,7 +126,7 @@ void update_room_transition_from_player_bounds(RuntimeState &state) {
     return;
   }
 
-  if (state.player.x >= kViewportWidthPixels) {
+  if (state.player.x >= room_width) {
     state.pending_room_transition = PendingRoomTransition{
         .target_room = static_cast<std::uint16_t>(state.current_room + 1),
         .target_player_x = 0,

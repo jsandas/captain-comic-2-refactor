@@ -876,23 +876,24 @@ void load_ega_palette_table(
 }
 
 std::array<std::array<std::uint8_t, 4>, 16> make_default_ega_palette() {
+  // Standard EGA/VGA (DOSBox) 16-color values: 0x00/0x55/0xAA/0xFF.
   return {{
-      {0, 0, 0, 255},       // 0: Black
-      {0, 0, 200, 255},     // 1: Blue
-      {0, 200, 0, 255},     // 2: Green
-      {0, 200, 200, 255},   // 3: Cyan
-      {200, 0, 0, 255},     // 4: Red
-      {200, 0, 200, 255},   // 5: Magenta
-      {200, 100, 0, 255},   // 6: Brown
-      {200, 200, 200, 255}, // 7: Light gray
-      {100, 100, 100, 255}, // 8: Dark gray
-      {50, 50, 255, 255},   // 9: Light blue
-      {50, 255, 50, 255},   // 10: Light green
-      {50, 255, 255, 255},  // 11: Light cyan
-      {255, 50, 50, 255},   // 12: Light red
-      {255, 50, 255, 255},  // 13: Light magenta
-      {255, 255, 50, 255},  // 14: Yellow
-      {255, 255, 255, 255}, // 15: White
+      {0x00, 0x00, 0x00, 255}, // 0: Black
+      {0x00, 0x00, 0xAA, 255}, // 1: Blue
+      {0x00, 0xAA, 0x00, 255}, // 2: Green
+      {0x00, 0xAA, 0xAA, 255}, // 3: Cyan
+      {0xAA, 0x00, 0x00, 255}, // 4: Red
+      {0xAA, 0x00, 0xAA, 255}, // 5: Magenta
+      {0xAA, 0x55, 0x00, 255}, // 6: Brown
+      {0xAA, 0xAA, 0xAA, 255}, // 7: Light gray
+      {0x55, 0x55, 0x55, 255}, // 8: Dark gray
+      {0x55, 0x55, 0xFF, 255}, // 9: Light blue
+      {0x55, 0xFF, 0x55, 255}, // 10: Light green
+      {0x55, 0xFF, 0xFF, 255}, // 11: Light cyan
+      {0xFF, 0x55, 0x55, 255}, // 12: Light red
+      {0xFF, 0x55, 0xFF, 255}, // 13: Light magenta
+      {0xFF, 0xFF, 0x55, 255}, // 14: Yellow
+      {0xFF, 0xFF, 0xFF, 255}, // 15: White
   }};
 }
 
@@ -976,12 +977,108 @@ bool is_black_palette_mask(const EgaPaletteState &palette) {
                      });
 }
 
+namespace {
+
+struct PaletteScriptStep {
+  std::uint8_t reg_value;
+  std::uint8_t delay;
+};
+
+struct PaletteScriptChannel {
+  std::uint8_t palette_index;
+  std::array<PaletteScriptStep, 10> steps;
+  std::uint8_t step_count;
+};
+
+// Per-level retrace palette scripts (cs:0x0278 via map_init_tileset at
+// 1000:198E, executed by isr_timer_sound_int08 at 1000:0849..08B9). Each
+// channel rewrites one EGA palette register; a step holds for delay+1 ticks.
+constexpr std::array<std::array<PaletteScriptChannel, 3>, 10>
+    kLevelPaletteScripts = {{
+        {{{3, {{{0x11, 1}, {0x01, 1}, {0x01, 1}}}, 3},
+          {5, {{{0x01, 1}, {0x11, 1}, {0x01, 1}}}, 3},
+          {13, {{{0x01, 1}, {0x01, 1}, {0x11, 1}}}, 3}}},
+        {{{3, {{{0x14, 1}, {0x00, 1}, {0x00, 1}}}, 3},
+          {5, {{{0x00, 1}, {0x14, 1}, {0x00, 1}}}, 3},
+          {13, {{{0x00, 1}, {0x00, 1}, {0x14, 1}}}, 3}}},
+        {{{3, {{{0x16, 1}, {0x14, 1}, {0x04, 1}}}, 3},
+          {5, {{{0x04, 1}, {0x16, 1}, {0x14, 1}}}, 3},
+          {13, {{{0x14, 1}, {0x04, 1}, {0x16, 1}}}, 3}}},
+        {{{3, {{{0x12, 1}, {0x02, 1}, {0x02, 1}}}, 3},
+          {5, {{{0x02, 1}, {0x12, 1}, {0x02, 1}}}, 3},
+          {13, {{{0x02, 1}, {0x02, 1}, {0x12, 1}}}, 3}}},
+        {{{3, {{{0x00, 8}, {0x00, 8}, {0x00, 8}}}, 3},
+          {5, {{{0x00, 8}, {0x00, 8}, {0x00, 8}}}, 3},
+          {13, {{{0x00, 8}, {0x00, 8}, {0x00, 8}}}, 3}}},
+        {{{3,
+           {{{0x00, 40}, {0x00, 40}, {0x00, 40}, {0x17, 1}, {0x07, 1},
+             {0x17, 1}}},
+           6},
+          {5,
+           {{{0x00, 34}, {0x17, 1}, {0x07, 1}, {0x17, 1}, {0x00, 40},
+             {0x00, 40}, {0x17, 1}, {0x07, 1}, {0x17, 1}}},
+           9},
+          {13,
+           {{{0x00, 40}, {0x00, 34}, {0x17, 1}, {0x07, 1}, {0x17, 1},
+             {0x00, 40}, {0x17, 1}, {0x07, 1}, {0x17, 1}}},
+           9}}},
+        {{{3, {{{0x11, 1}, {0x01, 1}, {0x01, 1}}}, 3},
+          {5, {{{0x01, 1}, {0x11, 1}, {0x01, 1}}}, 3},
+          {13, {{{0x01, 1}, {0x01, 1}, {0x11, 1}}}, 3}}},
+        {{{3, {{{0x11, 1}, {0x01, 1}, {0x01, 1}}}, 3},
+          {5, {{{0x01, 1}, {0x11, 1}, {0x01, 1}}}, 3},
+          {13, {{{0x01, 1}, {0x01, 1}, {0x11, 1}}}, 3}}},
+        {{{3, {{{0x12, 1}, {0x00, 1}, {0x00, 1}}}, 3},
+          {5, {{{0x00, 1}, {0x12, 1}, {0x00, 1}}}, 3},
+          {13, {{{0x00, 1}, {0x00, 1}, {0x12, 1}}}, 3}}},
+        {{{3, {{{0x17, 1}, {0x01, 1}, {0x01, 1}}}, 3},
+          {5, {{{0x01, 1}, {0x17, 1}, {0x01, 1}}}, 3},
+          {13, {{{0x01, 1}, {0x01, 1}, {0x17, 1}}}, 3}}},
+    }};
+
+std::uint8_t palette_script_value_at(const PaletteScriptChannel &channel,
+                                     std::uint32_t ticks) {
+  std::uint32_t period = 0;
+  for (std::size_t i = 0; i < channel.step_count; ++i) {
+    period += static_cast<std::uint32_t>(channel.steps[i].delay) + 1U;
+  }
+  std::uint32_t t = period > 0 ? ticks % period : 0U;
+  for (std::size_t i = 0; i < channel.step_count; ++i) {
+    const std::uint32_t hold =
+        static_cast<std::uint32_t>(channel.steps[i].delay) + 1U;
+    if (t < hold) {
+      return channel.steps[i].reg_value;
+    }
+    t -= hold;
+  }
+  return channel.steps[0].reg_value;
+}
+
+} // namespace
+
+void apply_level_palette_script(
+    std::array<std::array<std::uint8_t, 4>, 16> &entries, std::uint16_t level,
+    std::uint32_t ticks) {
+  if (level >= kLevelPaletteScripts.size()) {
+    return;
+  }
+  const auto base = make_default_ega_palette();
+  for (const auto &channel : kLevelPaletteScripts[level]) {
+    const std::uint8_t reg = palette_script_value_at(channel, ticks);
+    const std::size_t idx =
+        static_cast<std::size_t>((reg & 0x07U) | ((reg & 0x10U) >> 1U));
+    entries[channel.palette_index] = base[idx];
+  }
+}
+
 void update_room_lighting_palette(RuntimeState &state) {
   state.palette.loaded = true;
   if (state.is_dark_room && !state.player.lantern_equipped) {
     state.palette.entries = make_black_palette_mask();
   } else {
     state.palette.entries = make_default_ega_palette();
+    apply_level_palette_script(state.palette.entries, state.current_level,
+                               state.palette.cycle_ticks);
   }
 }
 

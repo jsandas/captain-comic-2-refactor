@@ -492,6 +492,49 @@ bool extract_tile_from_asset(const Ega4PlaneImage &atlas,
   return true;
 }
 
+// Draws a 16x16 tile clipped to [clip_x0, clip_x1) x [clip_y0, clip_y1) so
+// partially visible tiles at the viewport edges are rendered (sub-tile scroll).
+void blit_tile_clipped(EgaPlanarSurface &frame, std::int32_t px0,
+                       std::int32_t py0, const Ega4PlaneImage &tile,
+                       std::int32_t clip_x0, std::int32_t clip_y0,
+                       std::int32_t clip_x1, std::int32_t clip_y1) {
+  if (px0 >= clip_x0 && py0 >= clip_y0 && px0 + kTileSizePixels <= clip_x1 &&
+      py0 + kTileSizePixels <= clip_y1 && (px0 % 8) == 0) {
+    gfx_rle_blit_opaque_4plane(frame, static_cast<std::size_t>(px0),
+                               static_cast<std::size_t>(py0), tile);
+    return;
+  }
+  const std::int32_t fw = static_cast<std::int32_t>(frame.width_pixels());
+  const std::int32_t fh = static_cast<std::int32_t>(frame.height_rows());
+  const std::int32_t x_begin = std::max({px0, clip_x0, 0});
+  const std::int32_t x_end =
+      std::min({px0 + static_cast<std::int32_t>(kTileSizePixels), clip_x1, fw});
+  const std::int32_t y_begin = std::max({py0, clip_y0, 0});
+  const std::int32_t y_end =
+      std::min({py0 + static_cast<std::int32_t>(kTileSizePixels), clip_y1, fh});
+  for (std::int32_t y = y_begin; y < y_end; ++y) {
+    const std::size_t src_row = static_cast<std::size_t>(y - py0);
+    for (std::int32_t x = x_begin; x < x_end; ++x) {
+      const std::size_t sx = static_cast<std::size_t>(x - px0);
+      const std::size_t src_idx = src_row * tile.width_bytes + sx / 8U;
+      const std::uint8_t src_mask = static_cast<std::uint8_t>(0x80U >> (sx % 8U));
+      const std::size_t dst_byte = static_cast<std::size_t>(x / 8);
+      const std::uint8_t dst_mask =
+          static_cast<std::uint8_t>(0x80U >> (x % 8));
+      for (std::size_t plane = 0; plane < 4; ++plane) {
+        std::uint8_t v = frame.get_plane_byte(plane, dst_byte,
+                                              static_cast<std::size_t>(y));
+        if (tile.planes[plane][src_idx] & src_mask) {
+          v = static_cast<std::uint8_t>(v | dst_mask);
+        } else {
+          v = static_cast<std::uint8_t>(v & ~dst_mask);
+        }
+        frame.set_plane_byte(plane, dst_byte, static_cast<std::size_t>(y), v);
+      }
+    }
+  }
+}
+
 bool draw_room_tilemap_from_level_tileset(EgaPlanarSurface &frame,
                                           const RuntimeState &state,
                                           std::int32_t x_offset = 0,
@@ -512,50 +555,35 @@ bool draw_room_tilemap_from_level_tileset(EgaPlanarSurface &frame,
       (clip_h > 0 ? clip_h
                   : static_cast<std::int32_t>(frame.height_rows()) - y_offset);
 
-  const std::size_t visible_tiles_x =
-      static_cast<std::size_t>(vp_right - x_offset) / kTileSizePixels;
+  const std::int32_t cam_x = std::max<std::int32_t>(0, state.camera_x);
+  const std::int32_t cam_y = std::max<std::int32_t>(0, state.camera_y);
   const std::size_t start_tile_x =
-      state.camera_x > 0 ? static_cast<std::size_t>(state.camera_x) /
-                               static_cast<std::size_t>(kTileSizePixels)
-                         : 0U;
-  const std::size_t end_tile_x =
-      std::min(static_cast<std::size_t>(state.room_grid.tile_w),
-               start_tile_x + visible_tiles_x + 1U);
+      static_cast<std::size_t>(cam_x / kTileSizePixels);
+  const std::size_t start_tile_y =
+      static_cast<std::size_t>(cam_y / kTileSizePixels);
 
-  for (std::size_t tile_y = 0; tile_y < state.room_grid.tile_h; ++tile_y) {
+  for (std::size_t tile_y = start_tile_y; tile_y < state.room_grid.tile_h;
+       ++tile_y) {
     const std::int32_t py0 =
-        static_cast<std::int32_t>(tile_y * kTileSizePixels) - state.camera_y +
-        y_offset;
-
-    if (py0 + kTileSizePixels <= y_offset) {
-      continue; // tile entirely above viewport top
-    }
+        static_cast<std::int32_t>(tile_y * kTileSizePixels) - cam_y + y_offset;
     if (py0 >= vp_bottom) {
-      break; // all remaining tiles are below viewport bottom
-    }
-    if (py0 < y_offset) {
-      continue; // tile partially above viewport top (no sub-tile clip yet)
-    }
-    if (py0 + kTileSizePixels > vp_bottom) {
-      break; // tile partially below viewport bottom (no sub-tile clip yet)
+      break;
     }
 
-    for (std::size_t tile_x = start_tile_x; tile_x < end_tile_x; ++tile_x) {
+    for (std::size_t tile_x = start_tile_x; tile_x < state.room_grid.tile_w;
+         ++tile_x) {
+      const std::int32_t px0 =
+          static_cast<std::int32_t>(tile_x * kTileSizePixels) - cam_x +
+          x_offset;
+      if (px0 >= vp_right) {
+        break;
+      }
       const std::uint8_t tile_id = read_room_tile(state, tile_x, tile_y);
       if (tile_id >= state.level_tileset.size()) {
         return false;
       }
-
-      const std::int32_t px0 =
-          static_cast<std::int32_t>(tile_x * kTileSizePixels) - state.camera_x +
-          x_offset;
-      if (px0 < x_offset || px0 + kTileSizePixels > vp_right) {
-        continue;
-      }
-
-      gfx_rle_blit_opaque_4plane(frame, static_cast<std::size_t>(px0),
-                                 static_cast<std::size_t>(py0),
-                                 state.level_tileset[tile_id]);
+      blit_tile_clipped(frame, px0, py0, state.level_tileset[tile_id], x_offset,
+                        y_offset, vp_right, vp_bottom);
     }
   }
 
@@ -1168,6 +1196,9 @@ FrameLoopSummary run_render_loop(RuntimeState &state,
     summary.total_frame_time_us += static_cast<std::uint64_t>(tick_us);
     summary.max_frame_time_us = std::max(summary.max_frame_time_us,
                                          static_cast<std::uint64_t>(tick_us));
+
+    // Two 18.2 Hz PIT ticks elapse per ~110 ms game frame.
+    state.palette.cycle_ticks += 2U;
 
     if (state.ui.lifecycle_enabled) {
       EgaPlanarSurface lifecycle_frame(320, 200);

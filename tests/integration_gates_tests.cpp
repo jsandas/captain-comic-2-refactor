@@ -1848,8 +1848,11 @@ void test_gate_14b_cavern_lantern_and_palette_darkness() {
     comic2::update_room_lighting_palette(state);
     expect(!comic2::is_black_palette_mask(state.palette),
            "Gate 14-B: dark room with lantern equipped must not be black mask");
+    auto expected_palette = comic2::make_default_ega_palette();
+    comic2::apply_level_palette_script(expected_palette, state.current_level,
+                                       state.palette.cycle_ticks);
     expect(
-        state.palette.entries == comic2::make_default_ega_palette(),
+        state.palette.entries == expected_palette,
         "Gate 14-B: dark room with lantern must restore standard EGA palette");
 
     // In lit room (e.g. outdoors), palette is visible regardless of lantern
