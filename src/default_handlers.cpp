@@ -158,6 +158,12 @@ void complete_pending_room_transition(RuntimeState &state) {
   state.player.x_vel = 0;
   state.player.y_vel = 0;
   state.player.is_airborne = false;
+  state.player.fireball_meter_counter = 0U;
+  state.player.shield_meter_subbars = 0U;
+  state.player.shield_fill_countdown = 12U;
+  if (state.player.fuel < 25U) {
+    state.player.fuel = 25U;
+  }
   state.room_entrance_x = state.player.x;
   state.room_entrance_y = state.player.y;
   state.warp_beacon = std::nullopt;
@@ -185,7 +191,8 @@ void advance_transition_state(RuntimeState &state) {
 
   camera_update_y_follow_comic_clamped(
       state, kViewportHeightPixels,
-      std::max<std::int32_t>(0, state.room_grid.tile_h * 16));
+      std::max<std::int32_t>(0, state.room_grid.tile_h * 16),
+      kCameraCenterOffsetY);
 }
 
 void apply_default_airborne_physics(RuntimeState &state) {
@@ -386,6 +393,12 @@ void reset_player_state_for_level_entry(RuntimeState &state) {
   state.player.damage_recoil_ticks = 0;
   state.player.facing_right = true;
   state.player.hp = 12;
+  state.player.fireball_meter_counter = 0U;
+  state.player.shield_meter_subbars = 0U;
+  state.player.shield_fill_countdown = 12U;
+  if (state.player.fuel < 25U) {
+    state.player.fuel = 25U;
+  }
   state.transition_state = RoomTransitionState{};
   state.flags.level_transition_pending = false;
   state.flags.player_special_state_active = false;
@@ -424,6 +437,12 @@ void reset_player_state_for_level_entry(RuntimeState &state) {
 
 void reset_player_respawn_state(RuntimeState &state) {
   state.player.hp = 12;
+  state.player.fireball_meter_counter = 0;
+  state.player.shield_meter_subbars = 0;
+  state.player.shield_fill_countdown = 12;
+  if (state.player.fuel < 25U) {
+    state.player.fuel = 25U;
+  }
   state.player.x = 160;
   state.player.y = 160;
   state.player.x_vel = 0;
@@ -493,12 +512,20 @@ void handle_level_transition(RuntimeState &state) {
   candidate_state.transition_state.frame_index = 0;
   candidate_state.transition_state.tick_count = 0;
   room_transition_player_entry_sequence(candidate_state);
+  const std::int32_t vp_w = candidate_state.bezel_frame.has_value()
+                                ? kPlayfieldWidth
+                                : kViewportWidthPixels;
+  const std::int32_t vp_h = candidate_state.bezel_frame.has_value()
+                                ? kPlayfieldHeight
+                                : kViewportHeightPixels;
   camera_update_x_follow_comic_clamped(
-      candidate_state, kViewportWidthPixels,
-      std::max<std::int32_t>(0, candidate_state.room_grid.tile_w * 16));
+      candidate_state, vp_w,
+      std::max<std::int32_t>(0, candidate_state.room_grid.tile_w * 16),
+      kCameraCenterOffsetX);
   camera_update_y_follow_comic_clamped(
-      candidate_state, kViewportHeightPixels,
-      std::max<std::int32_t>(0, candidate_state.room_grid.tile_h * 16));
+      candidate_state, vp_h,
+      std::max<std::int32_t>(0, candidate_state.room_grid.tile_h * 16),
+      kCameraCenterOffsetY);
 
   state.transition_state = candidate_state.transition_state;
 
@@ -515,9 +542,18 @@ void handle_level_transition(RuntimeState &state) {
   }
 
   if (loaded) {
+    candidate_state.player.fireball_meter_counter = 0U;
+    candidate_state.player.shield_meter_subbars = 0U;
+    candidate_state.player.shield_fill_countdown = 12U;
+    if (candidate_state.player.fuel < 25U) {
+      candidate_state.player.fuel = 25U;
+    }
     state = std::move(candidate_state);
     queue_audio_event(state, AudioEvent::LevelStart);
   } else {
+    if (state.player.fuel < 25U) {
+      state.player.fuel = 25U;
+    }
     state.transition_state.active = true;
     state.transition_state.player_frozen = true;
     state.transition_state.effect_type =
@@ -546,10 +582,20 @@ void handle_airborne_physics(RuntimeState &state) {
   apply_entity_combat(state);
   apply_default_airborne_physics(state);
   if (state.room_grid.tile_w > 0) {
+    const std::int32_t vp_w =
+        state.bezel_frame.has_value() ? kPlayfieldWidth : kViewportWidthPixels;
     camera_update_x_follow_comic_clamped(
-        state, kViewportWidthPixels,
+        state, vp_w,
         std::max<std::int32_t>(
-            0, static_cast<std::int32_t>(state.room_grid.tile_w) * 16));
+            0, static_cast<std::int32_t>(state.room_grid.tile_w) * 16),
+        kCameraCenterOffsetX);
+  }
+  if (state.bezel_frame.has_value() && state.room_grid.tile_h > 0) {
+    camera_update_y_follow_comic_clamped(
+        state, kPlayfieldHeight,
+        std::max<std::int32_t>(
+            0, static_cast<std::int32_t>(state.room_grid.tile_h) * 16),
+        kCameraCenterOffsetY);
   }
   state.player.is_physics_active = state.player.is_airborne;
 }
@@ -580,10 +626,20 @@ void handle_grounded_physics(RuntimeState &state) {
   apply_entity_combat(state);
   apply_default_grounded_physics(state);
   if (state.room_grid.tile_w > 0) {
+    const std::int32_t vp_w =
+        state.bezel_frame.has_value() ? kPlayfieldWidth : kViewportWidthPixels;
     camera_update_x_follow_comic_clamped(
-        state, kViewportWidthPixels,
+        state, vp_w,
         std::max<std::int32_t>(
-            0, static_cast<std::int32_t>(state.room_grid.tile_w) * 16));
+            0, static_cast<std::int32_t>(state.room_grid.tile_w) * 16),
+        kCameraCenterOffsetX);
+  }
+  if (state.bezel_frame.has_value() && state.room_grid.tile_h > 0) {
+    camera_update_y_follow_comic_clamped(
+        state, kPlayfieldHeight,
+        std::max<std::int32_t>(
+            0, static_cast<std::int32_t>(state.room_grid.tile_h) * 16),
+        kCameraCenterOffsetY);
   }
   state.player.is_physics_active = state.player.is_airborne;
 }

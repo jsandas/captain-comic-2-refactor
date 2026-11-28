@@ -758,6 +758,9 @@ const std::vector<MaskedSpriteRecord> &get_embedded_menu_sprites() {
 
 void load_ui_assets(RuntimeState &state,
                     const std::filesystem::path &asset_root) {
+  if (state.assets_root.empty()) {
+    state.assets_root = asset_root;
+  }
   state.title_screen.reset();
   state.intro_screens.clear();
   state.victory_screen.reset();
@@ -785,6 +788,13 @@ void load_ui_assets(RuntimeState &state,
     }
     return {};
   };
+
+  if (!state.bezel_frame.has_value()) {
+    const auto bezel_path = find_case_file("FRPAK.001", "frpak.001");
+    if (!bezel_path.empty()) {
+      state.bezel_frame = load_frpak_fullscreen(bezel_path);
+    }
+  }
 
   const auto title_path = find_case_file("FRPAK.002", "frpak.002");
   if (!title_path.empty()) {

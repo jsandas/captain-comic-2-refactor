@@ -382,6 +382,11 @@ void update_enemy_projectiles(GameState &state) {
         continue;
       }
 
+      if (state.player.shield_fill_countdown > 0U) {
+        --state.player.shield_fill_countdown;
+      } else if (state.player.shield_meter_subbars > 0U) {
+        --state.player.shield_meter_subbars;
+      }
       if (state.comic_shield > 0 || state.player.shield_power > 0) {
         if (state.comic_shield > 0) {
           --state.comic_shield;
@@ -1355,6 +1360,11 @@ void apply_entity_combat(RuntimeState &state) {
       continue;
     }
 
+    if (state.player.shield_fill_countdown > 0U) {
+      --state.player.shield_fill_countdown;
+    } else if (state.player.shield_meter_subbars > 0U) {
+      --state.player.shield_meter_subbars;
+    }
     if (state.player.hp > 0) {
       --state.player.hp;
     }

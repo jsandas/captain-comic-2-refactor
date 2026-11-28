@@ -891,13 +891,13 @@ void test_phase16_hud_update_mode_icons_on_bezel() {
   comic2::EgaPlanarSurface surface(320, 200);
   surface.clear(0x00);
 
-  // Initially no equipment icons collected -> region x=288..303 at rows
-  // 0x5E, 0x77, 0x90, 0xA9 should remain blank
+  // Initially no equipment icons collected -> region x=240..255 (0xF0..0xFF)
+  // at rows 0x5E, 0x77, 0x90, 0xA9 should remain blank
   comic2::hud_render_overlay(surface, state);
   for (std::size_t row_y : {0x5EU, 0x77U, 0x90U, 0xA9U}) {
     bool any_pixel = false;
     for (std::size_t y = row_y; y < row_y + 16U; ++y) {
-      for (std::size_t x = 288U; x < 304U; ++x) {
+      for (std::size_t x = 240U; x < 256U; ++x) {
         if (read_surface_pixel_color(surface, x, y) != 0U) {
           any_pixel = true;
         }
@@ -908,12 +908,19 @@ void test_phase16_hud_update_mode_icons_on_bezel() {
   }
 
   // Equip all 4 items: Corkscrew (0x5E), Boots (0x77), Lantern (0x90), Wand
-  // (0xA9) and set active_mode_mask
+  // (0xA9) and set active_mode_mask, score, counters, and keys
   state.player.corkscrew_equipped = true;
   state.player.boots_equipped = true;
   state.player.lantern_equipped = true;
   state.player.wand_equipped = true;
   state.ui.active_mode_mask = 0x02U;
+  state.player.score = 1234U;
+  state.player.hp = 12U;
+  state.player.firepower = 3U;
+  state.player.gems = 15U;
+  state.player.fuel = 25U;
+  state.player.lives = 4U;
+  state.player.key_count = 2U;
 
   surface.clear(0x00);
   comic2::hud_render_overlay(surface, state);
@@ -921,7 +928,7 @@ void test_phase16_hud_update_mode_icons_on_bezel() {
   for (std::size_t row_y : {0x5EU, 0x77U, 0x90U, 0xA9U}) {
     bool saw_icon_pixel = false;
     for (std::size_t y = row_y; y < row_y + 16U; ++y) {
-      for (std::size_t x = 288U; x < 304U; ++x) {
+      for (std::size_t x = 240U; x < 256U; ++x) {
         if (read_surface_pixel_color(surface, x, y) != 0U) {
           saw_icon_pixel = true;
           break;
@@ -932,21 +939,87 @@ void test_phase16_hud_update_mode_icons_on_bezel() {
       }
     }
     expect(saw_icon_pixel,
-           "Collected equipment icon must blit visible 16x16 graphic at x=288");
+           "Collected equipment icon must blit visible 16x16 graphic at x=240");
   }
 
-  // Verify 8x15 mode indicator bar at x=280..287
+  // Verify 8x15 mode indicator bar at x=256..263 (0x100..0x107)
   bool saw_mode_bar = false;
   for (std::size_t y = 0x77U; y < 0x77U + 15U; ++y) {
-    for (std::size_t x = 280U; x < 288U; ++x) {
-      if (read_surface_pixel_color(surface, x, y) != 0U) {
+    for (std::size_t x = 256U; x < 264U; ++x) {
+      if (read_surface_pixel_color(surface, x, y) == 0x0AU) {
         saw_mode_bar = true;
         break;
       }
     }
   }
   expect(saw_mode_bar,
-         "Active mode selection bar must render at x=280 on bezel panel");
+         "Active mode selection bar must render bright green (0x0A) at x=256");
+
+  // Verify 6-digit 8x16 red LED score digits inside the score box (x=240..287,
+  // y=16..31) and ensure bezel art to the right (x=288..303, y=16..31) is not
+  // overdrawn
+  bool saw_score_led = false;
+  bool overdrew_right_of_score = false;
+  for (std::size_t y = 16U; y < 32U; ++y) {
+    for (std::size_t x = 240U; x < 288U; ++x) {
+      if (read_surface_pixel_color(surface, x, y) == 0x0CU) {
+        saw_score_led = true;
+      }
+    }
+    for (std::size_t x = 288U; x < 304U; ++x) {
+      if (read_surface_pixel_color(surface, x, y) != 0x00U) {
+        overdrew_right_of_score = true;
+      }
+    }
+  }
+  expect(saw_score_led, "Score must render 6 8x16 red LED digits (0x0C) inside "
+                        "score box at y=16");
+  expect(!overdrew_right_of_score,
+         "Score must not overdraw bezel art to the right of x=287 at y=16..31");
+
+  // Verify Fireball meter (y=42..57) and Shield meter (y=67..82) light up
+  // (0x0C)
+  bool saw_lit_fireball_meter = false;
+  bool saw_lit_shield_meter = false;
+  for (std::size_t x = 256U; x < 304U; ++x) {
+    if (read_surface_pixel_color(surface, x, 46U) == 0x0CU) {
+      saw_lit_fireball_meter = true;
+    }
+    if (read_surface_pixel_color(surface, x, 71U) == 0x0CU) {
+      saw_lit_shield_meter = true;
+    }
+  }
+  expect(
+      saw_lit_fireball_meter,
+      "Fireball meter at x=256..303, y=42 must light up in bright red (0x0C)");
+  expect(saw_lit_shield_meter,
+         "Shield meter at x=256..303, y=67 must light up in bright red (0x0C)");
+
+  // Verify 2-digit 8x16 LED counters at x=288..303 across all 4 rows
+  for (std::size_t row_y : {0x5EU, 0x77U, 0x90U, 0xA9U}) {
+    bool saw_counter_led = false;
+    for (std::size_t y = row_y; y < row_y + 16U && !saw_counter_led; ++y) {
+      for (std::size_t x = 288U; x < 304U && !saw_counter_led; ++x) {
+        if (read_surface_pixel_color(surface, x, y) == 0x0CU) {
+          saw_counter_led = true;
+        }
+      }
+    }
+    expect(saw_counter_led,
+           "2-digit counter must render 8x16 red LED digits (0x0C) at x=288");
+  }
+
+  // Verify bottom inventory window at y=177 (0xB1), slots 0..1 populated
+  bool saw_inv_key = false;
+  for (std::size_t y = 177U; y < 193U && !saw_inv_key; ++y) {
+    for (std::size_t x = 8U; x < 40U && !saw_inv_key; ++x) {
+      if (read_surface_pixel_color(surface, x, y) != 0U) {
+        saw_inv_key = true;
+      }
+    }
+  }
+  expect(saw_inv_key,
+         "Bottom inventory window at y=177 must blit collected key icons");
 }
 
 void test_phase16_option_list_and_menu_panel_render_8x8_text_and_high_scores() {
@@ -1276,6 +1349,12 @@ void test_startup_demo_backstory_and_config_options_screens() {
 
   // Pressing 'K' (0x25) opens Define Keys screen; binding 6 keys returns to
   // Config screen
+  const auto temp_dir = std::filesystem::temp_directory_path() /
+                        "test_comic2_startup_player_menu";
+  std::filesystem::remove_all(temp_dir);
+  std::filesystem::create_directories(temp_dir);
+  state.ui.persistence_dir = temp_dir;
+
   comic2::InputState press_k{};
   press_k.sdl_keyboard_active = true;
   press_k.any_key_pressed = true;
@@ -1299,12 +1378,6 @@ void test_startup_demo_backstory_and_config_options_screens() {
 
   // Pressing any other key on Config screen advances to Menu with the Player
   // Save Slot menu active (NOT the 6-world stage selection menu!)
-  const auto temp_dir = std::filesystem::temp_directory_path() /
-                        "test_comic2_startup_player_menu";
-  std::filesystem::remove_all(temp_dir);
-  std::filesystem::create_directories(temp_dir);
-  state.ui.persistence_dir = temp_dir;
-
   comic2::update_game_lifecycle(state, any_key);
   expect(state.ui.lifecycle_state == comic2::GameLifecycleState::Menu,
          "Pressing any other key on Config screen must advance to Menu");
@@ -1344,12 +1417,75 @@ void test_startup_demo_backstory_and_config_options_screens() {
          "Pressing Enter after typing name must create player 'COMIC' in slot "
          "0");
 
-  // Confirming slot 0 ("COMIC") loads GAME.001 (Level 0 Room 0) and enters
-  // Gameplay
+  // Menu music (DS:0x9D3F) must be playing while in Menu
+  expect(state.audio.sound.is_playing && state.audio.sound.stream_offset ==
+                                             comic2::kSoundOffsetMainMenuTheme,
+         "MainMenuTheme must be playing while in player selection Menu");
+
+  // Confirming slot 0 ("COMIC") stops menu music, loads GAME.001 (Level 0
+  // Room 0 at authentic spawn x=568, y=80, camera_x=472, camera_y=16), displays
+  // the FRPAK.001 game UI first, and then blits the 208x160 gameplay window
   comic2::update_game_lifecycle(state, press_enter);
   expect(state.ui.lifecycle_state == comic2::GameLifecycleState::Gameplay &&
              state.current_level == 0U && state.current_room == 0U,
          "Selecting player slot 0 must enter Gameplay at Level 0 Room 0");
+  expect(!state.audio.sound.is_playing,
+         "Selecting a player save slot must stop the menu music (1000:5EEA)");
+  expect(state.player.x == 568 && state.player.y == 80,
+         "New player save slot must spawn at authentic Level 0 Room 0 position "
+         "(568, 80)");
+  expect(state.camera_x == 472 && state.camera_y == 16,
+         "Initial camera must center on Comic starting position (camera_x = "
+         "568 - 96 = 472, camera_y = 80 - 64 = 16)");
+  expect(state.player.fireball_meter_counter == 0U &&
+             state.player.shield_meter_subbars == 0U &&
+             state.player.shield_fill_countdown == 12U,
+         "Room entry must initialize [0x8ea]=0, [0x8eb]=0, and [0x8ed]=12 "
+         "(1000:227b..2281)");
+  expect(state.ui.gameplay_ui_pre_blit_ticks == 1U &&
+             state.ui.gameplay_initial_spawn_pending,
+         "Selecting player save slot must stage 1-tick FRPAK.001 UI pre-blit "
+         "before gameplay window blit");
+
+  // Frame 1 in Gameplay: displays the FRPAK.001 game UI + HUD before the room
+  // tilemap/player overwrites the 208x160 playfield window
+  comic2::EgaPlanarSurface ui_first_surface(320, 200);
+  ui_first_surface.clear(0x00);
+  comic2::render_game_lifecycle_frame(ui_first_surface, state);
+  expect(state.ui.gameplay_ui_pre_blit_ticks == 0U,
+         "First Gameplay frame must consume gameplay_ui_pre_blit_ticks");
+
+  // Frame 2 in Gameplay: blits the 208x160 gameplay window with the player at
+  // the starting position (568, 80) before physics moves the player
+  comic2::update_game_lifecycle(state, comic2::InputState{});
+  expect(!state.ui.gameplay_initial_spawn_pending && state.player.x == 568 &&
+             state.player.y == 80,
+         "Initial gameplay window blit frame must hold player at starting "
+         "position (568, 80)");
+  comic2::EgaPlanarSurface gameplay_surface(320, 200);
+  gameplay_surface.clear(0x00);
+  comic2::render_game_lifecycle_frame(gameplay_surface, state);
+
+  bool playfield_changed = false;
+  for (std::size_t y = comic2::kPlayfieldY;
+       y < comic2::kPlayfieldY + comic2::kPlayfieldHeight && !playfield_changed;
+       ++y) {
+    for (std::size_t x_byte = comic2::kPlayfieldX / 8U;
+         x_byte < (comic2::kPlayfieldX + comic2::kPlayfieldWidth) / 8U;
+         ++x_byte) {
+      for (std::size_t plane = 0; plane < comic2::EgaPlanarSurface::kPlaneCount;
+           ++plane) {
+        if (ui_first_surface.get_plane_byte(plane, x_byte, y) !=
+            gameplay_surface.get_plane_byte(plane, x_byte, y)) {
+          playfield_changed = true;
+          break;
+        }
+      }
+    }
+  }
+  expect(playfield_changed,
+         "Second Gameplay frame must overwrite the 208x160 playfield cutout "
+         "with the room tilemap and player at the starting position");
 
   std::filesystem::remove_all(temp_dir);
 }

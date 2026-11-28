@@ -44,7 +44,7 @@ int main() {
     // Create presenter
 #ifdef COMIC2_USE_SDL2
     std::unique_ptr<comic2::IFramePresenter> presenter =
-        std::make_unique<comic2::Sdl2FramePresenter>(640, 480);
+        std::make_unique<comic2::Sdl2FramePresenter>(640, 400);
     std::cout << "Using SDL2 presenter (visual output enabled)\n\n";
 
     // Handle SDL events and display for a few seconds

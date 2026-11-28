@@ -84,6 +84,9 @@ struct SoundStream {
 
 struct SoundPlaybackState {
   bool is_playing = false;
+  // Set by SoundCommand::Stop; consumed by flush_audio_events to issue one
+  // backend stop() (mirrors the on-demand stop in the original).
+  bool stop_requested = false;
   bool is_enabled = true;
   bool gate_enabled = true;
   std::uint8_t priority = 0;
@@ -146,6 +149,7 @@ public:
 
   virtual bool initialize() = 0;
   virtual void enqueue_event(AudioEvent event) = 0;
+  virtual void stop() {}
   virtual void update() = 0;
   virtual void shutdown() = 0;
 

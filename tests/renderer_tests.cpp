@@ -325,6 +325,16 @@ void test_camera_y_clamps_to_room_bounds() {
          "camera Y should clamp to the room-height viewport limit");
 }
 
+void test_camera_follow_uses_asm_center_offsets() {
+  comic2::RuntimeState state;
+  state.player.x = 300;
+  state.player.y = 200;
+  comic2::camera_update_x_follow_comic_clamped(state, 208, 1000);
+  comic2::camera_update_y_follow_comic_clamped(state, 160, 1000);
+  expect(state.camera_x == 300 - 96 && state.camera_y == 200 - 64,
+         "mid-room camera must use ASM offsets (x-96, y-64)");
+}
+
 void test_camera_x_clamps_to_room_bounds() {
   comic2::RuntimeState state = comic2::make_default_runtime_state();
   state.room_grid.tile_w = 30;
@@ -623,6 +633,7 @@ void run_renderer_tests() {
   test_runtime_sprite_render_falls_back_when_records_are_unavailable();
   test_invulnerability_blink_visibility_uses_tick_parity();
   test_camera_y_clamps_to_room_bounds();
+  test_camera_follow_uses_asm_center_offsets();
   test_camera_x_clamps_to_room_bounds();
   test_masked_blit_keeps_byte_aligned_positions();
   test_masked_blit_handles_shifted_positions();
@@ -687,7 +698,7 @@ void run_renderer_tests() {
       src.set_plane_byte(0, 0, 0, 0xFF);
       src.set_plane_byte(1, 0, 0, 0xFF);
 
-      comic2::Sdl2FramePresenter presenter(640, 480);
+      comic2::Sdl2FramePresenter presenter(640, 400);
       presenter.present(src);
 
       // If we get here without exception, SDL2 presenter is working

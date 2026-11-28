@@ -82,7 +82,7 @@ private:
 class Sdl2FramePresenter final : public IFramePresenter {
 public:
   explicit Sdl2FramePresenter(std::uint16_t window_width = 640,
-                              std::uint16_t window_height = 480);
+                              std::uint16_t window_height = 400);
   ~Sdl2FramePresenter() override;
 
   void present(const EgaPlanarSurface &frame) override;
@@ -148,11 +148,30 @@ void gfx_blit_masked_sprite(EgaPlanarSurface &dest, std::int32_t x_pixels,
                             const MaskedSpriteRecord &record);
 
 // Authentic in-game playfield viewport within the 320x200 bezel frame.
-// The FRPAK.001 bezel has an 8-pixel border; the playfield sits within it.
+// The FRPAK.001 bezel has an 8-pixel top/left border and a 208x160 (0xD0x0xA0)
+// playfield cutout at (8, 8).
 constexpr std::int32_t kPlayfieldX = 8;
 constexpr std::int32_t kPlayfieldY = 8;
-constexpr std::int32_t kPlayfieldWidth = 240;
-constexpr std::int32_t kPlayfieldHeight = 176;
+constexpr std::int32_t kPlayfieldWidth = 208;
+constexpr std::int32_t kPlayfieldHeight = 160;
+
+// Playfield rectangle in frame coordinates (bezel cutout or full frame).
+struct PlayfieldViewport {
+  std::int32_t x;
+  std::int32_t y;
+  std::int32_t w;
+  std::int32_t h;
+};
+
+inline PlayfieldViewport
+resolve_playfield_viewport(const RuntimeState &state,
+                           const EgaPlanarSurface &frame) {
+  if (state.bezel_frame.has_value()) {
+    return {kPlayfieldX, kPlayfieldY, kPlayfieldWidth, kPlayfieldHeight};
+  }
+  return {0, 0, static_cast<std::int32_t>(frame.width_pixels()),
+          static_cast<std::int32_t>(frame.height_rows())};
+}
 
 bool is_sprite_in_viewport(
     std::int32_t x, std::int32_t y, std::int32_t width, std::int32_t height,
@@ -253,11 +272,15 @@ void room_transition_draw_reveal_quad(EgaPlanarSurface &surface,
                                       std::uint8_t color);
 void room_transition_player_entry_sequence(RuntimeState &state);
 void room_transition_player_exit_sequence(RuntimeState &state);
-void camera_update_x_follow_comic_clamped(RuntimeState &state,
-                                          std::int32_t viewport_width,
-                                          std::int32_t room_width);
-void camera_update_y_follow_comic_clamped(RuntimeState &state,
-                                          std::int32_t viewport_height,
-                                          std::int32_t room_height);
+// Original ASM centering offsets (sub AX,0x60 / sub AX,0x40 at 0x18F2/0x1910):
+// camera = clamp(player - offset, 0, room - viewport).
+inline constexpr std::int32_t kCameraCenterOffsetX = 0x60;
+inline constexpr std::int32_t kCameraCenterOffsetY = 0x40;
+void camera_update_x_follow_comic_clamped(
+    RuntimeState &state, std::int32_t viewport_width, std::int32_t room_width,
+    std::int32_t center_offset = kCameraCenterOffsetX);
+void camera_update_y_follow_comic_clamped(
+    RuntimeState &state, std::int32_t viewport_height, std::int32_t room_height,
+    std::int32_t center_offset = kCameraCenterOffsetY);
 
 } // namespace comic2

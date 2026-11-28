@@ -94,6 +94,7 @@ struct PlayerState {
       5; // [DS:0x089a] current shield energy (default 5, max 8)
   std::uint8_t firepower = 1; // [DS:0x08ac] blast power level (1-5)
   std::uint8_t gems = 0;
+  std::uint8_t fuel = 25; // [DS:0x0222] jetpack fuel counter (default 25)
   std::uint8_t lives = 3;
   std::uint16_t score = 0;
   std::uint16_t score_high = 0; // [DS:0x0928] high word of 32-bit score counter
@@ -102,6 +103,15 @@ struct PlayerState {
   std::uint8_t damage_recoil_ticks = 0;
   std::uint8_t weapon_cooldown =
       0; // [DS:0x08a8] firing rate limiter cooldown timer
+  std::uint8_t fireball_meter_counter =
+      23; // [DS:0x08ea] 0..23 fireball meter counter (hud_draw_number_word /
+          // hud_draw_char at 1000:3ace..3b50)
+  std::uint8_t shield_meter_subbars =
+      12; // [DS:0x08eb] 0..12 lit shield sub-bars (hud_flash_item at
+          // 1000:3b51..3bc5)
+  std::uint8_t shield_fill_countdown =
+      0; // [DS:0x08ed] 12-tick room-entry/pickup shield fill countdown
+         // (1000:2281, decremented at 1000:29d0)
 
   // Confirmed inventory and equipment fields from comic2_data.asm (DS:0x08ae -
   // 0x08b6):
@@ -239,6 +249,8 @@ struct UiState {
   bool title_music_started = false;
   bool joystick_calibration_active = false;
   std::uint8_t joystick_calibration_step = 0;
+  std::uint8_t gameplay_ui_pre_blit_ticks = 0;
+  bool gameplay_initial_spawn_pending = false;
 };
 
 struct RuntimeState {

@@ -872,11 +872,11 @@ void test_gate_11e_hud_counters_appear_in_bezel_panel_region() {
   expect(presenter.has_frame(), "Gate 11-E HUD: frame must be presented");
   const auto &frame = presenter.last_frame();
 
-  // Scan the HUD panel area (x=258..286, y=90..175) for at least one
+  // Scan the HUD panel area (x=240..304, y=90..185) for at least one
   // non-zero pixel written by the HUD renderer.
   bool found_hud_pixel = false;
-  for (std::size_t y = 90U; y < 176U && !found_hud_pixel; ++y) {
-    for (std::size_t x = 258U; x < 288U && !found_hud_pixel; ++x) {
+  for (std::size_t y = 90U; y < 185U && !found_hud_pixel; ++y) {
+    for (std::size_t x = 240U; x < 304U && !found_hud_pixel; ++x) {
       if (read_gate11_color(frame, x, y) != 0x00U) {
         found_hud_pixel = true;
       }
@@ -1897,11 +1897,11 @@ void test_gate_14b_cavern_lantern_and_palette_darkness() {
     expect(presenter.has_frame(), "Gate 14-B: frame must be presented");
     const auto &dark_frame = presenter.last_frame();
 
-    // Verify all pixels inside the playfield viewport (x=8..247, y=8..183) are
+    // Verify all pixels inside the playfield viewport (x=8..215, y=8..167) are
     // 0x00
     bool all_playfield_black = true;
-    for (std::size_t y = 8U; y < 184U && all_playfield_black; ++y) {
-      for (std::size_t x = 8U; x < 248U && all_playfield_black; ++x) {
+    for (std::size_t y = 8U; y < 168U && all_playfield_black; ++y) {
+      for (std::size_t x = 8U; x < 216U && all_playfield_black; ++x) {
         if (read_gate11_color(dark_frame, x, y) != 0x00U) {
           all_playfield_black = false;
         }
@@ -1917,8 +1917,8 @@ void test_gate_14b_cavern_lantern_and_palette_darkness() {
            "masking");
 
     bool hud_has_pixels = false;
-    for (std::size_t y = 90U; y < 176U && !hud_has_pixels; ++y) {
-      for (std::size_t x = 258U; x < 288U && !hud_has_pixels; ++x) {
+    for (std::size_t y = 90U; y < 185U && !hud_has_pixels; ++y) {
+      for (std::size_t x = 240U; x < 304U && !hud_has_pixels; ++x) {
         if (read_gate11_color(dark_frame, x, y) != 0x00U) {
           hud_has_pixels = true;
         }
@@ -1939,8 +1939,8 @@ void test_gate_14b_cavern_lantern_and_palette_darkness() {
            "Gate 14-B: transition frame must be presented");
     const auto &trans_frame = presenter.last_frame();
     bool transition_playfield_black = true;
-    for (std::size_t y = 8U; y < 184U && transition_playfield_black; ++y) {
-      for (std::size_t x = 8U; x < 248U && transition_playfield_black; ++x) {
+    for (std::size_t y = 8U; y < 168U && transition_playfield_black; ++y) {
+      for (std::size_t x = 8U; x < 216U && transition_playfield_black; ++x) {
         if (read_gate11_color(trans_frame, x, y) != 0x00U) {
           transition_playfield_black = false;
         }
@@ -1958,8 +1958,8 @@ void test_gate_14b_cavern_lantern_and_palette_darkness() {
     const auto &lit_frame = presenter.last_frame();
 
     std::size_t visible_pixel_count = 0;
-    for (std::size_t y = 8U; y < 184U; ++y) {
-      for (std::size_t x = 8U; x < 248U; ++x) {
+    for (std::size_t y = 8U; y < 168U; ++y) {
+      for (std::size_t x = 8U; x < 216U; ++x) {
         if (read_gate11_color(lit_frame, x, y) != 0x00U) {
           ++visible_pixel_count;
         }
@@ -1977,8 +1977,8 @@ void test_gate_14b_cavern_lantern_and_palette_darkness() {
     const auto &baseline_frame = baseline_presenter.last_frame();
 
     bool playfield_matches_baseline = true;
-    for (std::size_t y = 8U; y < 184U && playfield_matches_baseline; ++y) {
-      for (std::size_t x = 8U; x < 248U && playfield_matches_baseline; ++x) {
+    for (std::size_t y = 8U; y < 168U && playfield_matches_baseline; ++y) {
+      for (std::size_t x = 8U; x < 216U && playfield_matches_baseline; ++x) {
         if (read_gate11_color(lit_frame, x, y) !=
             read_gate11_color(baseline_frame, x, y)) {
           playfield_matches_baseline = false;
@@ -2574,7 +2574,7 @@ void test_gate_16c_hud_mode_icons_and_interactive_menu_persistence() {
   for (std::size_t row_y : {0x5EU, 0x77U, 0x90U, 0xA9U}) {
     bool found_icon_pixel = false;
     for (std::size_t y = row_y; y < row_y + 16U && !found_icon_pixel; ++y) {
-      for (std::size_t x = 288U; x < 304U && !found_icon_pixel; ++x) {
+      for (std::size_t x = 240U; x < 256U && !found_icon_pixel; ++x) {
         if (read_gate11_color(surface, x, y) != 0x00U) {
           found_icon_pixel = true;
         }

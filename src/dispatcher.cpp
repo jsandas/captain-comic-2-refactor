@@ -106,6 +106,35 @@ DispatchResult GameDispatcher::run_tick(RuntimeState &state) const {
                               kDefaultViewportMinX, kDefaultViewportMinY,
                               kDefaultViewportWidth, kDefaultViewportHeight);
 
+  if (stage != DispatchStage::LevelTransition &&
+      !state.transition_state.active) {
+    // 1. Fireball meter counter [DS:0x08ea] (1000:26b1..26f4):
+    // - When Fire is not held ([cs:0x25d] != 1) or active mode [0x896] != 0,
+    //   calls hud_draw_number_word (1000:3ace), incrementing [0x8ea] up to
+    //   0x17 (23).
+    // - When Fire is held in mode 0 ([0x896] == 0) and [0x8ea] > 0, calls
+    //   hud_draw_char (1000:3b12), decrementing [0x8ea].
+    const bool mode0_active = (state.ui.active_mode_mask == 0U ||
+                               (state.ui.active_mode_mask & 0x01U) != 0U) &&
+                              state.player.active_mode_effect <= 1U;
+    if (!state.input.fire_pressed || !mode0_active) {
+      if (state.player.fireball_meter_counter < 0x17U) {
+        ++state.player.fireball_meter_counter;
+      }
+    } else if (state.player.fireball_meter_counter > 0U) {
+      --state.player.fireball_meter_counter;
+    }
+
+    // 2. Shield meter 12-tick fill animation [DS:0x08ed] -> [DS:0x08eb]
+    // (1000:29c9..29d4 -> hud_flash_item at 1000:3b51):
+    if (state.player.shield_fill_countdown > 0U) {
+      --state.player.shield_fill_countdown;
+      if (state.player.shield_meter_subbars < 12U) {
+        ++state.player.shield_meter_subbars;
+      }
+    }
+  }
+
   return DispatchResult{.stage = stage, .hook_executed = hook_executed};
 }
 
