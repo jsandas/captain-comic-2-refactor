@@ -10,6 +10,12 @@
 #include <string_view>
 #include <vector>
 
+#if defined(_WIN32)
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
+
 #include "comic2/audio.hpp"
 #include "comic2/bootstrap.hpp"
 #include "comic2/default_handlers.hpp"
@@ -26,6 +32,20 @@
 #include "comic2/ui.hpp"
 
 namespace {
+
+void set_test_env(const char *name, const char *value, int overwrite) {
+#ifdef _WIN32
+  // Windows doesn't have setenv; use _putenv_s instead.
+  (void)overwrite;
+  _putenv_s(name, value);
+#else
+  if (value == nullptr || *value == '\0') {
+    unsetenv(name);
+  } else {
+    setenv(name, value, overwrite);
+  }
+#endif
+}
 
 void expect(bool condition, const char *message) {
   if (!condition) {
@@ -646,10 +666,10 @@ void test_gate_phase_92_audio_events_trigger_from_gameplay() {
   // would otherwise clear the synthesized jump press before the controller
   // sees it (the controller queues the jump sound at initiation, matching
   // player_do_jump 1000:2476).
-  setenv("COMIC2_FORCE_ENV_INPUT", "1", 1);
-  setenv("COMIC2_INPUT_JUMP", "1", 1);
-  setenv("COMIC2_INPUT_LEFT", "0", 1);
-  setenv("COMIC2_INPUT_RIGHT", "0", 1);
+  set_test_env("COMIC2_FORCE_ENV_INPUT", "1", 1);
+  set_test_env("COMIC2_INPUT_JUMP", "1", 1);
+  set_test_env("COMIC2_INPUT_LEFT", "0", 1);
+  set_test_env("COMIC2_INPUT_RIGHT", "0", 1);
 
   state.player.jump_counter = 1;
   state.input.jump_pressed = true;
@@ -668,7 +688,7 @@ void test_gate_phase_92_audio_events_trigger_from_gameplay() {
          "Gate 9.2 audio integration should emit a jump sound from gameplay");
 
   // Restore the input env so later tests start from a clean keyboard state.
-  setenv("COMIC2_INPUT_JUMP", "0", 1);
+  set_test_env("COMIC2_INPUT_JUMP", "0", 1);
 }
 
 } // namespace
