@@ -55,7 +55,7 @@ void test_apply_input_tick_consumes_jump_counter() {
 
   comic2::apply_input_tick(state, comic2::PlayerMotionConfig{});
 
-  expect(state.player.y_vel == -5, "jump input should apply jump impulse");
+  expect(state.player.y_vel == -7, "jump input should apply jump impulse");
   expect(state.player.jump_counter == 0,
          "jump input should consume jump counter");
   expect(state.player.is_physics_active, "jump input should activate physics");
@@ -112,7 +112,7 @@ void test_jump_while_moving_left_and_right() {
   expect(left_state.player.x == -8, "left+jump should move left by walk step");
   expect(left_state.player.x_vel == -8,
          "left+jump should set negative x velocity");
-  expect(left_state.player.y_vel == -5, "left+jump should apply jump impulse");
+  expect(left_state.player.y_vel == -7, "left+jump should apply jump impulse");
   expect(left_state.player.jump_counter == 0,
          "left+jump should consume jump counter");
 
@@ -127,7 +127,7 @@ void test_jump_while_moving_left_and_right() {
          "right+jump should move right by walk step");
   expect(right_state.player.x_vel == 8,
          "right+jump should set positive x velocity");
-  expect(right_state.player.y_vel == -5,
+  expect(right_state.player.y_vel == -7,
          "right+jump should apply jump impulse");
   expect(right_state.player.jump_counter == 0,
          "right+jump should consume jump counter");

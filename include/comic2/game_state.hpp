@@ -57,10 +57,48 @@ enum class PlayerAnimationState : std::uint8_t {
   WalkCycle = 1,
   JumpRise = 2,
   JumpFall = 3,
-  Attack = 4,
-  Hurt = 5,
-  Death = 6,
+  WallClimb = 4,
+  Swim = 5,
+  Attack = 6,
+  Hurt = 7,
+  Death = 8,
 };
+
+constexpr std::size_t kAnimationFrameOffsetIdle = 0U;
+constexpr std::size_t kAnimationFrameOffsetWallClimb = 0U;
+constexpr std::size_t kAnimationFrameOffsetSwim = 8U;
+constexpr std::size_t kAnimationFrameOffsetJump = 8U;
+constexpr std::size_t kAnimationFrameOffsetAttack = 14U;
+constexpr std::size_t kAnimationFrameOffsetHurt = 20U;
+constexpr std::size_t kAnimationFrameOffsetDeath = 26U;
+
+inline bool is_animated_state(PlayerAnimationState state) {
+  return state == PlayerAnimationState::WalkCycle ||
+         state == PlayerAnimationState::JumpRise ||
+         state == PlayerAnimationState::JumpFall ||
+         state == PlayerAnimationState::Attack ||
+         state == PlayerAnimationState::Hurt;
+}
+
+inline std::size_t get_state_frame_offset(PlayerAnimationState state) {
+  switch (state) {
+  case PlayerAnimationState::WallClimb:
+    return kAnimationFrameOffsetWallClimb;
+  case PlayerAnimationState::Swim:
+    return kAnimationFrameOffsetSwim;
+  case PlayerAnimationState::JumpRise:
+  case PlayerAnimationState::JumpFall:
+    return kAnimationFrameOffsetJump;
+  case PlayerAnimationState::Attack:
+    return kAnimationFrameOffsetAttack;
+  case PlayerAnimationState::Hurt:
+    return kAnimationFrameOffsetHurt;
+  case PlayerAnimationState::Death:
+    return kAnimationFrameOffsetDeath;
+  default:
+    return kAnimationFrameOffsetIdle;
+  }
+}
 
 struct PlayerState {
   std::int16_t x = 0;

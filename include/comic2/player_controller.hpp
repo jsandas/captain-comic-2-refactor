@@ -37,12 +37,12 @@ inline constexpr std::uint8_t kOriginalDosDefaultJumpTicks = 5;
 
 struct PlayerMotionConfig {
   std::int16_t walk_step = 8;
-  std::int16_t jump_impulse = -5;
+  std::int16_t jump_impulse = -7;
   std::int16_t air_drift_step = 1;
   std::int16_t max_air_drift = 5;
-  std::int16_t gravity_per_tick = 1;
-  std::int16_t max_fall_speed = 5;
-  std::int16_t fall_start_velocity = 1;
+  std::int16_t gravity_per_tick = 5;
+  std::int16_t max_fall_speed = 23;
+  std::int16_t fall_start_velocity = 5;
   std::int16_t feet_probe_offset_y = kOriginalDosFeetProbeOffsetY;
   std::uint8_t default_jump_ticks = 5;
   bool truncate_jump_on_release = false;

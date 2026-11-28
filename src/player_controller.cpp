@@ -61,6 +61,64 @@ bool trigger_fall_if_no_support(RuntimeState &state,
 
 } // namespace detail
 
+void update_animation_state_from_physics(RuntimeState &state) {
+  auto &player = state.player;
+
+  // Death takes priority
+  if (player.hp == 0) {
+    player.animation_state = static_cast<std::uint8_t>(PlayerAnimationState::Death);
+    return;
+  }
+
+  // Hurt animation
+  if (player.damage_recoil_ticks > 0) {
+    player.animation_state = static_cast<std::uint8_t>(PlayerAnimationState::Hurt);
+    return;
+  }
+
+  // Attack animation (active when firing)
+  if (player.weapon_cooldown > 0) {
+    player.animation_state = static_cast<std::uint8_t>(PlayerAnimationState::Attack);
+    return;
+  }
+
+  // Airborne states
+  if (player.is_airborne) {
+    if (player.y_vel < 0) {
+      player.animation_state = static_cast<std::uint8_t>(PlayerAnimationState::JumpRise);
+    } else {
+      player.animation_state = static_cast<std::uint8_t>(PlayerAnimationState::JumpFall);
+    }
+    return;
+  }
+
+  // Horizontal movement
+  if (player.x_vel != 0) {
+    player.animation_state = static_cast<std::uint8_t>(PlayerAnimationState::WalkCycle);
+    return;
+  }
+
+  // Default idle
+  player.animation_state = static_cast<std::uint8_t>(PlayerAnimationState::Idle);
+}
+
+void increment_animation_frame(RuntimeState &state) {
+  auto &player = state.player;
+  const auto anim_state = static_cast<PlayerAnimationState>(player.animation_state);
+
+  // Only increment frames for animated states
+  if (is_animated_state(anim_state)) {
+    player.animation_ticks++;
+    // Cycle animation frame every 8 ticks
+    if (player.animation_ticks >= 8) {
+      player.animation_ticks = 0;
+      player.animation_frame++;
+      // Limit frame count based on state (4 frames is common)
+      player.animation_frame = static_cast<std::uint8_t>(player.animation_frame % 4);
+    }
+  }
+}
+
 PlayerMotionConfig
 get_effective_motion_config(const RuntimeState &state,
                             const PlayerMotionConfig &motion) {
@@ -132,6 +190,12 @@ void apply_input_tick(RuntimeState &state, const PlayerMotionConfig &motion) {
   if (state.input.fire_pressed) {
     try_player_fire_projectile(state);
   }
+
+  // Update animation state based on current physics
+  update_animation_state_from_physics(state);
+
+  // Increment animation frame counter
+  increment_animation_frame(state);
 }
 
 void apply_grounded_physics_tick(RuntimeState &state,
@@ -179,6 +243,12 @@ void apply_grounded_physics_tick(RuntimeState &state,
     state.player.jump_counter = effective_motion.default_jump_ticks;
     state.player.jump_counter_max = effective_motion.default_jump_ticks;
   }
+
+  // Update animation state based on current physics
+  update_animation_state_from_physics(state);
+
+  // Increment animation frame counter
+  increment_animation_frame(state);
 }
 
 void apply_airborne_physics_tick(RuntimeState &state,
@@ -286,6 +356,12 @@ void apply_airborne_physics_tick(RuntimeState &state,
 
   state.player.is_airborne = true;
   state.player.is_physics_active = true;
+
+  // Update animation state based on current physics
+  update_animation_state_from_physics(state);
+
+  // Increment animation frame counter
+  increment_animation_frame(state);
 }
 
 void apply_physics_tick(RuntimeState &state, const PlayerMotionConfig &motion,

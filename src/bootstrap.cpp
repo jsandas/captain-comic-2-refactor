@@ -37,31 +37,25 @@ std::size_t comic_facing_base(const RuntimeState &state) {
 std::size_t comic_pose_index(const RuntimeState &state) {
   const auto animation_state =
       static_cast<PlayerAnimationState>(state.player.animation_state);
-  switch (animation_state) {
-  case PlayerAnimationState::WalkCycle:
-    return static_cast<std::size_t>(state.player.animation_frame) %
-           kComicFacingFrames;
-  case PlayerAnimationState::JumpRise:
-  case PlayerAnimationState::JumpFall:
-    return 1U;
-  default:
-    return 0U;
+
+  // Get base offset for this animation state
+  const std::size_t state_offset = get_state_frame_offset(animation_state);
+
+  // For animated states, add the animation frame count
+  if (is_animated_state(animation_state)) {
+    // Animation frames cycle 0, 1, 2... (ds:0x8af in assembly)
+    // Each frame is 2 bytes (near pointer), so multiply by 2 for byte offset
+    const std::size_t frame_offset =
+        static_cast<std::size_t>(state.player.animation_frame) * 2U;
+    return state_offset + frame_offset;
   }
+
+  // For non-animated states, just return the state offset
+  return state_offset;
 }
 
 std::size_t fallback_player_sprite_frame_index(const RuntimeState &state) {
-  const auto animation_state =
-      static_cast<PlayerAnimationState>(state.player.animation_state);
-  switch (animation_state) {
-  case PlayerAnimationState::WalkCycle:
-    return static_cast<std::size_t>(state.player.animation_frame) %
-           kComicFacingFrames;
-  case PlayerAnimationState::JumpRise:
-  case PlayerAnimationState::JumpFall:
-    return 1U;
-  default:
-    return 0U;
-  }
+  return comic_pose_index(state);
 }
 
 bool has_valid_player_sprite_sheet(const RuntimeState &state) {

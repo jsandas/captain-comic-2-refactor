@@ -139,7 +139,7 @@ void test_default_handlers_basic_movement_and_jump() {
   expect(first.stage == comic2::DispatchStage::InputHandling,
          "first tick should handle input");
   expect(state.player.x == 8, "right input should advance x");
-  expect(state.player.y_vel == -5, "jump should apply impulse");
+  expect(state.player.y_vel == -7, "jump should apply impulse");
   expect(state.player.is_physics_active, "jump should enable physics");
 
   state.input.right_pressed = false;
